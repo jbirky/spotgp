@@ -12,6 +12,7 @@ import torch.nn as nn
 import pytorch_lightning as pl
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("device:", device)
 
 __all__ = ["Feedforward",
            "Learner",
@@ -75,6 +76,7 @@ class Learner(pl.LightningModule):
         self.lr = lr
         self.loss_fn = loss_fn
         self.trainloader = trainloader
+        self.losses = []
     
     def forward(self, x):
 
@@ -87,7 +89,7 @@ class Learner(pl.LightningModule):
         
         # Compute Loss
         loss = self.loss_fn(y_hat, y)
-        losses.append(loss)
+        self.losses.append(loss)
     
         return {'loss': loss}   
     
