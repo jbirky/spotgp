@@ -11,18 +11,15 @@ sys.path.append("../src")
 from starspot import Feedforward, Learner, plot_prediction
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+print("device:", device)
 
 # ====================================================
 
-train_scaled = np.load("../scripts/training/train_scaled.npz")
-test_scaled = np.load("../scripts/training/test_scaled.npz")
+train_scaled = np.load("../training/test_scaled.npz")
+# test_scaled = np.load("../training/test_scaled.npz")
 
 xtrain = Variable(torch.from_numpy(train_scaled["X"]).float(), requires_grad=True).to(device)
 ytrain = Variable(torch.from_numpy(train_scaled["Y"]).float(), requires_grad=True).to(device)
-
-xtest = Variable(torch.from_numpy(test_scaled["X"]).float(), requires_grad=True).to(device)
-ytest = Variable(torch.from_numpy(test_scaled["Y"]).float(), requires_grad=True).to(device)
 
 # ====================================================
 
@@ -31,10 +28,10 @@ wandb.config = {
   "num_inputs": xtrain.shape[1],
   "num_outputs": ytrain.shape[1],
   "learning_rate": 0.001,
-  "epochs": int(1e3),
+  "epochs": int(100),
   "batch_size": 100,
-  "num_hidden": 4,
-  "dim_hidden": 64,
+  "num_hidden": 3,
+  "dim_hidden": 32,
   "activation": nn.Tanh(),
   "dropout_rate": 0.0, 
   "loss_criteria": torch.nn.MSELoss(),
@@ -53,8 +50,6 @@ losses = []
 
 # ====================================================
 
-plot_prediction(model, xtrain, ytrain, mset=[0,1], title="Initial training fit")
-
 train = data.TensorDataset(xtrain, ytrain)
 trainloader = data.DataLoader(train, batch_size=wandb.config["batch_size"], shuffle=True)
 
@@ -63,15 +58,18 @@ learn = Learner(model,
                 lr=wandb.config["learning_rate"],
                 loss_fn=wandb.config["loss_criteria"],
                 trainloader=trainloader)
-trainer = pl.Trainer(min_epochs=wandb.config["epochs"], accelerator=device)
-trainer.fit(learn)
+trainer = pl.Trainer(min_epochs=wandb.config["epochs"], 
+                     accelerator=device.type,
+                     devices=2,
+                     strategy="ddp")
+trainer.fit(learn, trainloader)
 
 # ====================================================
 
-epoch = round(len(losses)/wandb.config["batch_size"])
+# epoch = round(len(losses)/wandb.config["batch_size"])
 
 print('training loss:', torch.nn.MSELoss()(model(xtrain), ytrain).detach().numpy())
-plot_prediction(model, xtrain, ytrain, mset=[0,1], title=f"Training fit (Epoch={epoch})")
+# plot_prediction(model, xtrain, ytrain, mset=[0,1], title=f"Training fit (Epoch={epoch})")
 
-print('test loss:', torch.nn.MSELoss()(model(xtest), ytest).detach().numpy())
-plot_prediction(model, xtest, ytest, mset=[0,1], title=f"Test fit (Epoch={epoch})")
+# print('test loss:', torch.nn.MSELoss()(model(xtest), ytest).detach().numpy())
+# plot_prediction(model, xtest, ytest, mset=[0,1], title=f"Test fit (Epoch={epoch})")
