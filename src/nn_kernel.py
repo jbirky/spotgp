@@ -67,7 +67,8 @@ class Learner(pl.LightningModule):
                  optimizer=torch.optim.Adam,
                  lr=1e-2,
                  loss_fn=nn.MSELoss(),
-                 trainloader=None):
+                 trainloader=None,
+                 wandb=None):
         
         super().__init__()
 
@@ -76,6 +77,7 @@ class Learner(pl.LightningModule):
         self.lr = lr
         self.loss_fn = loss_fn
         self.trainloader = trainloader
+        self.wandb = wandb
         self.losses = []
     
     def forward(self, x):
@@ -90,7 +92,7 @@ class Learner(pl.LightningModule):
         # Compute Loss
         loss = self.loss_fn(y_hat, y)
         self.losses.append(loss)
-    
+        self.wandb.log({'loss': loss})
         return {'loss': loss}   
     
     def configure_optimizers(self):
