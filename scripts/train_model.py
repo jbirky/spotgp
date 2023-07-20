@@ -5,10 +5,11 @@ import torch.utils.data as data
 from torch.autograd import Variable
 import wandb
 import pytorch_lightning as pl
+from pytorch_lightning.loggers import WandbLogger
 
 import sys
 sys.path.append("../src")
-from starspot import Feedforward, Learner, plot_prediction
+from nn_kernel import Feedforward, Learner, plot_prediction
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("device:", device)
@@ -59,9 +60,11 @@ learn = Learner(model,
                 loss_fn=wandb.config["loss_criteria"],
                 trainloader=trainloader)
 trainer = pl.Trainer(min_epochs=wandb.config["epochs"], 
+                     max_epochs=wandb.config["epochs"],
                      accelerator=device.type,
                      devices=2,
-                     strategy="ddp")
+                     strategy="ddp",
+                     logger=WandbLogger())
 trainer.fit(learn, trainloader)
 
 # ====================================================
