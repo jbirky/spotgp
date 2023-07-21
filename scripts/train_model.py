@@ -1,78 +1,95 @@
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.utils.data as data
-from torch.autograd import Variable
 import wandb
-import pytorch_lightning as pl
+from torch.utils.data import DataLoader, random_split
+from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.strategies.ddp import DDPStrategy
 
+import os
 import sys
 sys.path.append("../src")
-from nn_kernel import Feedforward, Learner, plot_prediction
+from nnkernel import Feedforward, Learner, CustomDataset, plot_prediction
 
+api_key = os.environ.get("WANDB_API_KEY")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("device:", device)
 
 # ====================================================
 
+# Load training dataset
 train_scaled = np.load("../training/test_scaled.npz")
-# test_scaled = np.load("../training/test_scaled.npz")
+dataset = CustomDataset(train_scaled["X"], train_scaled["Y"])
 
-xtrain = Variable(torch.from_numpy(train_scaled["X"]).float(), requires_grad=True).to(device)
-ytrain = Variable(torch.from_numpy(train_scaled["Y"]).float(), requires_grad=True).to(device)
-
-# ====================================================
-
-wandb.init(project="starspot")
-wandb.config = {
-  "num_inputs": xtrain.shape[1],
-  "num_outputs": ytrain.shape[1],
+# Training configuration
+config = {
+  "num_inputs": train_scaled["X"].shape[1],
+  "num_outputs": train_scaled["Y"].shape[1],
+  "train_fraction": 0.8,
   "learning_rate": 0.001,
-  "epochs": int(100),
-  "batch_size": 100,
+  "epochs": 1,
+  "batch_size": 256,
   "num_hidden": 3,
   "dim_hidden": 32,
-  "activation": nn.Tanh(),
+  "activation": torch.nn.Tanh(),
   "dropout_rate": 0.0, 
   "loss_criteria": torch.nn.MSELoss(),
   "optimizer": torch.optim.Adam,
-  "device": device
+  "device": device,
+  "ncpu": 32,
 }
 
-model = Feedforward(wandb.config["num_inputs"],
-                    wandb.config["num_outputs"],
-                    num_hidden=wandb.config["num_hidden"], 
-                    dim_hidden=wandb.config["dim_hidden"], 
-                    act=wandb.config["activation"],
-                    dropout=torch.nn.Dropout(wandb.config["dropout_rate"]))
+# Initialize wandb log
+wandb.init(project="starspot", config=config, save_code=True)
+
+# ====================================================
+
+# Split the dataset into train and validation sets
+train_size = int(config["train_fraction"] * len(dataset))
+val_size = len(dataset) - train_size
+train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+
+# Create DataLoader instances to handle batching
+train_loader = DataLoader(train_dataset, 
+                          batch_size=config["batch_size"], 
+                          num_workers=config["ncpu"],
+                          shuffle=True)
+
+val_loader = DataLoader(val_dataset, 
+                        batch_size=config["batch_size"],
+                        num_workers=config["ncpu"])
+
+# ====================================================
+
+model = Feedforward(config["num_inputs"],
+                    config["num_outputs"],
+                    num_hidden=config["num_hidden"], 
+                    dim_hidden=config["dim_hidden"], 
+                    act=config["activation"],
+                    dropout=torch.nn.Dropout(config["dropout_rate"]))
 model.to(device)
-losses = []
 
 # ====================================================
 
-train = data.TensorDataset(xtrain, ytrain)
-trainloader = data.DataLoader(train, batch_size=wandb.config["batch_size"], shuffle=True)
-
+# Initialize lightning learner module
 learn = Learner(model, 
-                optimizer=wandb.config["optimizer"], 
-                lr=wandb.config["learning_rate"],
-                loss_fn=wandb.config["loss_criteria"],
-                trainloader=trainloader)
-trainer = pl.Trainer(min_epochs=wandb.config["epochs"], 
-                     max_epochs=wandb.config["epochs"],
-                     accelerator=device.type,
-                     devices=2,
-                     strategy="ddp",
-                     logger=WandbLogger())
-trainer.fit(learn, trainloader)
+                optimizer=config["optimizer"], 
+                lr=config["learning_rate"],
+                loss_fn=config["loss_criteria"],
+                trainloader=train_loader,
+                valloader=val_loader)
 
-# ====================================================
+# Train model 
+trainer = Trainer(max_epochs=int(config["epochs"]),
+                  accelerator=device.type,
+                  devices=torch.cuda.device_count(),
+                  strategy=DDPStrategy(find_unused_parameters=False),
+                  logger=WandbLogger())
+trainer.fit(learn)
 
-# epoch = round(len(losses)/wandb.config["batch_size"])
+# save model weights
+torch.save(model.state_dict(), "weights/model_state")
 
-print('training loss:', torch.nn.MSELoss()(model(xtrain), ytrain).detach().numpy())
-# plot_prediction(model, xtrain, ytrain, mset=[0,1], title=f"Training fit (Epoch={epoch})")
-
-# print('test loss:', torch.nn.MSELoss()(model(xtest), ytest).detach().numpy())
-# plot_prediction(model, xtest, ytest, mset=[0,1], title=f"Test fit (Epoch={epoch})")
+xeval, yeval = dataset.__getitem__([0])
+fig = plot_prediction(model, xeval, yeval, title=wandb.run.name)
+fig.savefig(f"plots/{wandb.run.name}.png")
