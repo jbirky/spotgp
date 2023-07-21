@@ -1,2 +1,2 @@
 from .starspot import *
-from .nn_kernel import *
+from .nnkernel import *
