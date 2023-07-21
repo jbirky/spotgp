@@ -9,12 +9,14 @@ rc('ytick', labelsize=20)
 
 import torch
 import torch.nn as nn
+import torch.utils.data as data
 import pytorch_lightning as pl
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 __all__ = ["Feedforward",
            "Learner",
+           "CustomDataset",
            "plot_prediction"]
 
 
@@ -30,8 +32,8 @@ class Feedforward(nn.Module):
         
         super().__init__()
 
-        self.layer_in = nn.Linear(num_inputs, dim_hidden)
-        self.layer_out = nn.Linear(dim_hidden, num_outputs)
+        self.layer_in = nn.Linear(num_inputs, dim_hidden, dtype=torch.float32)
+        self.layer_out = nn.Linear(dim_hidden, num_outputs, dtype=torch.float32)
 
         num_middle = num_hidden - 1
         self.middle_layers = nn.ModuleList(
@@ -39,17 +41,6 @@ class Feedforward(nn.Module):
         )
         self.act = act
         self.dropout = dropout
-        
-        self.apply(self._init_weights)
-        
-        
-    def _init_weights(self, module):
-
-        if isinstance(module, nn.Linear):
-            module.weight.data.normal_(mean=0.0, std=0.5)
-            if module.bias is not None:
-                module.bias.data.zero_()
-
         
     def forward(self, t):
         
@@ -67,7 +58,7 @@ class Learner(pl.LightningModule):
                  lr=1e-2,
                  loss_fn=nn.MSELoss(),
                  trainloader=None,
-                 wandb=None):
+                 valloader=None):
         
         super().__init__()
 
@@ -76,8 +67,9 @@ class Learner(pl.LightningModule):
         self.lr = lr
         self.loss_fn = loss_fn
         self.trainloader = trainloader
-        self.wandb = wandb
+        self.valloader = valloader
         self.losses = []
+        self.val_losses = []
     
     def forward(self, x):
 
@@ -86,13 +78,22 @@ class Learner(pl.LightningModule):
     def training_step(self, batch, batch_idx):
 
         x, y = batch       
-        y_hat = self.model(x)
+        y_hat = self.model(x.float())
         
         # Compute Loss
         loss = self.loss_fn(y_hat, y)
-        self.losses.append(loss)
-        self.wandb.log({'loss': loss})
-        return {'loss': loss}   
+        self.losses.append(loss.item())
+        self.log("train_loss", loss)
+
+        return loss 
+    
+    def validation_step(self, batch, batch_idx):
+
+        x, y = batch
+        y_hat = self.model(x.float())
+        val_loss = self.loss_fn(y_hat, y)
+        self.val_losses.append(val_loss.item())
+        self.log("val_loss", val_loss, sync_dist=True)
     
     def configure_optimizers(self):
 
@@ -102,29 +103,54 @@ class Learner(pl.LightningModule):
 
         return self.trainloader
     
+    def val_dataloader(self):
+
+        return self.valloader
     
+
+class CustomDataset(data.Dataset):
+
+    def __init__(self, data, targets):
+        self.data = data
+        self.targets = targets
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, index):
+        # Convert data and targets to torch tensors
+        x = torch.tensor(self.data[index], dtype=torch.float32)
+        y = torch.tensor(self.targets[index], dtype=torch.float32)
+        return x, y
+
+
 def plot_prediction(model, x_train, y_train, mset=None, title=None):
 
-    nnsol = model(x_train).detach().numpy().T
-    tplot = xtrain.t()[-1].detach().numpy()
-    ytrue = y_train.detach().numpy().T
+    try:
+        nnsol = model(x_train).detach().numpy().T
+        tplot = x_train.t()[-1].detach().numpy()
+        ytrue = y_train.detach().numpy().T
+    except:
+        nnsol = model(x_train).cpu().detach().numpy().T
+        tplot = x_train.t()[-1].cpu().detach().numpy()
+        ytrue = y_train.cpu().detach().numpy().T
 
-    fig, axs = plt.subplots(y_train.shape[1], 1, figsize=(18, 5*y_train.shape[1]), sharex=True)
+    fig, ax = plt.subplots(y_train.shape[1], 1, figsize=(18, 5*y_train.shape[1]), sharex=True)
     plt.subplots_adjust(hspace=0)
-    for ii, ax in enumerate(axs):
-        if mset is not None:
-            nts = len(teval)
-            for ms in mset:
-                p = ax.plot(tplot[ms*nts:(ms+1)*nts], ytrue[ii][ms*nts:(ms+1)*nts])
-                ax.plot(tplot[ms*nts:(ms+1)*nts], nnsol[ii][ms*nts:(ms+1)*nts], linestyle='--', color=p[0].get_color(), linewidth=4, alpha=.4)
-        else:
-            p = ax.plot(tplot, ytrue[ii])
-            ax.plot(tplot, nnsol[ii], linestyle='--', color=p[0].get_color(), linewidth=4, alpha=.4)
-        ax.set_ylabel(r"$S_{%s}(t)$"%(ii), fontsize=25)
+
+    if mset is not None:
+        nts = len(tplot)
+        for ms in mset:
+            p = ax.plot(tplot[ms*nts:(ms+1)*nts], ytrue[ms*nts:(ms+1)*nts].flatten())
+            ax.plot(tplot[ms*nts:(ms+1)*nts], nnsol[ms*nts:(ms+1)*nts].flatten(), linestyle='--', color=p[0].get_color(), linewidth=4, alpha=.4)
+    else:
+        p = ax.plot(tplot, ytrue)
+        ax.plot(tplot, nnsol, linestyle='--', color=p[0].get_color(), linewidth=4, alpha=.4)
     ax.set_xlabel("Time (scaled)", fontsize=25)
+
     if title is not None:
-        axs[0].set_title(title, fontsize=25)
-    axs[-1].xaxis.set_minor_locator(AutoMinorLocator())
+        ax.set_title(title, fontsize=25)
+    ax.xaxis.set_minor_locator(AutoMinorLocator())
     plt.close()
 
     return fig
