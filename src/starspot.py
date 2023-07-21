@@ -21,7 +21,48 @@ __all__ = ["StarSpot",
 
 
 class StarSpot(object):
-    
+    """
+    Class representing a star with spots and its lightcurve.
+
+    Args:
+        peq (float): Equatorial period of the star.
+        kappa (float): Differential rotation shear.
+        inc (float): Inclination of the star.
+        nspot (int): Number of spots.
+        tem (float or list or np.ndarray, optional): Emergence timescale of the spots. Defaults to 1.
+        tdec (float or list or np.ndarray, optional): Decay timescale of the spots. Defaults to 2.
+        alpha_max (float or list or np.ndarray, optional): Maximum angular area of the spots. Defaults to 0.1.
+        fspot (float or list or np.ndarray, optional): Spot contrast fraction. Defaults to 0.
+        lspot (float or list or np.ndarray, optional): Spot lifetime. Defaults to 2.
+        long (list, optional): Range of spot longitudes. Defaults to [0, 2*np.pi].
+        lat (list, optional): Range of spot latitudes. Defaults to [0, np.pi].
+        tsim (float, optional): End simulation time. Defaults to 28.
+        tsamp (float, optional): Sampling cadence. Defaults to 0.02.
+        limb_darkening (bool, optional): Flag to enable star and spot limb darkening. Defaults to False.
+
+    Attributes:
+        tsim (float): End simulation time.
+        tsamp (float): Sampling cadence.
+        t (numpy.ndarray): Time array from 0 to tsim with tsamp cadence.
+        peq (float): Equatorial period of the star.
+        kappa (float): Differential rotation shear.
+        inc (float): Inclination of the star.
+        nspot (int): Number of spots.
+        tem (float or numpy.ndarray): Emergence timescale of the spots.
+        tdec (float or numpy.ndarray): Decay timescale of the spots.
+        alpha_max (float or numpy.ndarray): Maximum angular area of the spots.
+        fspot (float or numpy.ndarray): Spot contrast fraction.
+        lspot (float or numpy.ndarray): Spot lifetime.
+        long (list): Range of spot longitudes.
+        lat (list): Range of spot latitudes.
+        tmax (numpy.ndarray): Array of random spot emergence times.
+        limb_darkening (bool): Flag to enable star and spot limb darkening.
+        limbc (numpy.ndarray): Star limb darkening coefficients.
+        limbd (numpy.ndarray): Spot limb darkening coefficients (same as limbc by default).
+        dspots (numpy.ndarray): Flux removed from each spot in the lightcurve.
+        dlimb (float): Flux removed from stellar limb darkening.
+        flux (numpy.ndarray): Total remaining flux in the lightcurve.
+    """
     def __init__(self, peq, kappa, inc, nspot, 
                  tem=1, 
                  tdec=2, 
@@ -170,12 +211,31 @@ class StarSpot(object):
         
         
 def zeta(x):
+    """
+    Calculate the function zeta(x) for spot limb darkening.
+
+    Args:
+        x (float or numpy.ndarray): Input value(s).
+
+    Returns:
+        float or numpy.ndarray: The value of zeta(x).
+    """
 
     return np.cos(x) * np.heaviside(x,1) * np.heaviside(np.pi/2 - x,1) + np.heaviside(-x,1)
     
 
 def generate_sims(theta, nsim=1e3, **kwargs):
-    
+    """
+    Generate synthetic lightcurves for a given set of parameters.
+
+    Args:
+        theta (tuple): Tuple containing peq, kappa, inc, and nspot parameters.
+        nsim (int, optional): Number of simulations. Defaults to 1000.
+        **kwargs: Additional arguments for the StarSpot class.
+
+    Returns:
+        numpy.ndarray: Array of synthetic lightcurves.
+    """
     peq, kappa, inc, nspot = theta
     
     fluxes = []
@@ -188,7 +248,18 @@ def generate_sims(theta, nsim=1e3, **kwargs):
 
 
 def generate_training_sample(thetas, nsim=int(1e3), ncore=10, **kwargs):
+    """
+    Generate a training sample of covariance matrices for a set of parameters.
 
+    Args:
+        thetas (numpy.ndarray): Array of parameter sets.
+        nsim (int, optional): Number of simulations per parameter set. Defaults to 1000.
+        ncore (int, optional): Number of CPU cores to use for parallel processing. Defaults to 10.
+        **kwargs: Additional arguments for the generate_sims function.
+
+    Returns:
+        numpy.ndarray: Array of covariance matrices.
+    """
     gen = partial(generate_sims, nsim=nsim, **kwargs)
     with mp.Pool(ncore) as p:
         covs = []
@@ -201,7 +272,16 @@ def generate_training_sample(thetas, nsim=int(1e3), ncore=10, **kwargs):
 
 
 def plot_lightcurve(sp, show_spots=True):
+    """
+    Plot the lightcurve.
 
+    Args:
+        sp (StarSpot): The StarSpot object containing the lightcurve.
+        show_spots (bool, optional): Whether to show individual spots. Defaults to True.
+
+    Returns:
+        matplotlib.figure.Figure: The figure containing the lightcurve plot.
+    """
     flux = sp.flux + sp.dlimb
     fig = plt.figure(figsize=[16,6])
     if show_spots == True:
@@ -218,7 +298,15 @@ def plot_lightcurve(sp, show_spots=True):
 
 
 def plot_covariance(fluxes):
-    
+    """
+    Plot the covariance matrix.
+
+    Args:
+        fluxes (numpy.ndarray): Array of fluxes.
+
+    Returns:
+        matplotlib.figure.Figure: The figure containing the covariance matrix plot.
+    """
     K = np.cov(fluxes.T)
     fig, ax = plt.subplots(figsize=[12,12])
     pl = ax.matshow(K, cmap='binary_r', interpolation='none')
