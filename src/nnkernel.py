@@ -129,6 +129,7 @@ class Learner(pl.LightningModule):
     def __init__(self, model:nn.Module,
                  optimizer=torch.optim.Adam,
                  lr=1e-3,
+                 scheduler=None,
                  loss_fn=nn.MSELoss(),
                  trainloader=None,
                  valloader=None):
@@ -138,6 +139,7 @@ class Learner(pl.LightningModule):
         self.model = model
         self.optimizer = optimizer
         self.lr = lr
+        self.scheduler = scheduler
         self.loss_fn = loss_fn
         self.trainloader = trainloader
         self.valloader = valloader
@@ -176,6 +178,10 @@ class Learner(pl.LightningModule):
         loss = self.loss_fn(y_hat, y)
         self.losses.append(loss.item())
         self.log("train_loss", loss)
+
+        # Step the scheduler after each training step
+        if self.scheduler is not None:
+            self.scheduler.step(loss)
 
         return loss 
     
