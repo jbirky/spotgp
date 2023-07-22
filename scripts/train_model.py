@@ -1,19 +1,37 @@
 import numpy as np
 import torch
 import wandb
+import random
 from torch.utils.data import DataLoader, random_split
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.strategies.ddp import DDPStrategy
 
+import matplotlib.pyplot as plt
+from matplotlib.ticker import AutoMinorLocator
+from matplotlib import rc
+rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
+rc('text', usetex=True)
+rc('xtick', labelsize=20)
+rc('ytick', labelsize=20)
+
 import os
 import sys
 sys.path.append("../src")
-from nnkernel import Feedforward, Learner, CustomDataset, plot_prediction
+from nnkernel import *
 
 api_key = os.environ.get("WANDB_API_KEY")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("device:", device)
+
+# import argparse
+# parser = argparse.ArgumentParser()
+# parser.add_argument("--reload", dest="reload", action='store', type=bool, default=False)
+# parser.add_argument("epochs", type=int, required=False, default=10)
+# parser.add_argument("learning_rate", type=float, required=False, default=1e-3)
+# args = parser.parse_args()
+# print(args.reload)
+reload = True
 
 # ====================================================
 
@@ -25,18 +43,21 @@ dataset = CustomDataset(train_scaled["X"], train_scaled["Y"])
 config = {
   "num_inputs": train_scaled["X"].shape[1],
   "num_outputs": train_scaled["Y"].shape[1],
+  "ncovs": 1000,
+  "ntlags": 1400,
   "train_fraction": 0.8,
-  "learning_rate": 0.001,
-  "epochs": 1,
-  "batch_size": 256,
+  "epochs": 50,
+  "batch_size": 1024,
   "num_hidden": 3,
   "dim_hidden": 32,
   "activation": torch.nn.Tanh(),
   "dropout_rate": 0.0, 
   "loss_criteria": torch.nn.MSELoss(),
   "optimizer": torch.optim.Adam,
+  "learning_rate": 0.01,
   "device": device,
   "ncpu": 32,
+  "save_weights": "weights/model_state",
 }
 
 # Initialize wandb log
@@ -69,6 +90,10 @@ model = Feedforward(config["num_inputs"],
                     dropout=torch.nn.Dropout(config["dropout_rate"]))
 model.to(device)
 
+if (reload == True) and (os.path.isfile(config["save_weights"])):
+  print(f"Reloading model: {config['save_weights']}")
+  model.load_state_dict(torch.load(config["save_weights"]))
+
 # ====================================================
 
 # Initialize lightning learner module
@@ -84,12 +109,30 @@ trainer = Trainer(max_epochs=int(config["epochs"]),
                   accelerator=device.type,
                   devices=torch.cuda.device_count(),
                   strategy=DDPStrategy(find_unused_parameters=False),
-                  logger=WandbLogger())
+                  logger=WandbLogger(wandb_run=wandb.run))
 trainer.fit(learn)
 
 # save model weights
-torch.save(model.state_dict(), "weights/model_state")
+torch.save(model.state_dict(), config["save_weights"])
 
-xeval, yeval = dataset.__getitem__([0])
-fig = plot_prediction(model, xeval, yeval, title=wandb.run.name)
-fig.savefig(f"plots/{wandb.run.name}.png")
+# ====================================================
+
+nplots = 5
+plot_ids = random.sample(list(np.arange(0,config["ncovs"])), nplots)
+
+fig, ax = plt.subplots(nplots, 1, figsize=(18, 5*nplots), sharex=True)
+plt.subplots_adjust(hspace=0)
+
+for ii in range(nplots):
+  idx = np.array(np.arange(config["ntlags"]*plot_ids[ii], (config["ntlags"]+1)*plot_ids[ii]), dtype=int)
+  xeval, yeval = dataset.__getitem__(idx)
+  tplot, ytrue, nnsol = predict_autocovariance(model, xeval, yeval)
+
+  p = ax[ii].plot(tplot, ytrue)
+  ax[ii].plot(tplot, nnsol, linestyle='--', color=p[0].get_color(), linewidth=4, alpha=.4)
+  ax[ii].set_xlim(min(tplot), max(tplot))
+  ax[ii].set_xlabel("Time (scaled)", fontsize=25)
+
+ax[-1].xaxis.set_minor_locator(AutoMinorLocator())
+
+fig.savefig(f"plots/{wandb.run.name}.png", bbox_inches="tight")
