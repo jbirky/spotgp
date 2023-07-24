@@ -85,6 +85,7 @@ class StarSpot(object):
         self.peq = peq              # equitorial period
         self.kappa = kappa          # differential rotation shear
         self.inc = inc              # inclination
+        self.inc_deg = inc * 180/np.pi
         self.nspot = int(nspot)     # number of spots
 
         # spot properties
@@ -276,7 +277,7 @@ def generate_training_sample(thetas, nsim=int(1e3), ncore=10, **kwargs):
     return np.array(covs)
 
 
-def plot_lightcurve(sp, show_spots=True):
+def plot_lightcurve(sp, show_spots=True, show_title=True):
     """
     Plot the lightcurve.
 
@@ -293,6 +294,19 @@ def plot_lightcurve(sp, show_spots=True):
         for ii in range(sp.nspot):
             plt.plot(sp.t, 1-sp.dspots[ii], alpha=0.5)
     plt.plot(sp.t, flux, color="k")
+
+    if show_title == True:
+        title = r"$P_{\rm eq}$={:.1f} d, ".format(sp.peq)
+        title += r"$\kappa$={:.2f}, ".format(sp.kappa)
+        title += r"$i$={:.0f}, ".format(sp.inc)
+        title += r"nspot={:.0f}, ".format(sp.nspot)
+        title += r"$\alpha_{\rm max}$={:.1f}, ".format(sp.alpha_max)
+        title += r"$l_{\rm spot}$={:.2f}, ".format(sp.lspot)
+        title += r"$\tau_{\rm em}$={:.2f}, ".format(sp.tem)
+        title += r"$\tau_{\rm dec}$={:.2f}".format(sp.tdec)
+        plt.title(title, fontsize=25)
+    plt.xlabel("Time [days]", fontsize=24)
+    plt.ylabel("Flux", fontsize=24)
     plt.ylim(min(flux)-2e-3, 1+1e-3)
     plt.xlim(sp.t[0], sp.t[-1])
     plt.minorticks_on()
