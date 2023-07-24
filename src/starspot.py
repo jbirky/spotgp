@@ -247,6 +247,11 @@ def generate_sims(theta, nsim=1e3, **kwargs):
     return np.array(fluxes)
 
 
+def avg_covariance_tlag(K):
+
+    return np.array([np.mean(np.diagonal(K, offset=ti)) for ti in range(len(K))])
+
+
 def generate_training_sample(thetas, nsim=int(1e3), ncore=10, **kwargs):
     """
     Generate a training sample of covariance matrices for a set of parameters.
@@ -265,8 +270,7 @@ def generate_training_sample(thetas, nsim=int(1e3), ncore=10, **kwargs):
         covs = []
         for fluxes in tqdm.tqdm(p.imap(func=gen, iterable=thetas), total=len(thetas)):
             K = np.cov(fluxes.T)
-            avg_cov = np.array([np.mean(np.diagonal(K, offset=ti)) for ti in range(len(K))])
-            covs.append(avg_cov)
+            covs.append(avg_covariance_tlag(K))
         
     return np.array(covs)
 
