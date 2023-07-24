@@ -1,7 +1,9 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.utils.data as data
 import pytorch_lightning as pl
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -41,10 +43,10 @@ class Feedforward(nn.Module):
     def __init__(self, 
                  num_inputs, 
                  num_outputs, 
-                 num_hidden=5, 
-                 dim_hidden=128, 
+                 num_hidden=3, 
+                 dim_hidden=32, 
                  act=nn.Tanh(),
-                 dropout=torch.nn.Dropout(.10)):
+                 dropout=torch.nn.Dropout(0.)):
         
         super().__init__()
 
@@ -129,7 +131,6 @@ class Learner(pl.LightningModule):
     def __init__(self, model:nn.Module,
                  optimizer=torch.optim.Adam,
                  lr=1e-3,
-                 scheduler=None,
                  loss_fn=nn.MSELoss(),
                  trainloader=None,
                  valloader=None):
@@ -139,7 +140,6 @@ class Learner(pl.LightningModule):
         self.model = model
         self.optimizer = optimizer
         self.lr = lr
-        self.scheduler = scheduler
         self.loss_fn = loss_fn
         self.trainloader = trainloader
         self.valloader = valloader
@@ -179,10 +179,6 @@ class Learner(pl.LightningModule):
         self.losses.append(loss.item())
         self.log("train_loss", loss)
 
-        # Step the scheduler after each training step
-        if self.scheduler is not None:
-            self.scheduler.step(loss)
-
         return loss 
     
     def validation_step(self, batch, batch_idx):
@@ -198,11 +194,24 @@ class Learner(pl.LightningModule):
         y_hat = self.model(x.float())
         val_loss = self.loss_fn(y_hat, y)
         self.val_losses.append(val_loss.item())
-        self.log("val_loss", val_loss, sync_dist=True)
+        self.log("val_loss", val_loss, prog_bar=True, sync_dist=True)
+
+        # Access the learning rate from the optimizer
+        lr = self.optimizers().param_groups[0]['lr']
+        
+        # Log the learning rate to Wandb
+        self.log("lr", lr, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
     
     def configure_optimizers(self):
 
-        return self.optimizer(self.model.parameters(), lr=self.lr)
+        optimizer = self.optimizer(self.model.parameters(), lr=self.lr)
+        scheduler = ReduceLROnPlateau(optimizer, mode="min", patience=10, factor=0.5, min_lr=1e-4)
+
+        config = {"optimizer": optimizer, 
+                  "lr_scheduler": scheduler, 
+                  "monitor": "val_loss"}
+
+        return config
 
     def train_dataloader(self):
 
@@ -236,6 +245,7 @@ class CustomDataset(data.Dataset):
     def __init__(self, data, targets):
         self.data = data
         self.targets = targets
+        self.dtype = type(data)
 
     def __len__(self):
         return len(self.data)
@@ -253,12 +263,24 @@ class CustomDataset(data.Dataset):
 
         """
         # Convert data and targets to torch tensors
-        x = torch.tensor(self.data[index], dtype=torch.float32)
-        y = torch.tensor(self.targets[index], dtype=torch.float32)
+        if self.dtype == np.ndarray:
+            x = torch.tensor(self.data[index], dtype=torch.float32)
+            y = torch.tensor(self.targets[index], dtype=torch.float32)
+        elif self.dtype == torch.Tensor:
+            x = self.data[index].clone().detach().to(torch.float32)
+            y = self.targets[index].clone().detach().to(torch.float32)
+        else:
+            raise TypeError(f"Invalid datatype {self.dtype} used in CustomDataset.")
+
         return x, y
 
 
 def predict_autocovariance(model, x_train, y_train):
+
+    # make sure train arrays are on the same device as model
+    model_device = next(model.parameters()).device
+    x_train = x_train.to(model_device)
+    y_train = y_train.to(model_device)
 
     try:
         nnsol = model(x_train).detach().numpy().T.flatten()
