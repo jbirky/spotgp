@@ -3,7 +3,6 @@ import pandas as pd
 import os
 import sys
 sys.path.append("../src")
-from sklearn.decomposition import PCA
 import starspot
 from preprocess import format_data
 
@@ -11,21 +10,22 @@ np.random.seed(10)
 os.nice(10)
 
 savedir = "../training"
-ntrain = int(1e3)       # number of training samples
 nsim = int(1e4)         # number of sims averaged for each training sample
-ncore = 48
 tsim = 28
 tsamp = 0.02
 tarr = np.arange(0, tsim, tsamp)
+feat = ["peq", "kappa", "inc", "nspot"]
 
-# generate table of random parameters
-dtable = {}
-dtable["peq"] = np.random.uniform(1.0, 10.0, ntrain)
-dtable["kappa"] = np.random.uniform(0., 0.7, ntrain)
-dtable["inc"] = np.random.uniform(0., np.pi/2, ntrain)
-dtable["nspot"] = np.array(np.round(np.random.uniform(1, 20, ntrain), 0), dtype=int)
-feat_df = pd.DataFrame(data=dtable)
-thetas = feat_df.values
+thetas = np.array([
+    [1.0, 0.0, np.pi/2, 10],
+    [10.0, 0.0, np.pi/2, 10],
+    [5.0, 0.0, np.pi/2, 10],
+    [5.0, 0.5, np.pi/2, 10],
+    [5.0, 0.0, np.pi/6, 10],
+    [5.0, 0.0, np.pi/4, 10],
+    [5.0, 0.0, np.pi/2, 5],
+    [5.0, 0.0, np.pi/2, 15],
+])
 
 # compute covariances
 covs = starspot.generate_training_sample(thetas,  
@@ -39,18 +39,13 @@ covs = starspot.generate_training_sample(thetas,
                                          tsim=tsim, 
                                          tsamp=tsamp,
                                          limb_darkening=True,
-                                         ncore=ncore)
-
-# run PCA on covariances
-pca = PCA(n_components=5)
-pc = pca.fit_transform(covs)
-pca_df = pd.DataFrame(data=pc, columns=["pc1", "pc2", "pc3", "pc4", "pc5"])
-df = pd.concat([feat_df, pca_df], axis=1)
+                                         ncore=len(thetas))
 
 # format data into training matrices
-Xtrain, Ytrain = format_data(tarr, thetas, covs, len(dtable.keys()))
+Xtrain, Ytrain = format_data(tarr, thetas, covs, len(feat))
 
 # save training products
-df.to_csv(os.path.join(savedir, "train_features.csv"))
-np.savez(os.path.join(savedir, "train_covariances.npz"), covs=covs)
-np.savez(os.path.join(savedir, "train_data.npz"), tarr=tarr, Xtrain=Xtrain, Ytrain=Ytrain)
+df = pd.DataFrame(data=thetas, columns=feat)
+df.to_csv(os.path.join(savedir, "vis_features.csv"))
+np.savez(os.path.join(savedir, "vis_covariances.npz"), covs=covs)
+np.savez(os.path.join(savedir, "vis_data.npz"), tarr=tarr, Xtrain=Xtrain, Ytrain=Ytrain)
