@@ -15,6 +15,7 @@ rc('ytick', labelsize=20)
 
 __all__ = ["StarSpot",
            "generate_sims",
+           "avg_covariance_tlag",
            "generate_training_sample",
            "plot_lightcurve",
            "plot_covariance"]
@@ -248,7 +249,7 @@ def generate_sims(theta, nsim=1e3, **kwargs):
 
 
 def avg_covariance_tlag(K):
-
+    
     return np.array([np.mean(np.diagonal(K, offset=ti)) for ti in range(len(K))])
 
 
