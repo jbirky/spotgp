@@ -301,7 +301,7 @@ def plot_lightcurve(sp, show_spots=True, show_title=True):
         title += r"$i$={:.0f}, ".format(sp.inc)
         title += r"nspot={:.0f}, ".format(sp.nspot)
         title += r"$\alpha_{{\rm max}}$={:.1f}, ".format(sp.alpha_max)
-        title += r"$l_{{\}rm spot}}$={:.2f}, ".format(sp.lspot)
+        title += r"$l_{{\rm spot}}$={:.2f}, ".format(sp.lspot)
         title += r"$\tau_{{\rm em}}$={:.2f}, ".format(sp.tem)
         title += r"$\tau_{{\rm dec}}$={:.2f}".format(sp.tdec)
         plt.title(title, fontsize=25)
