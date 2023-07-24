@@ -1,56 +1,53 @@
 import numpy as np
+import wandb
 import torch
-import random
 from torch.utils.data import DataLoader, random_split
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.strategies.ddp import DDPStrategy
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from pytorch_lightning.callbacks import RichProgressBar
 
-import matplotlib.pyplot as plt
-from matplotlib.ticker import AutoMinorLocator
-from matplotlib import rc
-rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
-rc('text', usetex=True)
-rc('xtick', labelsize=20)
-rc('ytick', labelsize=20)
-
+import os
 import sys
 sys.path.append("../src")
 from nnkernel import *
+from preprocess import PreprocessData
+from callbacks import DemoPlotCallback
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("device:", device)
 
-# import argparse
-# parser = argparse.ArgumentParser()
-# parser.add_argument("--reload", dest="reload", action='store', type=bool, default=False)
-# args = parser.parse_args()
-# print(args.reload)
 reload = False
 
 # ====================================================
 
 # Load training dataset
-train_scaled = np.load("../training/test_scaled.npz")
-dataset = CustomDataset(train_scaled["X"], train_scaled["Y"])
+scaler = PreprocessData(data_file="../training/train_data.npz")
+xtrain, ytrain = scaler.xtrain, scaler.ytrain
+dataset = CustomDataset(xtrain, ytrain)
+
+# Load demo dataset for visualization
+vis = PreprocessData(data_file="../training/vis_data.npz")
+xvis, yvis = scaler.scale_data_tensor(vis.Xtrain, vis.Ytrain)
+demo = CustomDataset(xvis, yvis)
+tarr = vis.tarr
 
 # Training configuration
 config = {
-  "num_inputs": train_scaled["X"].shape[1],
-  "num_outputs": train_scaled["Y"].shape[1],
+  "num_inputs": xtrain.shape[1],
+  "num_outputs": ytrain.shape[1],
   "ncovs": 1000,
   "ntlags": 1400,
   "train_fraction": 0.8,
-  "epochs": 100,
-  "batch_size": 128,
-  "num_hidden": 3,
+  "epochs": 10,
+  "batch_size": 512,
+  "num_hidden": 4,
   "dim_hidden": 32,
   "activation": torch.nn.Tanh(),
   "dropout_rate": 0.0, 
   "loss_criteria": torch.nn.MSELoss(),
   "optimizer": torch.optim.Adam,
-  "learning_rate": 0.1,
+  "learning_rate": 0.01,
   "device": device,
   "ncpu": 32,
   "save_weights": "weights/model_state",
@@ -84,57 +81,41 @@ model = Feedforward(config["num_inputs"],
                     dropout=torch.nn.Dropout(config["dropout_rate"]))
 model.to(device)
 
-# if (reload == True) and (os.path.isfile(config["save_weights"])):
-#   print(f"Reloading model: {config['save_weights']}")
-#   model.load_state_dict(torch.load(config["save_weights"]))
-
 # ====================================================
-
-# Learning rate scheduler
-optimizer = config["optimizer"](model.parameters(), lr=config["learning_rate"])
-scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=10, verbose=True)
 
 # Initialize lightning learner module
 learn = Learner(model, 
                 optimizer=config["optimizer"], 
                 lr=config["learning_rate"],
-                scheduler=scheduler,
                 loss_fn=config["loss_criteria"],
                 trainloader=train_loader,
                 valloader=val_loader)
  
 # Initialize wandb logger
-wandb_logger = WandbLogger(project="starspot", config=config)
+wandb.login()
+wandb_logger = WandbLogger(project="starspot", config=config, log_model=True)
+log_name = str(wandb_logger.experiment.name)
+
+# Custom callbacks
+demo_plots_callback = DemoPlotCallback(tarr=tarr, 
+                                       nfeat=config["num_inputs"] - 1,
+                                       scaler=scaler,
+                                       demo=demo,
+                                       freq=1,
+                                       output_dir="gifs/",
+                                       save_name=log_name,
+                                       ylim=[-2e-5, 5e-5])
 
 # Train model
 trainer = Trainer(max_epochs=int(config["epochs"]),
                   accelerator=device.type,
                   devices=torch.cuda.device_count(),
                   strategy=DDPStrategy(find_unused_parameters=False),
-                  logger=wandb_logger)
+                  logger=wandb_logger,
+                  callbacks=[RichProgressBar(), demo_plots_callback])
 trainer.fit(learn)
+
+wandb_logger.experiment.finish()
 
 # save model weights
 torch.save(model.state_dict(), config["save_weights"])
-
-# ====================================================
-
-nplots = 10
-plot_ids = random.sample(list(np.arange(0,config["ncovs"])), nplots)
-
-fig, ax = plt.subplots(nplots, 1, figsize=(12, 4*nplots), sharex=True)
-plt.subplots_adjust(hspace=0)
-
-for ii in range(nplots):
-  idx = np.array(np.arange(config["ntlags"]*plot_ids[ii], config["ntlags"]*(plot_ids[ii]+1)), dtype=int)
-  xeval, yeval = dataset.__getitem__(idx)
-  tplot, ytrue, nnsol = predict_autocovariance(model, xeval, yeval)
-
-  ax[ii].plot(tplot, ytrue, linestyle='--', color="k")
-  ax[ii].plot(tplot, nnsol, color="r", linewidth=4, alpha=.4)
-  ax[ii].set_xlim(min(tplot), max(tplot))
-  ax[ii].set_xlabel("Time (scaled)", fontsize=25)
-
-ax[-1].xaxis.set_minor_locator(AutoMinorLocator())
-plt.close()
-fig.savefig(f"plots/{wandb_logger.name}_{wandb_logger.experiment.name}.png", bbox_inches="tight")
