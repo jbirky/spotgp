@@ -298,7 +298,7 @@ def plot_lightcurve(sp, show_spots=True, show_title=True):
     if show_title == True:
         title = r"$P_{{\rm eq}}$={:.1f} d, ".format(sp.peq)
         title += r"$\kappa$={:.2f}, ".format(sp.kappa)
-        title += r"$i$={:.0f}, ".format(sp.inc)
+        title += r"$i$={:.0f} deg, ".format(sp.inc_deg)
         title += r"nspot={:.0f}, ".format(sp.nspot)
         title += r"$\alpha_{{\rm max}}$={:.1f}, ".format(sp.alpha_max)
         title += r"$l_{{\rm spot}}$={:.2f}, ".format(sp.lspot)
