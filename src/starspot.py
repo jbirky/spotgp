@@ -89,11 +89,12 @@ class StarSpot(object):
         self.nspot = int(nspot)     # number of spots
 
         # spot properties
-        self.tem = self.assign_property(tem)              # emergence timescale
-        self.tdec = self.assign_property(tdec)            # decay timescale
-        self.alpha_max = self.assign_property(alpha_max)  # max angular area
-        self.fspot = self.assign_property(fspot)          # spot contrast fraction
-        self.lspot = self.assign_property(lspot)          # spot lifetime
+        self.tem = tem              # emergence timescale
+        self.tdec = tdec            # decay timescale
+        self.alpha_max = alpha_max  # max angular area
+        self.fspot = fspot          # spot contrast fraction
+        self.lspot = lspot          # spot lifetime
+        
         self.long = self.assign_property(long)            # spot longitude
         self.lat = self.assign_property(lat)              # spot latitude
         self.tmax = np.random.uniform(0, self.tsim, self.nspot)

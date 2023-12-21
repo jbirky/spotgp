@@ -164,3 +164,44 @@ class RotationGP(object):
         plt.close()
 
         return fig
+    
+    def plot_autocovariance_interactive(self):
+        """
+        Plot the autocovariance function with interactive sliders.
+
+        Returns:
+        - fig: matplotlib Figure object
+        """
+        import ipywidgets as widgets
+
+        def update_plot(peq, kappa, inc, nspot, lspot, tau, alpha_max):
+            hparam = [peq, kappa, inc, nspot, lspot, tau, alpha_max]
+            autocov = compute_autocovariance(hparam, tsim=self.tsim, tsamp=self.tsamp, nsim=self.nsim)
+            self.kernel = interpolate.interp1d(self.tarr, autocov)
+
+            fig.clear()
+            ax = fig.add_subplot(111)
+            ax.plot(self.tarr, autocov)
+            ax.plot(self.tarr, self.kernel(self.tarr), linestyle="--")
+            for ii in range(int(self.tsim / peq)+1):
+                ax.axvline(ii*peq, color="k", alpha=0.2)
+            ax.set_xlabel("Time lag", fontsize=25)
+            ax.set_ylabel("Autocovariance", fontsize=25)
+            ax.set_xlim(min(self.tarr), max(self.tarr))
+            ax.minorticks_on()
+
+        peq_slider = widgets.FloatSlider(value=self.peq, min=0, max=10, step=0.1, description="peq")
+        kappa_slider = widgets.FloatSlider(value=self.kappa, min=0, max=10, step=0.1, description="kappa")
+        inc_slider = widgets.FloatSlider(value=self.inc, min=0, max=10, step=0.1, description="inc")
+        nspot_slider = widgets.FloatSlider(value=self.nspot, min=0, max=10, step=0.1, description="nspot")
+        lspot_slider = widgets.FloatSlider(value=self.lspot, min=0, max=10, step=0.1, description="lspot")
+        tau_slider = widgets.FloatSlider(value=self.tau, min=0, max=10, step=0.1, description="tau")
+        alpha_max_slider = widgets.FloatSlider(value=self.alpha_max, min=0, max=10, step=0.1, description="alpha_max")
+
+        widgets.interactive(update_plot, peq=peq_slider, kappa=kappa_slider, inc=inc_slider,
+                            nspot=nspot_slider, lspot=lspot_slider, tau=tau_slider, alpha_max=alpha_max_slider)
+
+        fig = plt.figure(figsize=[12, 6])
+        update_plot(self.peq, self.kappa, self.inc, self.nspot, self.lspot, self.tau, self.alpha_max)
+
+        return fig
