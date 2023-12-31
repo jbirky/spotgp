@@ -40,27 +40,23 @@ def format_title(variable_dict, sig_fig=4):
 
 class TrainKernel(object):
 
-    def __init__(self, hyperparam, fit_ft=False):
+    def __init__(self, hyperparam, tsim=1000, tsamp=0.1, nsim=5e2, fit_ft=False):
 
         self.hyperparam = hyperparam
 
         self.peq = hyperparam["peq"]
         self.omega = (2*np.pi) / self.peq
 
-        tsim = 1000
-        tsamp = 0.1
-        tarr = np.arange(0,tsim,tsamp)
+        self.gp = rk.RotationGP(hyperparam.values(), tsim=tsim, tsamp=tsamp, nsim=nsim)
 
-        self.gp = rk.RotationGP(hyperparam.values(), tsim=tsim, tsamp=tsamp, nsim=5e2)
-
-        tfine = np.arange(0,max(tarr),1e-3)
-        autocov = gp.kernel(tfine)
-        autocor = autocov / np.var(gp.fluxes)
+        tfine = np.arange(0,max(self.gp.tarr),1e-3)
+        autocov = self.gp.kernel(tfine)
+        autocor = autocov / np.var(self.gp.fluxes)
 
         idx = np.where(tfine < 100)
 
         self.ydata, self.xdata = autocor[idx], tfine[idx]
-        self.freq, self.power = rk.compute_ft(ydata, xdata)
+        self.freq, self.power = rk.compute_ft(self.ydata, self.xdata)
 
         # Options 
         self.fit_ft = fit_ft
@@ -215,14 +211,25 @@ class TrainKernel(object):
     def fit_model(self, pinit):
         
         ptrend = self.fit_kernel_trend(p0=get_p0(pinit, keys_trend))
-        pcos = self.fit_kernel_cos(ptrendp0=get_p0(pinit, keys_cos))
+        pcos = self.fit_kernel_cos(ptrend, p0=get_p0(pinit, keys_cos))
         psin = self.fit_kernel_sin(ptrend, pcos, p0=get_p0(pinit, keys_sin))  
         psin_cos = self.fit_kernel_sin_cos(ptrend, p0=np.append(psin, pcos))
         pcos2 = self.fit_kernel_cos_second(ptrend, pcos, p0=get_p0(pinit, keys_cos2))
-        
-        return ptrend, psin_cos, pcos2
 
-    def predict(self, ptrend, psin_cos, pcos2):
+        res_trend = dict(zip(keys_trend, ptrend))
+        res_sin_cos = dict(zip(keys_sin + keys_cos, psin_cos))
+        res_cos2 = dict(zip(keys_cos2, pcos2))
+        
+        plist = [res_trend, res_sin_cos, res_cos2]
+        pdict = {**res_trend, **res_sin_cos, **res_cos2}
+    
+        return plist, pdict
+
+    def predict(self, pfit):
+
+        ptrend = get_p0(pfit, keys_trend)
+        psin_cos = get_p0(pfit, keys_sin + keys_cos)
+        pcos2 = get_p0(pfit, keys_cos2)
         
         ytrend = self.kernel_trend(self.xdata, ptrend)
         ysin_cos = self.kernel_sin_cos(self.xdata, psin_cos)
@@ -248,8 +255,12 @@ class TrainKernel(object):
 
         freq_pred, power_pred = rk.compute_ft(ypred, self.xdata)
         
-        axes[1].plot(self.freq, self.power, color="k")
-        axes[1].plot(freq_pred, power_pred, color="r", linewidth=3, alpha=0.5)
+        if log_power == True:
+            axes[1].plot(self.freq, np.log(self.power), color="k")
+            axes[1].plot(freq_pred, np.log(power_pred), color="r", linewidth=3, alpha=0.5)
+        else:
+            axes[1].plot(self.freq, self.power, color="k")
+            axes[1].plot(freq_pred, power_pred, color="r", linewidth=3, alpha=0.5)
         axes[1].axvline(0, color="k", linestyle="--", alpha=0.3)
         axes[1].axvline(-self.omega, color="k", linestyle="--", alpha=0.3)
         axes[1].axvline(self.omega, color="k", linestyle="--", alpha=0.3)
