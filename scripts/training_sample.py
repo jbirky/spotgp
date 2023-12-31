@@ -14,4 +14,4 @@ tsample["tau"] = np.random.uniform(0, 100, nsample)
 tsample["alpha_max"] = np.exp(np.random.uniform(-3, 0, nsample))
 
 train_sample = pd.DataFrame(data=tsample)
-train_sample.to_csv("../training/training_parameters.csv")
+train_sample.to_csv("../training/training_parameters.csv", index=False)
