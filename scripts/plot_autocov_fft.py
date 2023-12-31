@@ -12,6 +12,7 @@ rc('ytick', labelsize=24)
 import sys
 sys.path.append("../src")
 import starspot
+from rotation_kernel import compute_ft
 
 
 def compute_cov_mat(theta, tsim=50, tsamp=0.1, nsim=1e3):
@@ -26,24 +27,17 @@ def compute_cov(theta, tsim=50, tsamp=0.1, nsim=1e3):
     return avg_cov
 
 
-def compute_ft(time_series):
-    ft = np.fft.fft(time_series)
-    freq = np.fft.fftfreq(len(time_series))
-    order = np.argsort(freq)
-    return freq[order], ft[order]
-
-
 def plot_autocov(theta_var, tarr, index=0, tsim=100, tsamp=0.01, nsim=1e3, var="var"):
 
     autocov = np.empty((len(theta_var), len(tarr)))
     for ii, tt in enumerate(theta_var):
         autocov[ii] = compute_cov(tt, tsim=tsim, tsamp=tsamp, nsim=nsim)
 
-    peq = theta_var[0][0]
+    peq = theta_var[0][0] 
 
     fig1 = plt.figure(figsize=[12,6])
     for ii, tt in enumerate(theta_var):
-        plt.plot(tarr, autocov[ii], label=r"$%s=%s$"%(var, tt[index]))
+        plt.plot(tarr, autocov[ii], label="$%s=%s$"%(var, tt[index]))
     for ii in range(int(tsim / peq)+1):
         plt.axvline(ii*peq, color="k", alpha=0.2)
     plt.xlabel("Time lag", fontsize=25)
@@ -57,7 +51,7 @@ def plot_autocov(theta_var, tarr, index=0, tsim=100, tsamp=0.01, nsim=1e3, var="
     fig2 = plt.figure(figsize=[12,6])
     for ii, tt in enumerate(theta_var):
         freq, ft = compute_ft(autocov[ii])
-        plt.plot(freq * 2*np.pi / tsamp, ft, label=r"$%s=%s$"%(var, tt[index]))
+        plt.plot(freq * 2*np.pi / tsamp, ft, label="$%s=%s$"%(var, tt[index]))
 
     plt.axvline(2*np.pi / peq, color="k", linestyle="--")
     plt.axvline(-2*np.pi / peq, color="k", linestyle="--")
@@ -76,11 +70,11 @@ def plot_autocov(theta_var, tarr, index=0, tsim=100, tsamp=0.01, nsim=1e3, var="
 
 # ====================================================
 nsim = 1e3
-tsim = 100
+tsim = 200
 tsamp = 0.01
 tarr = np.arange(0,tsim,tsamp)
 
-labels = ["P_{eq}", "\kappa", "inc", "nspot", "lspot", "\tau", "\alpha"]
+labels = ["Peq", "kappa", "inc", "Nspot", "lspot", "tau", "alpha"]
 
 theta_base = np.array([
     [3.0, 0.0, np.pi/2, 10, 20, 1., 1.],
@@ -101,7 +95,8 @@ var_vals = np.array([peq_var, kappa_var, inc_var, nspot_var, lspot_var, tau_var,
 for ii in range(len(var_vals)):
     print(labels[ii])
     theta_var = theta_base.copy()
-    theta_var[:,0] = var_vals[ii]
+    theta_var[:,ii] = var_vals[ii]
+    print(theta_var)
 
     fig1, fig2, autocov, freq, ft = plot_autocov(theta_var, tarr, index=ii, tsim=tsim, tsamp=tsamp, nsim=1e3, var=labels[ii])
 
