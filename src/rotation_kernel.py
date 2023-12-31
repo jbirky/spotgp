@@ -13,7 +13,10 @@ rc('ytick', labelsize=24)
 
 import starspot
 
-__all__ = ["RotationGP", "compute_covariance_matrix", "compute_autocovariance"]
+__all__ = ["RotationGP", 
+           "compute_covariance_matrix", 
+           "compute_autocovariance",
+           "compute_ft"]
 
 
 def compute_covariance_matrix(theta, tsim=50, tsamp=0.05, nsim=1e3):
@@ -31,7 +34,22 @@ def compute_autocovariance(theta, tsim=50, tsamp=0.1, nsim=1e3):
     fluxes = compute_covariance_matrix(theta, tsim=tsim, tsamp=tsamp, nsim=nsim)
     avg_cov = starspot.avg_covariance_tlag(np.cov(fluxes.T))
 
-    return avg_cov
+    return avg_cov, fluxes
+
+def compute_autocorrelation(theta, tsim=50, tsamp=0.1, nsim=1e3):
+
+    fluxes = compute_covariance_matrix(theta, tsim=tsim, tsamp=tsamp, nsim=nsim)
+    avg_cov = starspot.avg_covariance_tlag(np.cov(fluxes.T))
+    avg_cor = avg_cov / np.var(fluxes.T)
+
+    return avg_cor
+
+
+def compute_ft(time_series, tarr):
+    ft = np.fft.fft(time_series)
+    freq = np.fft.fftfreq(len(time_series)) * 2*np.pi / (tarr[1] - tarr[0])
+    order = np.argsort(freq)
+    return freq[order], ft[order]
 
 
 class RotationGP(object):
@@ -52,7 +70,7 @@ class RotationGP(object):
         
         # create kernel function with these hyperparameters
         self.tarr = np.arange(0,tsim,tsamp)
-        self.autocov = compute_autocovariance(hparam, tsim=tsim, tsamp=tsamp, nsim=nsim)
+        self.autocov, self.fluxes = compute_autocovariance(hparam, tsim=tsim, tsamp=tsamp, nsim=nsim)
         self.kernel = interpolate.interp1d(self.tarr, self.autocov)
         
         self.hparam = hparam
@@ -176,7 +194,7 @@ class RotationGP(object):
 
         def update_plot(peq, kappa, inc, nspot, lspot, tau, alpha_max):
             hparam = [peq, kappa, inc, nspot, lspot, tau, alpha_max]
-            autocov = compute_autocovariance(hparam, tsim=self.tsim, tsamp=self.tsamp, nsim=self.nsim)
+            autocov, fluxes = compute_autocovariance(hparam, tsim=self.tsim, tsamp=self.tsamp, nsim=self.nsim)
             self.kernel = interpolate.interp1d(self.tarr, autocov)
 
             fig.clear()

@@ -94,7 +94,7 @@ class StarSpot(object):
         self.alpha_max = alpha_max  # max angular area
         self.fspot = fspot          # spot contrast fraction
         self.lspot = lspot          # spot lifetime
-        
+
         self.long = self.assign_property(long)            # spot longitude
         self.lat = self.assign_property(lat)              # spot latitude
         self.tmax = np.random.uniform(0, self.tsim, self.nspot)
@@ -105,7 +105,7 @@ class StarSpot(object):
         self.limbd = self.limbc
 
         # compute lightcurve
-        self.dflux()
+        self.flux = self.Flux(self.t)
 
     def assign_property(self, var):
 
@@ -120,12 +120,12 @@ class StarSpot(object):
         
         return assign
         
-    def alphak(self, tmaxk):
+    def alphak(self, teval, tmaxk):
         
-        dt1 = self.t - tmaxk + self.lspot/2 + self.tem
-        dt2 = self.t - tmaxk + self.lspot/2
-        dt3 = self.t - tmaxk - self.lspot/2
-        dt4 = self.t - tmaxk - self.lspot/2 - self.tdec
+        dt1 = teval - tmaxk + self.lspot/2 + self.tem
+        dt2 = teval - tmaxk + self.lspot/2
+        dt3 = teval - tmaxk - self.lspot/2
+        dt4 = teval - tmaxk - self.lspot/2 - self.tdec
 
         alphak  = (dt1 * np.heaviside(dt1, 1) - dt2 * np.heaviside(dt2, 1)) / self.tem
         alphak += -(dt3 * np.heaviside(dt3, 1) - dt4 * np.heaviside(dt4, 1)) / self.tdec
@@ -133,9 +133,9 @@ class StarSpot(object):
         
         return alphak
     
-    def betak(self, longk, latk, tmaxk):
+    def betak(self, teval, longk, latk, tmaxk):
         
-        longk_t = longk + 2*np.pi/self.peq * (1 + self.kappa * np.sin(latk)**2) * (self.t - tmaxk)
+        longk_t = longk + 2*np.pi/self.peq * (1 + self.kappa * np.sin(latk)**2) * (teval - tmaxk)
         
         cosb  = np.cos(self.inc) * np.sin(latk) 
         cosb += np.sin(self.inc) * np.cos(latk) * np.cos(longk_t)
@@ -160,7 +160,7 @@ class StarSpot(object):
             zeta_n = zeta(beta - alpha)
             zeta_p = zeta(beta + alpha)
 
-            terms = np.zeros((ncoeff, alpha.shape[0]))
+            terms = np.zeros((ncoeff, len(alpha)))
             for ii in range(ncoeff):
                 t1 = ncoeff * (self.limbc[ii] - self.limbd[ii]*self.fspot) / (ii + ncoeff)
                 t2 = (zeta_n**((ii+4)/2) - zeta_p**((ii+4)/2)) / (zeta_n**2 - zeta_p**2)
@@ -174,11 +174,11 @@ class StarSpot(object):
 
         return factor
         
-    def dflux_k(self, longk, latk, tmaxk):
+    def dflux_k(self, teval, longk, latk, tmaxk):
         
         warnings.simplefilter("ignore")
-        betak_t  = self.betak(longk, latk, tmaxk)[0]
-        alphak_t = self.alphak(tmaxk)
+        betak_t  = self.betak(teval, longk, latk, tmaxk)[0]
+        alphak_t = self.alphak(teval, tmaxk)
         
         cosa = np.cos(alphak_t)
         sina = np.sin(alphak_t)
@@ -195,12 +195,12 @@ class StarSpot(object):
         dspot = Ak.real / np.pi * self.spot_limb(alphak_t, betak_t)
 
         return dspot
-    
-    def dflux(self):
-        
+
+    def Flux(self, teval):
+
         df = []
         for ii in range(self.nspot):
-            dfk = self.dflux_k(self.long[ii], self.lat[ii], self.tmax[ii])
+            dfk = self.dflux_k(teval, self.long[ii], self.lat[ii], self.tmax[ii])
             df.append(dfk)
         
         # flux removed from spots
@@ -210,7 +210,9 @@ class StarSpot(object):
         self.dlimb = self.stellar_limb()
 
         # total remaining flux
-        self.flux = 1 - self.dlimb - np.sum(self.dspots, axis=0)
+        flux = 1 - self.dlimb - np.sum(self.dspots, axis=0)
+
+        return flux
         
         
 def zeta(x):
@@ -244,7 +246,6 @@ def generate_sims(theta, nsim=1e3, **kwargs):
     fluxes = []
     for _ in range(int(nsim)):
         sp = StarSpot(peq, kappa, inc, nspot, **kwargs)
-        sp.dflux()
         fluxes.append(sp.flux)
     
     return np.array(fluxes)

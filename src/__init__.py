@@ -1,2 +1,3 @@
 from .starspot import *
-from .rotatation_kernel import *
+from .rotation_kernel import *
+from .kernel_fourier import *
