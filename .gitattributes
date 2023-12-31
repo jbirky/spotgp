@@ -1,5 +1,2 @@
-training/*.csv filter=lfs diff=lfs merge=lfs -text
-training/*.npz filter=lfs diff=lfs merge=lfs -text
-*.npz filter=lfs diff=lfs merge=lfs -text
-*.csv filter=lfs diff=lfs merge=lfs -text
-*.csv.gz filter=lfs diff=lfs merge=lfs -text
+lfs/*.csv filter=lfs diff=lfs merge=lfs -text
+lfs/*.npz filter=lfs diff=lfs merge=lfs -text
