@@ -47,6 +47,10 @@ def fit_kernel_parameters(ii, results_dir="../results/"):
 
 if __name__ == "__main__":
 
+    for path in ["../results/plots/", "../results/data/"]:
+        if not os.path.exists(path):
+            os.makedirs(path)
+
     index_array = np.arange(len(train_dict))
 
     with mp.Pool(ncore) as p:
