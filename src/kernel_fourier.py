@@ -40,7 +40,7 @@ def format_title(variable_dict, sig_fig=4):
 
 class TrainKernel(object):
 
-    def __init__(self, hyperparam, tsim=1000, tsamp=0.1, nsim=5e2, fit_ft=False):
+    def __init__(self, hyperparam, tsim=1000, tsamp=0.1, nsim=5e2, tcut=100, fit_ft=False):
 
         self.hyperparam = hyperparam
 
@@ -53,7 +53,9 @@ class TrainKernel(object):
         autocov = self.gp.kernel(tfine)
         autocor = autocov / np.var(self.gp.fluxes)
 
-        idx = np.where(tfine < 100)
+        # max time lag to use for kernel
+        self.tcut = tcut
+        idx = np.where(tfine < tcut)
 
         self.ydata, self.xdata = autocor[idx], tfine[idx]
         self.freq, self.power = rk.compute_ft(self.ydata, self.xdata)
@@ -235,10 +237,12 @@ class TrainKernel(object):
         ysin_cos = self.kernel_sin_cos(self.xdata, psin_cos)
         ycos2 = self.kernel_cos_second(self.xdata, pcos2)
         ypred = ytrend + ysin_cos + ycos2
-        
-        return ypred
 
-    def plot_kernel_fit(self, ypred, text_blocks=[""]):
+        power_pred = rk.compute_ft(ypred, self.xdata)[1]
+        
+        return ypred, power_pred
+
+    def plot_kernel_fit(self, ypred, text_blocks=[""], log_power=False):
 
         fig, axes = plt.subplots(2, 1, figsize=(20, 16))
 
@@ -248,7 +252,7 @@ class TrainKernel(object):
             axes[0].axvline(self.peq * ii, color="k", linestyle="--", alpha=0.3)
         axes[0].axhline(0, color="k", linestyle="--", alpha=0.3)
         axes[0].legend(loc="upper right", fontsize=25, frameon=False)
-        axes[0].set_xlim(0, 100)
+        axes[0].set_xlim(0, self.tcut)
         axes[0].set_xlabel("Time lag [days]", fontsize=30)
         axes[0].set_ylabel("Autocorrelation", fontsize=30)
         axes[0].minorticks_on()
@@ -258,9 +262,12 @@ class TrainKernel(object):
         if log_power == True:
             axes[1].plot(self.freq, np.log(self.power), color="k")
             axes[1].plot(freq_pred, np.log(power_pred), color="r", linewidth=3, alpha=0.5)
+            axes[1].set_ylabel("log(Power)", fontsize=30)
         else:
             axes[1].plot(self.freq, self.power, color="k")
             axes[1].plot(freq_pred, power_pred, color="r", linewidth=3, alpha=0.5)
+            axes[1].set_ylabel("Power", fontsize=30)
+
         axes[1].axvline(0, color="k", linestyle="--", alpha=0.3)
         axes[1].axvline(-self.omega, color="k", linestyle="--", alpha=0.3)
         axes[1].axvline(self.omega, color="k", linestyle="--", alpha=0.3)
@@ -268,7 +275,6 @@ class TrainKernel(object):
         axes[1].axvline(2 * self.omega, color="k", linestyle="--", alpha=0.3)
         axes[1].set_xlim(-2.5 * self.omega, 2.5 * self.omega)
         axes[1].set_xlabel(r"Frequency [$2\pi \cdot \mathrm{days}^{-1}$]", fontsize=30)
-        axes[1].set_ylabel("Power", fontsize=30)
         axes[1].minorticks_on()
         
         for ii, text in enumerate(text_blocks):
