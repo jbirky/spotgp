@@ -14,7 +14,7 @@ import kernel_fourier as kf
 ncore = 48
 os.nice(10)
 
-df = pd.read_csv("../files/training_parameters.csv.gz")
+df = pd.read_csv("../files/training_parameters.csv")
 df = df[['peq', 'kappa', 'inc', 'nspot', 'lspot', 'tau', 'alpha_max']]
 train_dict = df.to_dict(orient='records')
 
