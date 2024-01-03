@@ -13,8 +13,8 @@ os.nice(10)
 # Configuration 
 
 ncore = 64
-trial = "3"
-save_outputs = False
+trial = "4"
+save_outputs = True
 save_plots = False
 
 df = pd.read_csv(f"../files/training_parameters{trial}.csv")
@@ -51,17 +51,17 @@ def fit_kernel_parameters(ii):
     str_index = f"{ii}".rjust(5, "0")
     if save_outputs == True:
         # Save training data
-        np.savez(os.path.join(data_dir, f"/sim_{str_index}"), 
-                fluxes=train_kernel.gp.fluxes,
-                xdata=train_kernel.xdata, ydata=train_kernel.ydata,
-                freq=train_kernel.freq, power=train_kernel.power,
-                ypred=ypred, power_pred=power_pred)
+        np.savez(os.path.join(data_dir, f"sim_{str_index}"), 
+                 fluxes=train_kernel.gp.fluxes,
+                 xdata=train_kernel.xdata, ydata=train_kernel.ydata,
+                 freq=train_kernel.freq, power=train_kernel.power,
+                 ypred=ypred, power_pred=power_pred)
 
     if save_plots == True:
         # Save figure
         if (ii % 10) == 0:
             fig = train_kernel.plot_kernel_fit(ypred, text_blocks=[kf.format_title(par) for par in plist])
-            fig.savefig(os.path.join(plot_dir, f"/sim_{str_index}.png"), bbox_inches="tight")
+            fig.savefig(os.path.join(plot_dir, f"sim_{str_index}.png"), bbox_inches="tight")
     
     summary = {"sim_id": ii, "ymse": ymse, "pmse": pmse}
 

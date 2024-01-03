@@ -62,6 +62,7 @@ tsample["peq"] = np.random.uniform(0.1, 25, nsample)
 tsample["kappa"] = np.random.uniform(-1, 1, nsample)
 tsample["inc"] = np.arccos(np.random.uniform(0, 1, nsample))
 tsample["nspot"] = np.random.randint(10, 100, nsample)
+tsample["lspot"] = np.random.uniform(0, 50, nsample)
 tsample["tau"] = np.random.uniform(0, 50, nsample)
 tsample["alpha_max"] = 10**(np.random.uniform(-3, -1, nsample))
 
