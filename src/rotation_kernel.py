@@ -45,11 +45,16 @@ def compute_autocorrelation(theta, tsim=50, tsamp=0.1, nsim=1e3):
     return avg_cor
 
 
-def compute_ft(time_series, tarr):
+def compute_ft(time_series, tarr, log_power=False):
+
     ft = np.fft.fft(time_series)
     freq = np.fft.fftfreq(len(time_series)) * 2*np.pi / (tarr[1] - tarr[0])
     order = np.argsort(freq)
-    return freq[order], ft[order]
+
+    if log_power == True:
+        return freq[order], np.log(ft[order])
+    else:
+        return freq[order], ft[order]
 
 
 class RotationGP(object):

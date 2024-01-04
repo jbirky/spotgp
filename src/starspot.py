@@ -256,7 +256,7 @@ def avg_covariance_tlag(K):
     return np.array([np.mean(np.diagonal(K, offset=ti)) for ti in range(len(K))])
 
 
-def generate_training_sample(thetas, nsim=int(1e3), ncore=10, **kwargs):
+def generate_training_sample(thetas, nsim=int(1e3), ncore=10, autocorrelation=True, **kwargs):
     """
     Generate a training sample of covariance matrices for a set of parameters.
 
@@ -273,7 +273,10 @@ def generate_training_sample(thetas, nsim=int(1e3), ncore=10, **kwargs):
     with mp.Pool(ncore) as p:
         covs = []
         for fluxes in tqdm.tqdm(p.imap(func=gen, iterable=thetas), total=len(thetas)):
-            K = np.cov(fluxes.T)
+            if autocorrelation == True:
+                K = np.cov(fluxes.T) / np.var(fluxes.T)
+            else:
+                K = np.cov(fluxes.T)
             covs.append(avg_covariance_tlag(K))
         
     return np.array(covs)
