@@ -4,14 +4,17 @@ from functools import partial
 import multiprocessing as mp
 import warnings
 
-import matplotlib.pyplot as plt
-from matplotlib import rc
-plt.style.use('classic')
-rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
-rc('text', usetex=True)
-rc('figure', facecolor='w')
-rc('xtick', labelsize=20)
-rc('ytick', labelsize=20)
+try:
+    import matplotlib.pyplot as plt
+    from matplotlib import rc
+    plt.style.use('classic')
+    rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
+    rc('text', usetex=True)
+    rc('figure', facecolor='w')
+    rc('xtick', labelsize=20)
+    rc('ytick', labelsize=20)
+except:
+    print("Unable to import matplotlib")
 
 __all__ = ["StarSpot",
            "generate_sims",

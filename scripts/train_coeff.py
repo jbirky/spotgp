@@ -3,31 +3,66 @@ import pandas as pd
 import tqdm
 import multiprocessing as mp
 import os
+import argparse
+import h5py
+import shutil
 import sys
 sys.path.append("../src")
-import kernel_fourier as kf
 
-os.nice(10)
+# not working on hyak. override any matplotlib.pyplot imports
+sys.modules["matplotlib.pyplot"] = None
+import kernel_fourier as kf
 
 # ================================================
 # Configuration 
 
-ncore = 64
-trial = "4"
-save_outputs = False
-save_plots = False
+ncore = mp.cpu_count()
+print("number of cores:", ncore)
 
-df = pd.read_csv(f"../files/training_parameters{trial}.csv")
-df = df[['peq', 'kappa', 'inc', 'nspot', 'lspot', 'tau', 'alpha_max']]
+parser = argparse.ArgumentParser()
+parser.add_argument("--trial", type=int, required=True)
+parser.add_argument("--nsample", type=int, default=int(1e3))
+parser.add_argument("--file_dir", type=str, default="../mox_hyak")
+parser.add_argument("--save_outputs", type=bool, default=False)
+args = parser.parse_args()
+
+trial = args.trial
+file_dir = args.file_dir
+nsample = args.nsample
+save_outputs = args.save_outputs
+
+save_file_initial = f"{file_dir}/training_parameters{trial}.csv"
+save_file_final = f"{file_dir}/train_parameters_fit_coefficients{trial}.csv"
+data_dir = f"{file_dir}/results/data{trial}/"
+
+# create necessary directories
+if not os.path.exists(file_dir):
+    os.makedirs(file_dir)
+if save_outputs == True:
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+
+# ================================================
+# Create training sample
+
+# set random seed
+np.random.seed(trial)
+
+tsample = {}
+tsample["sim_id"] = np.arange(0, nsample)
+tsample["peq"] = np.random.uniform(1, 25, nsample)
+tsample["kappa"] = np.random.uniform(-1, 1, nsample)
+tsample["inc"] = np.pi/2 * np.ones(nsample)
+tsample["nspot"] = 10 * np.ones(nsample)
+tsample["lspot"] = np.random.uniform(0, 50, nsample)
+tsample["tau"] = np.random.uniform(0, 50, nsample)
+tsample["alpha_max"] = 10**(np.random.uniform(-3, -1, nsample))
+
+train_sample = pd.DataFrame(data=tsample)
+train_sample.to_csv(save_file_initial, index=False)
+
+df = train_sample[['peq', 'kappa', 'inc', 'nspot', 'lspot', 'tau', 'alpha_max']]
 train_dict = df.to_dict(orient='records')
-
-save_file = f"../files/train_parameters_fit_coefficients{trial}.csv"
-data_dir = f"../results/data{trial}/"
-plot_dir = f"../results/plots{trial}/"
-
-for path in [plot_dir, data_dir]:
-    if not os.path.exists(path):
-        os.makedirs(path)
 
 # ================================================
 
@@ -53,7 +88,7 @@ def fit_kernel_parameters(ii):
     
     # initialize numerical kernel
     hyperparam = train_dict[ii]
-    train_kernel = kf.TrainKernel(hyperparam, tsim=500, tsamp=0.1, nsim=5e2, tcut=200, 
+    train_kernel = kf.TrainKernel(hyperparam, tsim=1000, tsamp=0.1, nsim=5e2, tcut=200, 
                                 fit_ft=True, log_params=False, log_power=False,
                                 fit_orders=[0,1], fit_sin=True, opt_bounds=opt_bounds)
     
@@ -86,23 +121,30 @@ def fit_kernel_parameters(ii):
     if save_outputs == True:
         # Save training data
         np.savez(os.path.join(data_dir, f"sim_{str_index}"), 
-                 fluxes=train_kernel.gp.fluxes,
-                 xdata=train_kernel.xdata, ydata=train_kernel.ydata,
-                 freq=train_kernel.freq, power=train_kernel.power,
-                 ypred=ypred, power_pred=power_pred)
+                 autocorr=train_kernel.ydata)
 
-    if save_plots == True:
-        # Save figure
-        if (ii % 10) == 0:
-            fig = train_kernel.plot_kernel_fit(ypred, text_blocks=[kf.format_title(par) for par in plist])
-            fig.savefig(os.path.join(plot_dir, f"sim_{str_index}.png"), bbox_inches="tight")
-    
     summary = {"sim_id": ii, "ymse": ymse, "pmse": pmse}
 
     return {**summary, **hyperparam, **pdict}
 
 
 # ================================================
+
+def save_npz_to_hdf5(npz_folder, hdf5_filename, N):
+    """
+    Reads data from multiple .npz files and saves it to a single compressed HDF5 file.
+
+    :param npz_folder: Folder containing the .npz files.
+    :param hdf5_filename: Name of the output HDF5 file.
+    :param N: Number of .npz files to read.
+    """
+    with h5py.File(hdf5_filename, 'w') as hdf:
+        for ii in range(N):
+            str_index = f"{ii}".rjust(5, "0")
+            npz_file = os.path.join(npz_folder, f'sim_{str_index}.npz')
+            with np.load(npz_file) as data:
+                hdf.create_dataset(f'sim_{str_index}', data=data["autocorr"], compression='gzip')
+
 
 if __name__ == "__main__":
 
@@ -124,4 +166,13 @@ if __name__ == "__main__":
             
     # save results to csv file 
     result_df = pd.DataFrame(result_dict)
-    result_df.to_csv(save_file, index=False)
+    result_df.to_csv(save_file_final, index=False)
+
+    # compress saved data files
+    compress_file = f"{file_dir}/training_data{trial}.hdf5"
+    print(f"compressing data to {compress_file}...")
+    save_npz_to_hdf5(data_dir, compress_file, nsample)
+
+    shutil.rmtree(data_dir)
+
+    print("job complete")

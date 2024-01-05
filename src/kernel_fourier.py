@@ -305,14 +305,17 @@ class TrainKernel(object):
                         text_blocks=[""], text_blocks2=[""], 
                         tlag_rng=None):
         
-        import matplotlib.pyplot as plt
-        from matplotlib import rc
-        plt.style.use('classic')
-        rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
-        rc('text', usetex=True)
-        rc('figure', facecolor='w')
-        rc('xtick', labelsize=24)
-        rc('ytick', labelsize=24)
+        try:
+            import matplotlib.pyplot as plt
+            from matplotlib import rc
+            plt.style.use('classic')
+            rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
+            rc('text', usetex=True)
+            rc('figure', facecolor='w')
+            rc('xtick', labelsize=24)
+            rc('ytick', labelsize=24)
+        except:
+            return None
 
         fig, axes = plt.subplots(2, 1, figsize=(20, 16))
 
