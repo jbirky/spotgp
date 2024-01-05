@@ -2,14 +2,17 @@ import numpy as np
 import time
 from scipy import interpolate
 
-import matplotlib.pyplot as plt
-from matplotlib import rc
-plt.style.use('classic')
-rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
-rc('text', usetex=True)
-rc('figure', facecolor='w')
-rc('xtick', labelsize=24)
-rc('ytick', labelsize=24)
+try:
+    import matplotlib.pyplot as plt
+    from matplotlib import rc
+    plt.style.use('classic')
+    rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
+    rc('text', usetex=True)
+    rc('figure', facecolor='w')
+    rc('xtick', labelsize=24)
+    rc('ytick', labelsize=24)
+except:
+    print("Unable to import matplotlib")
 
 import starspot
 
@@ -47,9 +50,12 @@ def compute_autocorrelation(theta, tsim=50, tsamp=0.1, nsim=1e3):
 
 def compute_ft(time_series, tarr, log_power=False):
 
-    ft = np.fft.fft(time_series)
+    ft = np.abs(np.fft.fft(time_series))
     freq = np.fft.fftfreq(len(time_series)) * 2*np.pi / (tarr[1] - tarr[0])
     order = np.argsort(freq)
+
+    nsamples = len(time_series)
+    ft *= 2 / nsamples
 
     if log_power == True:
         return freq[order], np.log(ft[order])
@@ -132,13 +138,11 @@ class RotationGP(object):
         kvec = self.kernel(np.abs(self.xtrain - xtest[:, np.newaxis]))
         ypred = kvec @ self.alpha
         yvar = np.diag(kvec @ self.Kinv @ kvec.T)
-        yerr = np.sum((ypred - ytest)**2)
         
         self.xtest = xtest
         self.ypred = ypred
         self.yvar = yvar
         self.ystd = np.sqrt(yvar)
-        self.yerr = yerr
         
         if self.verbose:
             print(f"Prediction time: {np.round(time.time() - t0, 2)}")
@@ -185,46 +189,5 @@ class RotationGP(object):
         plt.legend(loc="upper left", fontsize=22)
         plt.minorticks_on()
         plt.close()
-
-        return fig
-    
-    def plot_autocovariance_interactive(self):
-        """
-        Plot the autocovariance function with interactive sliders.
-
-        Returns:
-        - fig: matplotlib Figure object
-        """
-        import ipywidgets as widgets
-
-        def update_plot(peq, kappa, inc, nspot, lspot, tau, alpha_max):
-            hparam = [peq, kappa, inc, nspot, lspot, tau, alpha_max]
-            autocov, fluxes = compute_autocovariance(hparam, tsim=self.tsim, tsamp=self.tsamp, nsim=self.nsim)
-            self.kernel = interpolate.interp1d(self.tarr, autocov)
-
-            fig.clear()
-            ax = fig.add_subplot(111)
-            ax.plot(self.tarr, autocov)
-            ax.plot(self.tarr, self.kernel(self.tarr), linestyle="--")
-            for ii in range(int(self.tsim / peq)+1):
-                ax.axvline(ii*peq, color="k", alpha=0.2)
-            ax.set_xlabel("Time lag", fontsize=25)
-            ax.set_ylabel("Autocovariance", fontsize=25)
-            ax.set_xlim(min(self.tarr), max(self.tarr))
-            ax.minorticks_on()
-
-        peq_slider = widgets.FloatSlider(value=self.peq, min=0, max=10, step=0.1, description="peq")
-        kappa_slider = widgets.FloatSlider(value=self.kappa, min=0, max=10, step=0.1, description="kappa")
-        inc_slider = widgets.FloatSlider(value=self.inc, min=0, max=10, step=0.1, description="inc")
-        nspot_slider = widgets.FloatSlider(value=self.nspot, min=0, max=10, step=0.1, description="nspot")
-        lspot_slider = widgets.FloatSlider(value=self.lspot, min=0, max=10, step=0.1, description="lspot")
-        tau_slider = widgets.FloatSlider(value=self.tau, min=0, max=10, step=0.1, description="tau")
-        alpha_max_slider = widgets.FloatSlider(value=self.alpha_max, min=0, max=10, step=0.1, description="alpha_max")
-
-        widgets.interactive(update_plot, peq=peq_slider, kappa=kappa_slider, inc=inc_slider,
-                            nspot=nspot_slider, lspot=lspot_slider, tau=tau_slider, alpha_max=alpha_max_slider)
-
-        fig = plt.figure(figsize=[12, 6])
-        update_plot(self.peq, self.kappa, self.inc, self.nspot, self.lspot, self.tau, self.alpha_max)
 
         return fig

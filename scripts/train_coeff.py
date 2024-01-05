@@ -14,7 +14,7 @@ os.nice(10)
 
 ncore = 64
 trial = "4"
-save_outputs = True
+save_outputs = False
 save_plots = False
 
 df = pd.read_csv(f"../files/training_parameters{trial}.csv")
@@ -32,14 +32,48 @@ for path in [plot_dir, data_dir]:
 # ================================================
 
 def fit_kernel_parameters(ii):
-    
-    hyperparam = train_dict[ii]
-    train_kernel = kf.TrainKernel(hyperparam, tsim=1000, tsamp=0.1, nsim=5e2, tcut=200, fit_ft=False)
-    
-    pinit = {"a10": 0.1, "a20": 0.5, "c10": hyperparam["tau"] + hyperparam["lspot"], "c20": hyperparam["lspot"],
-             "a11": 1.0, "a21": 0.1, "b11": 0, "b21": 0, "c11": hyperparam["tau"], "c21": hyperparam["tau"], 
-             "a12": 0, "a22": 0, "c12": hyperparam["tau"], "c22": hyperparam["lspot"]}
 
+    opt_bounds = {
+        "a00": [-0.5, 0.5],
+        "a10": [-10, 0], 
+        "a20": [0, 10], 
+        "c10": [0, np.inf], 
+        "c20": [0, np.inf], 
+        "b11": [-10, 10],
+        "b21": [-10, 10],
+        "a11": [0, 10], 
+        "a21": [-10, 10],
+        "c11": [0, np.inf], 
+        "c21": [0, np.inf], 
+        "a12": [0, 10],
+        "a22": [0, 10],
+        "c12": [0, np.inf], 
+        "c22": [0, np.inf], 
+    }
+    
+    # initialize numerical kernel
+    hyperparam = train_dict[ii]
+    train_kernel = kf.TrainKernel(hyperparam, tsim=500, tsamp=0.1, nsim=5e2, tcut=200, 
+                                fit_ft=True, log_params=False, log_power=False,
+                                fit_orders=[0,1], fit_sin=True, opt_bounds=opt_bounds)
+    
+    pinit = {
+        "a10": train_kernel.ydata[-1], 
+        "a20": (max(train_kernel.ydata) - min(train_kernel.ydata))/2, 
+        "c10": 1000, 
+        "c20": hyperparam["lspot"] + 0.5*hyperparam["tau"],
+        "a11": 1, 
+        "a21": -0.5, 
+        "b11": 0, 
+        "b21": 0, 
+        "c11": 9/80*(hyperparam["lspot"] + hyperparam["tau"]) - 1/4, 
+        "c21": 9/40*(hyperparam["lspot"] + hyperparam["tau"]) - 1/2, 
+        "a12": 0, 
+        "a22": 0, 
+        "c12": 10, 
+        "c22": 10
+    }
+        
     # fit model coefficients to kernel
     plist, pdict = train_kernel.fit_model(pinit)
     ypred, power_pred = train_kernel.predict(pdict)
