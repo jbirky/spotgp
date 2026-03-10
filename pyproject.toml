@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "spotgp"
+version = "0.1.0"
+description = "Gaussian Process kernels for stellar variability from starspot models"
+readme = "docs/index.rst"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Jessica Birky"},
+]
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "astropy",
+    "scikit-learn",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+jax = ["jax", "jaxopt"]
+docs = ["sphinx>=7.0", "sphinx-rtd-theme>=2.0", "numpydoc>=1.6"]
+
+[tool.setuptools.packages.find]
+include = ["src*", "src_jax*"]

@@ -13,17 +13,15 @@ rc('figure', facecolor='w')
 rc('xtick', labelsize=20)
 rc('ytick', labelsize=20)
 
-__all__ = ["LightcurveModel"]
+__all__ = ["StarSpot",
+           "generate_sims",
+           "avg_covariance_tlag",
+           "generate_training_sample",
+           "plot_lightcurve",
+           "plot_covariance"]
 
 
-def zeta(x):
-    """
-    Calculate the function zeta(x) for spot limb darkening.
-    """
-    return np.cos(x) * np.heaviside(x,1) * np.heaviside(np.pi/2 - x,1) + np.heaviside(-x,1)
-
-
-class LightcurveModel(object):
+class StarSpot(object):
     """
     Class representing a star with spots and its lightcurve.
 
@@ -91,12 +89,11 @@ class LightcurveModel(object):
         self.nspot = int(nspot)     # number of spots
 
         # spot properties
-        self.tem = tem              # emergence timescale
-        self.tdec = tdec            # decay timescale
-        self.alpha_max = alpha_max  # max angular area
-        self.fspot = fspot          # spot contrast fraction
-        self.lspot = lspot          # spot lifetime
-
+        self.tem = self.assign_property(tem)              # emergence timescale
+        self.tdec = self.assign_property(tdec)            # decay timescale
+        self.alpha_max = self.assign_property(alpha_max)  # max angular area
+        self.fspot = self.assign_property(fspot)          # spot contrast fraction
+        self.lspot = self.assign_property(lspot)          # spot lifetime
         self.long = self.assign_property(long)            # spot longitude
         self.lat = self.assign_property(lat)              # spot latitude
         self.tmax = np.random.uniform(0, self.tsim, self.nspot)
@@ -107,7 +104,7 @@ class LightcurveModel(object):
         self.limbd = self.limbc
 
         # compute lightcurve
-        self.flux = self.Flux(self.t)
+        self.dflux()
 
     def assign_property(self, var):
 
@@ -122,12 +119,12 @@ class LightcurveModel(object):
         
         return assign
         
-    def alphak(self, teval, tmaxk):
+    def alphak(self, tmaxk):
         
-        dt1 = teval - tmaxk + self.lspot/2 + self.tem
-        dt2 = teval - tmaxk + self.lspot/2
-        dt3 = teval - tmaxk - self.lspot/2
-        dt4 = teval - tmaxk - self.lspot/2 - self.tdec
+        dt1 = self.t - tmaxk + self.lspot/2 + self.tem
+        dt2 = self.t - tmaxk + self.lspot/2
+        dt3 = self.t - tmaxk - self.lspot/2
+        dt4 = self.t - tmaxk - self.lspot/2 - self.tdec
 
         alphak  = (dt1 * np.heaviside(dt1, 1) - dt2 * np.heaviside(dt2, 1)) / self.tem
         alphak += -(dt3 * np.heaviside(dt3, 1) - dt4 * np.heaviside(dt4, 1)) / self.tdec
@@ -135,9 +132,9 @@ class LightcurveModel(object):
         
         return alphak
     
-    def betak(self, teval, longk, latk, tmaxk):
+    def betak(self, longk, latk, tmaxk):
         
-        longk_t = longk + 2*np.pi/self.peq * (1 - self.kappa * np.sin(latk)**2) * (teval - tmaxk)
+        longk_t = longk + 2*np.pi/self.peq * (1 + self.kappa * np.sin(latk)**2) * (self.t - tmaxk)
         
         cosb  = np.cos(self.inc) * np.sin(latk) 
         cosb += np.sin(self.inc) * np.cos(latk) * np.cos(longk_t)
@@ -162,7 +159,7 @@ class LightcurveModel(object):
             zeta_n = zeta(beta - alpha)
             zeta_p = zeta(beta + alpha)
 
-            terms = np.zeros((ncoeff, len(alpha)))
+            terms = np.zeros((ncoeff, alpha.shape[0]))
             for ii in range(ncoeff):
                 t1 = ncoeff * (self.limbc[ii] - self.limbd[ii]*self.fspot) / (ii + ncoeff)
                 t2 = (zeta_n**((ii+4)/2) - zeta_p**((ii+4)/2)) / (zeta_n**2 - zeta_p**2)
@@ -176,11 +173,11 @@ class LightcurveModel(object):
 
         return factor
         
-    def dflux_k(self, teval, longk, latk, tmaxk):
+    def dflux_k(self, longk, latk, tmaxk):
         
         warnings.simplefilter("ignore")
-        betak_t  = self.betak(teval, longk, latk, tmaxk)[0]
-        alphak_t = self.alphak(teval, tmaxk)
+        betak_t  = self.betak(longk, latk, tmaxk)[0]
+        alphak_t = self.alphak(tmaxk)
         
         cosa = np.cos(alphak_t)
         sina = np.sin(alphak_t)
@@ -197,12 +194,12 @@ class LightcurveModel(object):
         dspot = Ak.real / np.pi * self.spot_limb(alphak_t, betak_t)
 
         return dspot
-
-    def Flux(self, teval):
-
+    
+    def dflux(self):
+        
         df = []
         for ii in range(self.nspot):
-            dfk = self.dflux_k(teval, self.long[ii], self.lat[ii], self.tmax[ii])
+            dfk = self.dflux_k(self.long[ii], self.lat[ii], self.tmax[ii])
             df.append(dfk)
         
         # flux removed from spots
@@ -212,45 +209,127 @@ class LightcurveModel(object):
         self.dlimb = self.stellar_limb()
 
         # total remaining flux
-        flux = 1 - self.dlimb - np.sum(self.dspots, axis=0)
-
-        return flux
-    
-    def plot_lightcurve(self, show_spots=True, show_title=True):
-        """
-        Plot the lightcurve.
-
-        Args:
-            sp (StarSpot): The StarSpot object containing the lightcurve.
-            show_spots (bool, optional): Whether to show individual spots. Defaults to True.
-
-        Returns:
-            matplotlib.figure.Figure: The figure containing the lightcurve plot.
-        """
-        flux = self.flux + self.dlimb
-        fig = plt.figure(figsize=[16,6])
-        if show_spots == True:
-            for ii in range(self.nspot):
-                plt.plot(self.t, 1-self.dspots[ii], alpha=0.5)
-        plt.plot(self.t, flux, color="k")
-
-        if show_title == True:
-            title = r"$P_{{\rm eq}}$={:.1f} d, ".format(self.peq)
-            title += r"$\kappa$={:.2f}, ".format(self.kappa)
-            title += r"$i$={:.0f} deg, ".format(self.inc_deg)
-            title += r"nspot={:.0f}, ".format(self.nspot)
-            title += r"$\alpha_{{\rm max}}$={:.1f}, ".format(self.alpha_max)
-            title += r"$l_{{\rm spot}}$={:.2f}, ".format(self.lspot)
-            title += r"$\tau_{{\rm em}}$={:.2f}, ".format(self.tem)
-            title += r"$\tau_{{\rm dec}}$={:.2f}".format(self.tdec)
-            plt.title(title, fontsize=25)
-        plt.xlabel("Time [days]", fontsize=24)
-        plt.ylabel("Flux", fontsize=24)
-        plt.ylim(min(flux)-2e-3, 1+1e-3)
-        plt.xlim(self.t[0], self.t[-1])
-        plt.minorticks_on()
-        plt.ticklabel_format(axis='both', style='', useOffset=False)
-        plt.close()
-
-        return fig
+        self.flux = 1 - self.dlimb - np.sum(self.dspots, axis=0)
         
+        
+def zeta(x):
+    """
+    Calculate the function zeta(x) for spot limb darkening.
+
+    Args:
+        x (float or numpy.ndarray): Input value(s).
+
+    Returns:
+        float or numpy.ndarray: The value of zeta(x).
+    """
+
+    return np.cos(x) * np.heaviside(x,1) * np.heaviside(np.pi/2 - x,1) + np.heaviside(-x,1)
+    
+
+def generate_sims(theta, nsim=1e3, **kwargs):
+    """
+    Generate synthetic lightcurves for a given set of parameters.
+
+    Args:
+        theta (tuple): Tuple containing peq, kappa, inc, and nspot parameters.
+        nsim (int, optional): Number of simulations. Defaults to 1000.
+        **kwargs: Additional arguments for the StarSpot class.
+
+    Returns:
+        numpy.ndarray: Array of synthetic lightcurves.
+    """
+    peq, kappa, inc, nspot = theta
+    
+    fluxes = []
+    for _ in range(int(nsim)):
+        sp = StarSpot(peq, kappa, inc, nspot, **kwargs)
+        sp.dflux()
+        fluxes.append(sp.flux)
+    
+    return np.array(fluxes)
+
+
+def avg_covariance_tlag(K):
+    
+    return np.array([np.mean(np.diagonal(K, offset=ti)) for ti in range(len(K))])
+
+
+def generate_training_sample(thetas, nsim=int(1e3), ncore=10, **kwargs):
+    """
+    Generate a training sample of covariance matrices for a set of parameters.
+
+    Args:
+        thetas (numpy.ndarray): Array of parameter sets.
+        nsim (int, optional): Number of simulations per parameter set. Defaults to 1000.
+        ncore (int, optional): Number of CPU cores to use for parallel processing. Defaults to 10.
+        **kwargs: Additional arguments for the generate_sims function.
+
+    Returns:
+        numpy.ndarray: Array of covariance matrices.
+    """
+    gen = partial(generate_sims, nsim=nsim, **kwargs)
+    with mp.Pool(ncore) as p:
+        covs = []
+        for fluxes in tqdm.tqdm(p.imap(func=gen, iterable=thetas), total=len(thetas)):
+            K = np.cov(fluxes.T)
+            covs.append(avg_covariance_tlag(K))
+        
+    return np.array(covs)
+
+
+def plot_lightcurve(sp, show_spots=True, show_title=True):
+    """
+    Plot the lightcurve.
+
+    Args:
+        sp (StarSpot): The StarSpot object containing the lightcurve.
+        show_spots (bool, optional): Whether to show individual spots. Defaults to True.
+
+    Returns:
+        matplotlib.figure.Figure: The figure containing the lightcurve plot.
+    """
+    flux = sp.flux + sp.dlimb
+    fig = plt.figure(figsize=[16,6])
+    if show_spots == True:
+        for ii in range(sp.nspot):
+            plt.plot(sp.t, 1-sp.dspots[ii], alpha=0.5)
+    plt.plot(sp.t, flux, color="k")
+
+    if show_title == True:
+        title = r"$P_{{\rm eq}}$={:.1f} d, ".format(sp.peq)
+        title += r"$\kappa$={:.2f}, ".format(sp.kappa)
+        title += r"$i$={:.0f} deg, ".format(sp.inc_deg)
+        title += r"nspot={:.0f}, ".format(sp.nspot)
+        title += r"$\alpha_{{\rm max}}$={:.1f}, ".format(sp.alpha_max)
+        title += r"$l_{{\rm spot}}$={:.2f}, ".format(sp.lspot)
+        title += r"$\tau_{{\rm em}}$={:.2f}, ".format(sp.tem)
+        title += r"$\tau_{{\rm dec}}$={:.2f}".format(sp.tdec)
+        plt.title(title, fontsize=25)
+    plt.xlabel("Time [days]", fontsize=24)
+    plt.ylabel("Flux", fontsize=24)
+    plt.ylim(min(flux)-2e-3, 1+1e-3)
+    plt.xlim(sp.t[0], sp.t[-1])
+    plt.minorticks_on()
+    plt.ticklabel_format(axis='both', style='', useOffset=False)
+    plt.close()
+
+    return fig
+
+
+def plot_covariance(fluxes):
+    """
+    Plot the covariance matrix.
+
+    Args:
+        fluxes (numpy.ndarray): Array of fluxes.
+
+    Returns:
+        matplotlib.figure.Figure: The figure containing the covariance matrix plot.
+    """
+    K = np.cov(fluxes.T)
+    fig, ax = plt.subplots(figsize=[12,12])
+    pl = ax.matshow(K, cmap='binary_r', interpolation='none')
+    plt.colorbar(pl, fraction=0.046, pad=0.04)
+    plt.close()
+
+    return fig
