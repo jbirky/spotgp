@@ -51,8 +51,8 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range, n_omega,
 
     Parameters
     ----------
-    theta_arr : jnp.ndarray, shape (7,)
-        [peq, kappa, inc, nspot, lspot, tau, alpha_max]
+    theta_arr : jnp.ndarray, shape (8,)
+        [peq, kappa, inc, nspot, lspot, tau, alpha_max, sigma_k]
         (kernel parameters only, no white noise)
     lag_flat : jnp.ndarray, shape (M,)
         Flattened time lags.
@@ -65,7 +65,7 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range, n_omega,
     K_flat : jnp.ndarray, shape (M,)
         Kernel values at each lag.
     """
-    peq, kappa, inc, nspot, lspot, tau, alpha_max = theta_arr
+    peq, kappa, inc, nspot, lspot, tau, alpha_max, sigma_k = theta_arr
 
     # R_Gamma (independent of latitude)
     R = _R_Gamma(lag_flat, lspot, tau, alpha_max, n_omega=n_omega)
@@ -99,7 +99,7 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range, n_omega,
         K = jnp.sum(all_contribs, axis=0) * dphi
         K = K / (phi_max - phi_min)
 
-    K = R * K * nspot / jnp.pi ** 2
+    K = R * K * sigma_k ** 2
 
     return K
 
@@ -112,8 +112,8 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
 
     Parameters
     ----------
-    theta_full : jnp.ndarray, shape (7,) or (8,)
-        Kernel params [peq, kappa, inc, nspot, lspot, tau, alpha_max],
+    theta_full : jnp.ndarray, shape (8,) or (9,)
+        Kernel params [peq, kappa, inc, nspot, lspot, tau, alpha_max, sigma_k],
         optionally followed by sigma_n (white noise amplitude).
     x, y, yerr : jnp.ndarray
         Observations.
@@ -133,8 +133,8 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
 
     # Split kernel params and white noise
     if fit_sigma_n:
-        theta_kernel = theta_full[:7]
-        sigma_n = theta_full[7]
+        theta_kernel = theta_full[:8]
+        sigma_n = theta_full[8]
     else:
         theta_kernel = theta_full
         sigma_n = 0.0
@@ -208,7 +208,7 @@ class MCMCSampler:
         Measurement uncertainties.
     theta0 : dict or array_like
         Initial hyperparameter guess. Dict keys or positional order:
-        peq, kappa, inc, nspot, lspot, tau, alpha_max[, sigma_n].
+        peq, kappa, inc, nspot, lspot, tau, alpha_max, sigma_k[, sigma_n].
     bounds : dict or array_like, optional
         Parameter bounds. If None, uses broad defaults.
     fit_sigma_n : bool
@@ -238,6 +238,7 @@ class MCMCSampler:
         "lspot":     (0.1, 20.0),
         "tau":       (0.05, 10.0),
         "alpha_max": (0.001, 1.0),
+        "sigma_k":   (1e-6, 1.0),
         "sigma_n":   (1e-6, 0.1),
     }
 
@@ -502,8 +503,8 @@ class MCMCSampler:
         def K_noise_flat_from_theta(theta_arr):
             """Return the full K_noise matrix as a flat vector."""
             if fit_sn:
-                theta_kernel = theta_arr[:7]
-                sigma_n = theta_arr[7]
+                theta_kernel = theta_arr[:8]
+                sigma_n = theta_arr[8]
             else:
                 theta_kernel = theta_arr
                 sigma_n = 0.0
@@ -630,7 +631,7 @@ class MCMCSampler:
 
     def run_nuts(self, n_samples=1000, n_warmup=500, theta_init=None,
                  mass_matrix_method="hessian_map", step_size=None,
-                 rng_key=None, target_accept=0.8):
+                 rng_key=None, target_accept=0.8, progress_bar=False):
         """
         Run BlackJAX NUTS sampler.
 
@@ -653,6 +654,10 @@ class MCMCSampler:
             Random key. Default: PRNGKey(0).
         target_accept : float
             Target acceptance rate for dual averaging (default 0.8).
+        progress_bar : bool
+            If True, display tqdm progress bars for warmup and sampling
+            (default False). Requires tqdm to be installed. When enabled,
+            sampling falls back to a Python loop instead of lax.scan.
 
         Returns
         -------
@@ -688,6 +693,9 @@ class MCMCSampler:
             step_size = max(step_size, 1e-5)
 
         # ── Warmup: dual averaging for step size ─────────────────────
+        if progress_bar:
+            from tqdm.auto import tqdm
+
         print(f"Warmup: {n_warmup} steps (dual averaging, "
               f"init step_size={step_size:.6f})...")
         log_step = jnp.log(step_size)
@@ -706,7 +714,11 @@ class MCMCSampler:
 
         warmup_key, sample_key = jax.random.split(rng_key)
 
-        for m in range(1, n_warmup + 1):
+        warmup_iter = range(1, n_warmup + 1)
+        if progress_bar:
+            warmup_iter = tqdm(warmup_iter, desc="Warmup", leave=True)
+
+        for m in warmup_iter:
             warmup_key, step_key = jax.random.split(warmup_key)
             current_step = max(float(jnp.exp(log_step)), 1e-10)
 
@@ -725,10 +737,14 @@ class MCMCSampler:
             m_w = m ** (-kappa)
             log_step_bar = m_w * log_step + (1 - m_w) * log_step_bar
 
+            if progress_bar:
+                warmup_iter.set_postfix(
+                    step_size=f"{current_step:.2e}", accept=f"{accept:.3f}")
+
         final_step_size = max(float(jnp.exp(log_step_bar)), 1e-8)
         print(f"  Adapted step size: {final_step_size:.6f}")
 
-        # ── Sampling: JIT-compiled scan ──────────────────────────────
+        # ── Sampling ─────────────────────────────────────────────────
         print(f"Sampling {n_samples} post-warmup iterations...")
 
         nuts_kernel = blackjax.nuts(
@@ -737,30 +753,62 @@ class MCMCSampler:
             inverse_mass_matrix=inv_mass_diag,
         )
 
-        def one_step(carry, key):
-            state = carry
-            state, info = nuts_kernel.step(key, state)
-            return state, (state, info)
-
         sample_keys = jax.random.split(sample_key, n_samples)
 
-        final_state, (states, infos) = jax.lax.scan(
-            one_step, state, sample_keys
-        )
+        if progress_bar:
+            # Python loop with progress bar
+            all_positions = []
+            all_divergent = []
+            all_accept = []
+            all_num_steps = []
 
-        self.samples = states.position
-        self._nuts_info = {
-            "divergences": np.asarray(infos.is_divergent),
-            "acceptance_rate": np.asarray(infos.acceptance_rate),
-            "num_steps": np.asarray(infos.num_integration_steps),
-            "step_size": final_step_size,
-            "n_warmup": n_warmup,
-            "n_samples": n_samples,
-            "n_divergent": int(jnp.sum(infos.is_divergent)),
-        }
+            sample_iter = tqdm(range(n_samples), desc="Sampling", leave=True)
+            for i in sample_iter:
+                state, step_info = nuts_kernel.step(sample_keys[i], state)
+                all_positions.append(state.position)
+                all_divergent.append(step_info.is_divergent)
+                all_accept.append(step_info.acceptance_rate)
+                all_num_steps.append(step_info.num_integration_steps)
+
+                if i % 10 == 0:
+                    sample_iter.set_postfix(
+                        accept=f"{float(step_info.acceptance_rate):.3f}",
+                        div=int(jnp.sum(jnp.array(all_divergent))))
+
+            self.samples = jnp.stack(all_positions)
+            self._nuts_info = {
+                "divergences": np.asarray(all_divergent),
+                "acceptance_rate": np.asarray(all_accept),
+                "num_steps": np.asarray(all_num_steps),
+                "step_size": final_step_size,
+                "n_warmup": n_warmup,
+                "n_samples": n_samples,
+                "n_divergent": int(jnp.sum(jnp.array(all_divergent))),
+            }
+        else:
+            # JIT-compiled scan (faster, no progress bar)
+            def one_step(carry, key):
+                state = carry
+                state, info = nuts_kernel.step(key, state)
+                return state, (state, info)
+
+            final_state, (states, infos) = jax.lax.scan(
+                one_step, state, sample_keys
+            )
+
+            self.samples = states.position
+            self._nuts_info = {
+                "divergences": np.asarray(infos.is_divergent),
+                "acceptance_rate": np.asarray(infos.acceptance_rate),
+                "num_steps": np.asarray(infos.num_integration_steps),
+                "step_size": final_step_size,
+                "n_warmup": n_warmup,
+                "n_samples": n_samples,
+                "n_divergent": int(jnp.sum(infos.is_divergent)),
+            }
 
         n_div = self._nuts_info["n_divergent"]
-        mean_accept = float(jnp.mean(infos.acceptance_rate))
+        mean_accept = float(np.mean(self._nuts_info["acceptance_rate"]))
         print(f"NUTS complete: {n_samples} samples, "
               f"{n_div} divergences, "
               f"mean acceptance rate = {mean_accept:.3f}")

@@ -16,7 +16,7 @@ except ImportError:
 
 __all__ = ["GPSolver"]
 
-HPARAM_KEYS = ["peq", "kappa", "inc", "nspot", "lspot", "tau", "alpha_max"]
+HPARAM_KEYS = ["peq", "kappa", "inc", "nspot", "lspot", "tau", "alpha_max", "sigma_k"]
 
 
 class GPSolver:

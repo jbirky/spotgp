@@ -5,7 +5,7 @@ from functools import partial
 
 __all__ = ["AnalyticKernel"]
 
-HPARAM_KEYS = ["peq", "kappa", "inc", "nspot", "lspot", "tau", "alpha_max"]
+HPARAM_KEYS = ["peq", "kappa", "inc", "nspot", "lspot", "tau", "alpha_max", "sigma_k"]
 
 
 @jax.jit
@@ -33,27 +33,59 @@ def _Gamma_hat(omega, ell, tau, alpha_max):
     return jnp.where(jnp.abs(omega) > 1e-14, nz_result, zero_result)
 
 
-@partial(jax.jit, static_argnames=['n_omega', 'omega_max'])
-def _R_Gamma(lag, ell, tau, alpha_max, n_omega=4096, omega_max=200.0):
+@jax.jit
+def _R_Gamma(lag, ell, tau_s, alpha_max):
     """
-    Autocorrelation of Gamma(t) via inverse FT of |Gamma_hat|^2.
-    Vectorized: computes all lags simultaneously using matrix operations.
+    Closed-form autocorrelation of Gamma(t) = alpha^2(t).
 
-    omega_max is a fixed (static) upper frequency limit so the integration
-    grid does not depend on the kernel parameters — this is required for
-    correct JAX autodiff.
+    Piecewise degree-5 polynomial derived from direct convolution of the
+    squared trapezoidal envelope (see Appendix D, Eq. R_Gamma_closed).
+
+    Four intervals on [0, ell + 2*tau_s], zero beyond.
+    Assumes ell/2 > tau_s (plateau longer than ramp).
+
+    Parameters
+    ----------
+    lag : array_like
+        Time lags (non-negative) [days].
+    ell : float
+        Spot plateau duration [days].
+    tau_s : float
+        Rise/decay timescale [days].
+    alpha_max : float
+        Peak angular radius [rad].
     """
-    lag = jnp.asarray(lag, dtype=float).ravel()
-    omega_grid = jnp.linspace(0, omega_max, n_omega)
-    d_omega = omega_grid[1] - omega_grid[0]
+    t = jnp.abs(jnp.asarray(lag, dtype=float).ravel())
+    a4 = alpha_max**4
 
-    Gh = _Gamma_hat(omega_grid, ell, tau, alpha_max)
-    Gh_sq = Gh**2
+    # Interval 1: 0 <= t <= tau_s
+    R1 = a4 * (ell + 2*tau_s/5
+               - 4*t**2 / (3*tau_s)
+               + 2*t**3 / (3*tau_s**2)
+               - t**5 / (15*tau_s**4))
 
-    # Vectorized: (n_lag, n_omega) matrix multiply
-    # R(t) = (1/pi) int_0^inf |Gh|^2 cos(w*t) dw
-    cos_matrix = jnp.cos(lag[:, None] * omega_grid[None, :])  # (n_lag, n_omega)
-    R = jnp.sum(cos_matrix * Gh_sq[None, :], axis=1) * d_omega / jnp.pi
+    # Interval 2: tau_s <= t <= ell  (linear)
+    R2 = a4 * (ell + 2*tau_s/3 - t)
+
+    # Interval 3: ell <= t <= ell + tau_s  (degree-5 polynomial P3)
+    R3 = a4 * (t**5 / (30*tau_s**4)
+               - (ell + 2*tau_s) * t**4 / (6*tau_s**4)
+               + (ell**2 + 4*ell*tau_s + 2*tau_s**2) * t**3 / (3*tau_s**4)
+               - ell*(ell**2 + 6*ell*tau_s + 6*tau_s**2) * t**2 / (3*tau_s**4)
+               + (ell**4 + 8*ell**3*tau_s + 12*ell**2*tau_s**2
+                  - 6*tau_s**4) * t / (6*tau_s**4)
+               + (-ell**5 - 10*ell**4*tau_s - 20*ell**3*tau_s**2
+                  + 30*ell*tau_s**4 + 20*tau_s**5) / (30*tau_s**4))
+
+    # Interval 4: ell + tau_s <= t <= ell + 2*tau_s
+    R4 = a4 * (ell + 2*tau_s - t)**5 / (30*tau_s**4)
+
+    # Select the correct interval for each lag value
+    R = jnp.where(t <= tau_s, R1,
+        jnp.where(t <= ell, R2,
+        jnp.where(t <= ell + tau_s, R3,
+        jnp.where(t <= ell + 2*tau_s, R4,
+                  0.0))))
 
     return R
 
@@ -170,23 +202,20 @@ class AnalyticKernel:
     Parameters
     ----------
     hparam : dict or list
-        Hyperparameters: peq, kappa, inc, nspot, lspot, tau, alpha_max.
+        Hyperparameters: peq, kappa, inc, nspot, lspot, tau, alpha_max, sigma_k.
     n_harmonics : int
         Number of harmonics to include (default 2).
     n_lat : int
         Number of latitude grid points (default 64).
     lat_range : tuple
         (min, max) latitude in radians (default (0, pi)).
-    n_omega : int
-        Number of frequency grid points for R_Gamma (default 4096).
     quadrature : str
         Latitude integration method: "trapezoid" or "gauss-legendre"
         (default "trapezoid").
     """
 
     def __init__(self, hparam, n_harmonics=2, n_lat=64,
-                 lat_range=(0, np.pi), n_omega=4096,
-                 quadrature="trapezoid"):
+                 lat_range=(0, np.pi), quadrature="trapezoid"):
 
         if isinstance(hparam, dict):
             missing = set(HPARAM_KEYS) - set(hparam.keys())
@@ -206,11 +235,11 @@ class AnalyticKernel:
         self.lspot = self.hparam["lspot"]
         self.tau = self.hparam["tau"]
         self.alpha_max = self.hparam["alpha_max"]
+        self.sigma_k = self.hparam["sigma_k"]
 
         self.n_harmonics = n_harmonics
         self.n_lat = n_lat
         self.lat_range = lat_range
-        self.n_omega = n_omega
         self.quadrature = quadrature
 
         # Precompute quadrature grid
@@ -230,9 +259,8 @@ class AnalyticKernel:
         return 2 * jnp.pi * (1 - self.kappa * jnp.sin(phi)**2) / self.peq
 
     def R_Gamma(self, lag):
-        """Autocorrelation of the squared envelope, vectorized over all lags."""
-        return _R_Gamma(jnp.asarray(lag), self.lspot, self.tau, self.alpha_max,
-                        n_omega=self.n_omega)
+        """Autocorrelation of the squared envelope (closed-form piecewise polynomial)."""
+        return _R_Gamma(jnp.asarray(lag), self.lspot, self.tau, self.alpha_max)
 
     def cn_squared(self, phi):
         """Squared Fourier coefficients at latitude phi."""
@@ -317,7 +345,7 @@ class AnalyticKernel:
             K = jnp.sum(weights[:, None] * all_contributions, axis=0)
             K = K * dphi / norm
 
-        K = R * K * self.nspot / jnp.pi**2
+        K = R * K * self.sigma_k**2
 
         return np.asarray(K.reshape(orig_shape))
 
@@ -364,7 +392,7 @@ class AnalyticKernel:
         cosine_terms = jnp.sum(cn_sq_avg[1:] * jnp.cos(ns * w0 * lag[:, None]), axis=1)
         cosine_sum = cn_sq_avg[0] + 2 * cosine_terms
 
-        return np.asarray(R * cosine_sum * self.nspot / jnp.pi**2)
+        return np.asarray(R * cosine_sum * self.sigma_k**2)
 
     def compute_psd(self, omega, lat_dist=None):
         """
@@ -433,7 +461,7 @@ class AnalyticKernel:
             psd = jnp.sum(user_weights[:, None] * all_contribs, axis=0)
             psd = psd * dphi / norm
 
-        psd = psd * self.nspot / jnp.pi**2
+        psd = psd * self.sigma_k**2
 
         self.psd_omega = np.asarray(omega)
         self.psd_freq = np.asarray(omega / (2 * jnp.pi))
