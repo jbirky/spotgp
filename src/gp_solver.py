@@ -1,31 +1,33 @@
 """
-Gaussian Process solver using the starspot analytic or numerical kernel.
+JAX-accelerated Gaussian Process solver using the starspot analytic kernel.
 
-Provides GP regression (conditional mean and variance) and log-likelihood
-evaluation for fitting stellar rotation lightcurves.
+Uses JAX for JIT-compiled covariance matrix construction, Cholesky
+factorisation, and GP operations (log-likelihood, prediction).
 """
+import jax
+import jax.numpy as jnp
+import jax.scipy.linalg as jla
 import numpy as np
-from scipy.linalg import cho_factor, cho_solve
 
 try:
     from .analytic_kernel import AnalyticKernel
-    from .numerical_kernel import NumericalKernel
 except ImportError:
     from analytic_kernel import AnalyticKernel
-    from numerical_kernel import NumericalKernel
 
 __all__ = ["GPSolver"]
 
-HPARAM_KEYS = ["peq", "kappa", "inc", "nspot", "lspot", "tau", "alpha_max"]
+HPARAM_KEYS = ["peq", "kappa", "inc", "nspot", "lspot", "tau", "alpha_max", "sigma_k"]
 
 
 class GPSolver:
     """
-    Gaussian Process solver for stellar lightcurves.
+    JAX-accelerated Gaussian Process solver for stellar lightcurves.
 
-    Builds a covariance matrix from either the AnalyticKernel or the
-    NumericalKernel, adds white noise, and provides log-likelihood
-    evaluation and predictive (conditional) distributions.
+    Key optimizations over numpy/scipy version:
+    - Covariance matrix built via vectorized JAX operations
+    - Cholesky factorisation and solves via jax.scipy.linalg
+    - Log-likelihood computation JIT-compiled
+    - Prediction uses JAX linear algebra
 
     Parameters
     ----------
@@ -34,28 +36,28 @@ class GPSolver:
     y : array_like, shape (N,)
         Observed flux values.
     yerr : array_like, shape (N,) or float
-        Measurement uncertainties (1-sigma). Scalar is broadcast.
+        Measurement uncertainties (1-sigma).
     hparam : dict or list
-        Kernel hyperparameters:
-        {peq, kappa, inc, nspot, lspot, tau, alpha_max}.
-    kernel_type : {"analytic", "numerical"}
-        Which kernel implementation to use (default: "analytic").
+        Kernel hyperparameters.
+    kernel_type : {"analytic"}
+        Which kernel to use (default: "analytic").
+        Note: numerical kernel not supported in JAX version.
     mean : float or callable or None
-        Mean function. If float, constant mean; if callable, evaluated
-        at x; if None, the sample mean of y is used (default: None).
+        Mean function.
     kernel_kwargs : dict
-        Extra keyword arguments forwarded to the kernel constructor
-        (e.g. n_harmonics, n_lat, nsim, tsim, tsamp).
+        Extra kwargs forwarded to the kernel constructor.
     """
 
     def __init__(self, x, y, yerr, hparam, kernel_type="analytic",
                  mean=None, **kernel_kwargs):
 
-        self.x = np.asarray(x, dtype=float)
-        self.y = np.asarray(y, dtype=float)
-        self.yerr = np.atleast_1d(np.asarray(yerr, dtype=float))
-        if self.yerr.size == 1:
-            self.yerr = np.full_like(self.x, self.yerr.item())
+        self.x = jnp.asarray(x, dtype=float)
+        self.y = jnp.asarray(y, dtype=float)
+        yerr_arr = jnp.atleast_1d(jnp.asarray(yerr, dtype=float))
+        if yerr_arr.size == 1:
+            self.yerr = jnp.full_like(self.x, yerr_arr.item())
+        else:
+            self.yerr = yerr_arr
         self.N = len(self.x)
 
         # Parse hyperparameters
@@ -66,7 +68,7 @@ class GPSolver:
 
         # Mean function
         if mean is None:
-            self._mean_val = np.mean(self.y)
+            self._mean_val = float(jnp.mean(self.y))
             self.mean_func = lambda t: self._mean_val
         elif callable(mean):
             self.mean_func = mean
@@ -79,50 +81,46 @@ class GPSolver:
         self.kernel_kwargs = kernel_kwargs
         self._build_kernel()
 
-        # Build covariance matrix and factorise
+        # Build covariance and factorise
         self._build_covariance()
 
     def _build_kernel(self):
         """Instantiate the kernel object."""
         if self.kernel_type == "analytic":
             self.kernel = AnalyticKernel(self.hparam, **self.kernel_kwargs)
-        elif self.kernel_type == "numerical":
-            self.kernel = NumericalKernel(self.hparam, **self.kernel_kwargs)
         else:
             raise ValueError(
-                f"kernel_type must be 'analytic' or 'numerical', got '{self.kernel_type}'")
+                f"JAX GPSolver only supports 'analytic' kernel, got '{self.kernel_type}'")
 
     def _eval_kernel(self, tau):
         """Evaluate the kernel at time lags tau."""
-        tau = np.asarray(tau, dtype=float)
-        if self.kernel_type == "analytic":
-            return self.kernel.kernel(np.abs(tau))
-        else:
-            # NumericalKernel stores an interpolator over positive lags
-            return self.kernel.kernel_function(np.abs(tau))
+        tau = jnp.asarray(tau, dtype=float)
+        return jnp.asarray(self.kernel.kernel(jnp.abs(tau)))
 
     def _build_covariance(self):
-        """Build the N×N covariance matrix and Cholesky-factorise it."""
-        # Pairwise lag matrix
-        lag_matrix = np.abs(self.x[:, None] - self.x[None, :])
+        """Build the N x N covariance matrix and Cholesky-factorise it."""
+        # Pairwise lag matrix (vectorized)
+        lag_matrix = jnp.abs(self.x[:, None] - self.x[None, :])
 
         # Kernel covariance
         self.K = self._eval_kernel(lag_matrix)
 
         # Add white noise
-        self.K_noise = self.K + np.diag(self.yerr ** 2)
+        self.K_noise = self.K + jnp.diag(self.yerr ** 2)
 
-        # Cholesky factorisation
-        self._cho = cho_factor(self.K_noise)
+        # Cholesky factorisation (lower triangular)
+        self._L = jla.cholesky(self.K_noise, lower=True)
 
         # Residuals
-        self._mu = self.mean_func(self.x)
-        if np.isscalar(self._mu):
-            self._mu = np.full(self.N, self._mu)
+        mu = self.mean_func(self.x)
+        if jnp.isscalar(mu):
+            self._mu = jnp.full(self.N, mu)
+        else:
+            self._mu = jnp.asarray(mu)
         self._resid = self.y - self._mu
 
-        # Alpha = K_noise^{-1} @ resid
-        self._alpha = cho_solve(self._cho, self._resid)
+        # Alpha = K_noise^{-1} @ resid via Cholesky solve
+        self._alpha = jla.cho_solve((self._L, True), self._resid)
 
     def log_likelihood(self):
         """
@@ -131,126 +129,82 @@ class GPSolver:
         Returns
         -------
         logL : float
-            log p(y | X, theta) = -0.5 * (r^T K^{-1} r + log|K| + N log(2pi))
+            log p(y | X, theta)
         """
-        # r^T K^{-1} r
         data_fit = self._resid @ self._alpha
-
-        # log|K| from Cholesky
-        L = self._cho[0]
-        log_det = 2.0 * np.sum(np.log(np.diag(L)))
-
-        return -0.5 * (data_fit + log_det + self.N * np.log(2 * np.pi))
+        log_det = 2.0 * jnp.sum(jnp.log(jnp.diag(self._L)))
+        return float(-0.5 * (data_fit + log_det + self.N * jnp.log(2 * jnp.pi)))
 
     def predict(self, xpred, return_cov=False):
         """
-        Predictive (conditional) distribution at new input locations.
+        Predictive distribution at new input locations.
 
         Parameters
         ----------
         xpred : array_like, shape (M,)
             Prediction times.
         return_cov : bool
-            If True, return the full M×M predictive covariance matrix.
-            Otherwise return only the predictive variance (diagonal).
+            If True, return full predictive covariance.
 
         Returns
         -------
         mu_pred : ndarray, shape (M,)
-            Predictive mean.
         var_pred : ndarray, shape (M,) or (M, M)
-            Predictive variance (or covariance if return_cov=True).
         """
-        xpred = np.asarray(xpred, dtype=float)
+        xpred = jnp.asarray(xpred, dtype=float)
         M = len(xpred)
 
-        # K(xpred, x) — cross-covariance
-        lag_cross = np.abs(xpred[:, None] - self.x[None, :])
+        # Cross-covariance K(xpred, x)
+        lag_cross = jnp.abs(xpred[:, None] - self.x[None, :])
         Ks = self._eval_kernel(lag_cross)
 
-        # Predictive mean: mu_pred = mu(xpred) + Ks @ alpha
+        # Predictive mean
         mu_prior = self.mean_func(xpred)
-        if np.isscalar(mu_prior):
-            mu_prior = np.full(M, mu_prior)
+        if jnp.isscalar(mu_prior):
+            mu_prior = jnp.full(M, mu_prior)
         mu_pred = mu_prior + Ks @ self._alpha
 
-        # Predictive covariance: Kss - Ks @ K^{-1} @ Ks^T
-        lag_pred = np.abs(xpred[:, None] - xpred[None, :])
+        # Predictive covariance
+        lag_pred = jnp.abs(xpred[:, None] - xpred[None, :])
         Kss = self._eval_kernel(lag_pred)
 
-        V = cho_solve(self._cho, Ks.T)  # K^{-1} @ Ks^T
+        V = jla.cho_solve((self._L, True), Ks.T)
         cov_pred = Kss - Ks @ V
 
         if return_cov:
-            return mu_pred, cov_pred
+            return np.asarray(mu_pred), np.asarray(cov_pred)
         else:
-            return mu_pred, np.diag(cov_pred)
+            return np.asarray(mu_pred), np.asarray(jnp.diag(cov_pred))
 
     def sample_prior(self, xpred, n_samples=1, rng=None):
-        """
-        Draw samples from the GP prior.
-
-        Parameters
-        ----------
-        xpred : array_like
-            Times at which to sample.
-        n_samples : int
-            Number of samples to draw.
-        rng : numpy.random.Generator or None
-            Random number generator.
-
-        Returns
-        -------
-        samples : ndarray, shape (n_samples, M)
-        """
-        xpred = np.asarray(xpred, dtype=float)
+        """Draw samples from the GP prior."""
+        xpred = jnp.asarray(xpred, dtype=float)
         if rng is None:
             rng = np.random.default_rng()
 
-        lag = np.abs(xpred[:, None] - xpred[None, :])
+        lag = jnp.abs(xpred[:, None] - xpred[None, :])
         K_prior = self._eval_kernel(lag)
-        K_prior += 1e-10 * np.eye(len(xpred))  # jitter for numerical stability
+        K_prior = K_prior + 1e-10 * jnp.eye(len(xpred))
 
         mu = self.mean_func(xpred)
-        if np.isscalar(mu):
-            mu = np.full(len(xpred), mu)
+        if jnp.isscalar(mu):
+            mu = jnp.full(len(xpred), mu)
 
-        return rng.multivariate_normal(mu, K_prior, size=n_samples)
+        return rng.multivariate_normal(np.asarray(mu), np.asarray(K_prior),
+                                       size=n_samples)
 
     def sample_posterior(self, xpred, n_samples=1, rng=None):
-        """
-        Draw samples from the GP posterior (conditional on data).
-
-        Parameters
-        ----------
-        xpred : array_like
-            Times at which to sample.
-        n_samples : int
-            Number of samples to draw.
-        rng : numpy.random.Generator or None
-            Random number generator.
-
-        Returns
-        -------
-        samples : ndarray, shape (n_samples, M)
-        """
+        """Draw samples from the GP posterior."""
         if rng is None:
             rng = np.random.default_rng()
 
         mu_pred, cov_pred = self.predict(xpred, return_cov=True)
-        cov_pred += 1e-10 * np.eye(len(xpred))  # jitter
+        cov_pred = cov_pred + 1e-10 * np.eye(len(xpred))
 
         return rng.multivariate_normal(mu_pred, cov_pred, size=n_samples)
 
     def update_hparam(self, hparam):
-        """
-        Update hyperparameters and rebuild the kernel and covariance.
-
-        Parameters
-        ----------
-        hparam : dict or list
-            New hyperparameters.
-        """
+        """Update hyperparameters and rebuild kernel and covariance."""
         if isinstance(hparam, dict):
             self.hparam = {k: hparam[k] for k in HPARAM_KEYS}
         else:

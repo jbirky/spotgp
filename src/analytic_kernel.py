@@ -1,205 +1,221 @@
+import jax
+import jax.numpy as jnp
 import numpy as np
-from scipy import integrate
+from functools import partial
 
 __all__ = ["AnalyticKernel"]
 
-HPARAM_KEYS = ["peq", "kappa", "inc", "nspot", "lspot", "tau", "alpha_max"]
+HPARAM_KEYS = ["peq", "kappa", "inc", "nspot", "lspot", "tau", "alpha_max", "sigma_k"]
 
 
+@jax.jit
 def _Gamma_hat(omega, ell, tau, alpha_max):
     """
     Fourier transform of the squared trapezoidal envelope Gamma(t) = alpha^2(t).
+    Fully vectorized with JAX.
 
-    Parameters
-    ----------
-    omega : array_like
-        Angular frequencies.
-    ell : float
-        Plateau duration of the spot.
-    tau : float
-        Rise/decay timescale.
-    alpha_max : float
-        Peak angular radius.
-
-    Returns
-    -------
-    result : ndarray
-        Real-valued FT evaluated at each omega.
+    Uses safe_w = max(|omega|, eps) to avoid 1/w^3 singularity at omega=0.
+    This ensures correct gradients through JAX autodiff (jnp.where alone
+    does not prevent NaN gradients from the unused branch).
     """
-    omega = np.asarray(omega, dtype=float)
-    result = np.zeros_like(omega)
-    nz = np.abs(omega) > 1e-14
-    w = omega[nz]
-    result[nz] = (4 * alpha_max**2 / (tau**2 * w**3) *
-                  (tau * w * np.cos(w * ell / 2)
-                   + np.sin(w * ell / 2)
-                   - np.sin(w * ell / 2 + w * tau)))
-    result[~nz] = alpha_max**2 * (ell + 2 * tau / 3)
-    return result
+    omega = jnp.asarray(omega, dtype=float)
+    # Replace omega=0 with a safe value to avoid 0/0 in forward pass
+    # (the result at omega~0 is overridden by the zero_result branch)
+    safe_w = jnp.where(jnp.abs(omega) > 1e-14, omega, 1.0)
+
+    nz_result = (4 * alpha_max**2 / (tau**2 * safe_w**3) *
+                 (tau * safe_w * jnp.cos(safe_w * ell / 2)
+                  + jnp.sin(safe_w * ell / 2)
+                  - jnp.sin(safe_w * ell / 2 + safe_w * tau)))
+
+    zero_result = alpha_max**2 * (ell + 2 * tau / 3)
+
+    return jnp.where(jnp.abs(omega) > 1e-14, nz_result, zero_result)
 
 
-def _R_Gamma(lag, ell, tau, alpha_max, n_omega=4096, omega_max=None):
+@jax.jit
+def _R_Gamma(lag, ell, tau_s, alpha_max):
     """
-    Autocorrelation of Gamma(t) = alpha^2(t) via inverse FT of |Gamma_hat|^2.
+    Closed-form autocorrelation of Gamma(t) = alpha^2(t).
 
-    R_Gamma(tau) = (1/2pi) int |Gamma_hat(omega)|^2 e^{i omega tau} d omega
+    Piecewise degree-5 polynomial derived from direct convolution of the
+    squared trapezoidal envelope (see Appendix D, Eq. R_Gamma_closed).
 
-    Since Gamma_hat is real, |Gamma_hat|^2 = Gamma_hat^2 and R_Gamma is even.
+    Four intervals on [0, ell + 2*tau_s], zero beyond.
+    Assumes ell/2 > tau_s (plateau longer than ramp).
 
     Parameters
     ----------
     lag : array_like
-        Time lags at which to evaluate the autocorrelation.
+        Time lags (non-negative) [days].
     ell : float
-        Plateau duration.
-    tau : float
-        Rise/decay timescale.
+        Spot plateau duration [days].
+    tau_s : float
+        Rise/decay timescale [days].
     alpha_max : float
-        Peak angular radius.
-    n_omega : int
-        Number of frequency grid points for numerical integration.
-    omega_max : float or None
-        Upper frequency limit. If None, set automatically from tau.
-
-    Returns
-    -------
-    R : ndarray
-        Autocorrelation values at each lag.
+        Peak angular radius [rad].
     """
-    lag = np.asarray(lag, dtype=float)
-    if omega_max is None:
-        omega_max = 20 * np.pi / max(tau, 0.1)
-    omega_grid = np.linspace(0, omega_max, n_omega)
-    Gh = _Gamma_hat(omega_grid, ell, tau, alpha_max)
-    Gh_sq = Gh**2
+    t = jnp.abs(jnp.asarray(lag, dtype=float).ravel())
+    a4 = alpha_max**4
 
-    R = np.empty_like(lag)
-    for i, t in enumerate(lag.ravel()):
-        # R(t) = (1/2pi) int_{-inf}^{inf} |Gh|^2 e^{i w t} dw
-        # Since |Gh|^2 is even: R(t) = (1/pi) int_0^inf |Gh|^2 cos(w t) dw
-        integrand = Gh_sq * np.cos(omega_grid * t)
-        R.flat[i] = np.trapezoid(integrand, omega_grid) / np.pi
+    # Interval 1: 0 <= t <= tau_s
+    R1 = a4 * (ell + 2*tau_s/5
+               - 4*t**2 / (3*tau_s)
+               + 2*t**3 / (3*tau_s**2)
+               - t**5 / (15*tau_s**4))
+
+    # Interval 2: tau_s <= t <= ell  (linear)
+    R2 = a4 * (ell + 2*tau_s/3 - t)
+
+    # Interval 3: ell <= t <= ell + tau_s  (degree-5 polynomial P3)
+    R3 = a4 * (t**5 / (30*tau_s**4)
+               - (ell + 2*tau_s) * t**4 / (6*tau_s**4)
+               + (ell**2 + 4*ell*tau_s + 2*tau_s**2) * t**3 / (3*tau_s**4)
+               - ell*(ell**2 + 6*ell*tau_s + 6*tau_s**2) * t**2 / (3*tau_s**4)
+               + (ell**4 + 8*ell**3*tau_s + 12*ell**2*tau_s**2
+                  - 6*tau_s**4) * t / (6*tau_s**4)
+               + (-ell**5 - 10*ell**4*tau_s - 20*ell**3*tau_s**2
+                  + 30*ell*tau_s**4 + 20*tau_s**5) / (30*tau_s**4))
+
+    # Interval 4: ell + tau_s <= t <= ell + 2*tau_s
+    R4 = a4 * (ell + 2*tau_s - t)**5 / (30*tau_s**4)
+
+    # Select the correct interval for each lag value
+    R = jnp.where(t <= tau_s, R1,
+        jnp.where(t <= ell, R2,
+        jnp.where(t <= ell + tau_s, R3,
+        jnp.where(t <= ell + 2*tau_s, R4,
+                  0.0))))
+
     return R
 
 
-def _cn_general(n, inc, phi):
+def _safe_arccos(x):
+    """arccos that is safe for autodiff at x = +-1.
+    Clamps input away from +-1 so that the gradient -1/sqrt(1-x^2)
+    remains finite.
     """
-    Fourier coefficient c_n of the visibility function Pi(t) = max{cos(beta), 0}
-    for general inclination I and spot latitude phi.
+    return jnp.arccos(jnp.clip(x, -1.0 + 1e-7, 1.0 - 1e-7))
+
+
+@jax.jit
+def _cn_general_jax(n, inc, phi):
+    """
+    Fourier coefficient c_n of the visibility function.
+    JAX-compatible (no Python control flow on traced values).
+    Uses safe_arccos to ensure finite gradients everywhere.
+    """
+    a0 = jnp.cos(inc) * jnp.sin(phi)
+    a1 = jnp.sin(inc) * jnp.cos(phi)
+
+    # Safe division: replace a1~0 with 1.0 to avoid 0/0
+    safe_a1 = jnp.where(jnp.abs(a1) < 1e-15, 1.0, a1)
+    ratio = -a0 / safe_a1
+
+    # Determine visibility angle
+    always_visible = ratio <= -1.0
+    never_visible = ratio >= 1.0
+    tiny_a1 = jnp.abs(a1) < 1e-15
+
+    # Use safe_arccos for gradient-safe computation
+    theta_vis = jnp.where(
+        tiny_a1, 0.0,
+        jnp.where(always_visible, jnp.pi,
+                  jnp.where(never_visible, 0.0,
+                            _safe_arccos(ratio))))
+
+    # n == 0 case
+    c0 = jnp.where(tiny_a1, a0,
+                   (a0 * theta_vis + a1 * jnp.sin(theta_vis)) / jnp.pi)
+    c0 = jnp.where(never_visible & ~tiny_a1, 0.0, c0)
+
+    # n == 1 case
+    c1 = (a0 * jnp.sin(theta_vis)
+          + a1 / 2 * (theta_vis + jnp.sin(theta_vis) * jnp.cos(theta_vis))) / jnp.pi
+    c1 = jnp.where(tiny_a1 | never_visible, 0.0, c1)
+
+    # general n >= 2 case
+    n_f = jnp.float64(n) if hasattr(jnp, 'float64') else jnp.float32(n)
+    nm1 = n_f - 1
+    np1 = n_f + 1
+    safe_nm1 = jnp.where(jnp.abs(nm1) < 1e-15, 1.0, nm1)
+    safe_np1 = jnp.where(jnp.abs(np1) < 1e-15, 1.0, np1)
+
+    term1 = a0 * jnp.sin(n_f * theta_vis) / (n_f + 1e-30)
+    term2 = a1 / 2 * (jnp.sin(safe_nm1 * theta_vis) / safe_nm1
+                       + jnp.sin(safe_np1 * theta_vis) / safe_np1)
+    cn_general = (term1 + term2) / jnp.pi
+    cn_general = jnp.where(tiny_a1 | never_visible, 0.0, cn_general)
+
+    # Select based on n
+    result = jnp.where(n == 0, c0, jnp.where(n == 1, c1, cn_general))
+    return result
+
+
+def _cn_squared_coefficients_jax(inc, phi, n_harmonics=2):
+    """
+    Compute |c_n|^2 for n = 0, 1, ..., n_harmonics using JAX.
+    Vectorized over all harmonics at once.
+    """
+    ns = jnp.arange(n_harmonics + 1)
+    # vmap over harmonic number
+    cn_vals = jax.vmap(lambda n: _cn_general_jax(n, inc, phi))(ns)
+    return cn_vals**2
+
+
+def _gauss_legendre_grid(n, a, b):
+    """
+    Compute Gauss-Legendre nodes and weights on [a, b].
+
+    Uses numpy for the root-finding (done once at init time),
+    then stores as JAX arrays.
 
     Parameters
     ----------
     n : int
-        Harmonic number.
-    inc : float
-        Stellar inclination in radians.
-    phi : float
-        Spot latitude in radians.
+        Number of quadrature points.
+    a, b : float
+        Integration interval.
 
     Returns
     -------
-    cn : float
-        The n-th Fourier coefficient (real).
+    nodes : jnp.ndarray, shape (n,)
+    weights : jnp.ndarray, shape (n,)
     """
-    a0 = np.cos(inc) * np.sin(phi)
-    a1 = np.sin(inc) * np.cos(phi)
-
-    # Always-visible spot (a0 >= a1 > 0)
-    if np.abs(a1) < 1e-15:
-        if n == 0:
-            return a0
-        else:
-            return 0.0
-
-    ratio = -a0 / a1
-    if np.abs(ratio) >= 1.0:
-        # Spot is always visible (ratio <= -1) or never visible (ratio >= 1)
-        if ratio >= 1.0:
-            return 0.0
-        else:
-            # Always visible: theta_vis = pi
-            theta_vis = np.pi
-    else:
-        theta_vis = np.arccos(ratio)
-
-    if n == 0:
-        return (a0 * theta_vis + a1 * np.sin(theta_vis)) / np.pi
-    elif abs(n) == 1:
-        # Limit of general formula as n->1: sin((n-1)θ)/(n-1) -> θ_vis
-        return (a0 * np.sin(theta_vis)
-                + a1 / 2 * (theta_vis + np.sin(theta_vis) * np.cos(theta_vis))) / np.pi
-    else:
-        term1 = a0 * np.sin(n * theta_vis) / n
-        nm1 = n - 1
-        np1 = n + 1
-        # Handle n=1 case already covered above, so nm1 != 0 and np1 != 0
-        term2 = a1 / 2 * (np.sin(nm1 * theta_vis) / nm1
-                          + np.sin(np1 * theta_vis) / np1)
-        return (term1 + term2) / np.pi
-
-
-def _cn_squared_coefficients(inc, phi, n_harmonics=2):
-    """
-    Compute |c_n|^2 for n = 0, 1, ..., n_harmonics.
-
-    Parameters
-    ----------
-    inc : float
-        Stellar inclination in radians.
-    phi : float
-        Spot latitude in radians.
-    n_harmonics : int
-        Maximum harmonic order.
-
-    Returns
-    -------
-    cn_sq : ndarray of shape (n_harmonics + 1,)
-        Squared Fourier coefficients [|c_0|^2, |c_1|^2, ..., |c_N|^2].
-    """
-    cn_sq = np.empty(n_harmonics + 1)
-    for n in range(n_harmonics + 1):
-        cn_sq[n] = _cn_general(n, inc, phi) ** 2
-    return cn_sq
+    nodes_ref, weights_ref = np.polynomial.legendre.leggauss(n)
+    # Map from [-1, 1] to [a, b]
+    nodes = 0.5 * (b - a) * nodes_ref + 0.5 * (a + b)
+    weights = 0.5 * (b - a) * weights_ref
+    return jnp.array(nodes), jnp.array(weights)
 
 
 class AnalyticKernel:
     """
-    Analytic GP kernel for stellar rotation variability due to starspots.
+    JAX-accelerated analytic GP kernel for stellar rotation variability.
 
-    The kernel is (Eq. 33 of the paper):
-
-        K(tau) = (N_spot / pi^2) * R_Gamma(tau)
-                 * integral over latitude of
-                   [sum_n |c_n(Phi)|^2 cos(n omega_0(Phi) tau)] p(Phi) dPhi
-
-    where the amplitude prefactor N_spot * alpha_max^2 / pi^2 is absorbed
-    into R_Gamma via alpha_max.
+    Key optimizations over numpy version:
+    - R_Gamma computed via vectorized matrix multiply instead of per-lag loop
+    - cn coefficients computed via vmap over harmonics
+    - Latitude integration vectorized with vmap
+    - Key functions JIT-compiled
 
     Parameters
     ----------
     hparam : dict or list
-        Hyperparameters. Keys (or positional order):
-        peq, kappa, inc, nspot, lspot, tau, alpha_max.
-        - peq: equatorial rotation period [days]
-        - kappa: differential rotation shear
-        - inc: stellar inclination [radians]
-        - nspot: number of spots (amplitude scaling)
-        - lspot: spot plateau duration [days]
-        - tau: spot rise/decay timescale [days]
-        - alpha_max: peak spot angular radius [radians]
+        Hyperparameters: peq, kappa, inc, nspot, lspot, tau, alpha_max, sigma_k.
     n_harmonics : int
         Number of harmonics to include (default 2).
     n_lat : int
-        Number of latitude grid points for numerical integration (default 64).
+        Number of latitude grid points (default 64).
     lat_range : tuple
-        (min, max) latitude in radians (default (0, pi/2) for one hemisphere,
-        assuming symmetric spot distribution).
-    n_omega : int
-        Number of frequency grid points for R_Gamma computation (default 4096).
+        (min, max) latitude in radians (default (0, pi)).
+    quadrature : str
+        Latitude integration method: "trapezoid" or "gauss-legendre"
+        (default "trapezoid").
     """
 
     def __init__(self, hparam, n_harmonics=2, n_lat=64,
-                 lat_range=(0, np.pi), n_omega=4096):
+                 lat_range=(0, np.pi), quadrature="trapezoid"):
 
         if isinstance(hparam, dict):
             missing = set(HPARAM_KEYS) - set(hparam.keys())
@@ -219,191 +235,237 @@ class AnalyticKernel:
         self.lspot = self.hparam["lspot"]
         self.tau = self.hparam["tau"]
         self.alpha_max = self.hparam["alpha_max"]
+        self.sigma_k = self.hparam["sigma_k"]
 
         self.n_harmonics = n_harmonics
         self.n_lat = n_lat
         self.lat_range = lat_range
-        self.n_omega = n_omega
+        self.quadrature = quadrature
+
+        # Precompute quadrature grid
+        if quadrature == "gauss-legendre":
+            self._quad_nodes, self._quad_weights = _gauss_legendre_grid(
+                n_lat, lat_range[0], lat_range[1])
+        elif quadrature == "trapezoid":
+            self._quad_nodes = None
+            self._quad_weights = None
+        else:
+            raise ValueError(
+                f"Unknown quadrature method: {quadrature!r}. "
+                "Use 'trapezoid' or 'gauss-legendre'.")
 
     def omega0(self, phi):
         """Latitude-dependent rotation frequency."""
-        return 2 * np.pi * (1 - self.kappa * np.sin(phi)**2) / self.peq
+        return 2 * jnp.pi * (1 - self.kappa * jnp.sin(phi)**2) / self.peq
 
     def R_Gamma(self, lag):
-        """Autocorrelation of the squared envelope Gamma(t) = alpha^2(t)."""
-        return _R_Gamma(lag, self.lspot, self.tau, self.alpha_max,
-                        n_omega=self.n_omega)
+        """Autocorrelation of the squared envelope (closed-form piecewise polynomial)."""
+        return _R_Gamma(jnp.asarray(lag), self.lspot, self.tau, self.alpha_max)
 
     def cn_squared(self, phi):
-        """Squared Fourier coefficients |c_n|^2 at latitude phi."""
-        return _cn_squared_coefficients(self.inc, phi, self.n_harmonics)
+        """Squared Fourier coefficients at latitude phi."""
+        return _cn_squared_coefficients_jax(self.inc, phi, self.n_harmonics)
 
     def kernel_single_latitude(self, lag, phi):
-        """
-        Single-spot kernel at a fixed latitude (Eq. 27):
-
-            k(tau) = R_Gamma(tau) * [|c_0|^2 + 2 sum_{n>=1} |c_n|^2 cos(n w0 tau)]
-        """
-        lag = np.asarray(lag, dtype=float)
+        """Single-spot kernel at a fixed latitude."""
+        lag = jnp.asarray(lag, dtype=float).ravel()
         R = self.R_Gamma(lag)
         cn_sq = self.cn_squared(phi)
         w0 = self.omega0(phi)
 
-        cosine_sum = cn_sq[0] + 2 * sum(
-            cn_sq[n] * np.cos(n * w0 * lag) for n in range(1, len(cn_sq)))
+        ns = jnp.arange(1, len(cn_sq))
+        cosine_terms = jnp.sum(cn_sq[1:] * jnp.cos(ns * w0 * lag[:, None]), axis=1)
+        cosine_sum = cn_sq[0] + 2 * cosine_terms
 
         return R * cosine_sum
 
     def kernel(self, lag, lat_dist=None):
         """
-        Full GP kernel averaged over latitude (Eq. 33):
+        Full GP kernel averaged over latitude.
 
-            K(tau) = (N_spot / pi^2) * integral [k(tau; Phi) p(Phi)] dPhi
+        Vectorized latitude integration using JAX operations.
+        Supports both 1D lag arrays and 2D lag matrices (for covariance).
 
         Parameters
         ----------
         lag : array_like
-            Time lags [days].
+            Time lags [days]. Can be 1D or 2D.
         lat_dist : callable or None
-            Latitude probability density p(Phi). If None, uses a uniform
-            distribution (cos(Phi) weighting for isotropic on the sphere).
+            Latitude probability density. If None, uniform.
 
         Returns
         -------
         K : ndarray
-            Kernel values at each lag.
+            Kernel values at each lag (same shape as input).
         """
-        lag = np.asarray(lag, dtype=float)
+        lag = jnp.asarray(lag, dtype=float)
+        orig_shape = lag.shape
+        lag_flat = lag.ravel()
 
         if lat_dist is None:
             lat_dist = lambda phi: 1.0
 
-        phi_min, phi_max = self.lat_range
-        phi_grid = np.linspace(phi_min, phi_max, self.n_lat)
-        dphi = phi_grid[1] - phi_grid[0]
+        # Precompute R_Gamma once (on flat lags)
+        R = self.R_Gamma(lag_flat)
 
-        # Precompute R_Gamma once (independent of latitude)
-        R = self.R_Gamma(lag)
+        n_harmonics = self.n_harmonics
 
-        # Normalisation of p(Phi) over the integration range
-        weights = np.array([lat_dist(p) for p in phi_grid])
-        norm = np.trapezoid(weights, phi_grid)
-
-        # Integrate the cosine sum over latitude
-        K = np.zeros_like(lag)
-        for j, phi in enumerate(phi_grid):
+        # Vectorized latitude contribution
+        def _lat_contribution(phi):
             cn_sq = self.cn_squared(phi)
             w0 = self.omega0(phi)
+            ns = jnp.arange(1, n_harmonics + 1)
+            cosine_terms = jnp.sum(cn_sq[1:] * jnp.cos(ns * w0 * lag_flat[:, None]), axis=1)
+            return cn_sq[0] + 2 * cosine_terms
 
-            cosine_sum = cn_sq[0] + 2 * sum(
-                cn_sq[n] * np.cos(n * w0 * lag) for n in range(1, len(cn_sq)))
+        if self.quadrature == "gauss-legendre":
+            phi_grid = self._quad_nodes
+            quad_weights = self._quad_weights
 
-            K += weights[j] * cosine_sum
+            all_contributions = jax.vmap(_lat_contribution)(phi_grid)
 
-        K = K * dphi / norm  # trapezoidal integration
-        K = R * K * self.nspot / np.pi**2
+            # Apply lat_dist weights
+            user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
+            norm = jnp.sum(user_weights * quad_weights)
 
-        return K
+            K = jnp.sum(user_weights[:, None] * quad_weights[:, None]
+                        * all_contributions, axis=0)
+            K = K / norm
+        else:
+            # Trapezoid rule
+            phi_min, phi_max = self.lat_range
+            phi_grid = jnp.linspace(phi_min, phi_max, self.n_lat)
+            dphi = phi_grid[1] - phi_grid[0]
+
+            all_contributions = jax.vmap(_lat_contribution)(phi_grid)
+
+            weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
+            norm = jnp.trapezoid(weights, phi_grid)
+
+            K = jnp.sum(weights[:, None] * all_contributions, axis=0)
+            K = K * dphi / norm
+
+        K = R * K * self.sigma_k**2
+
+        return np.asarray(K.reshape(orig_shape))
 
     def kernel_solid_body(self, lag, lat_dist=None):
-        """
-        Kernel for solid-body rotation (kappa=0), Eq. 28:
-
-            K(tau) = (N_spot / pi^2) * R_Gamma(tau)
-                     * [<|c_0|^2> + 2 sum <|c_n|^2> cos(n w0 tau)]
-
-        where <|c_n|^2> is the latitude-averaged squared coefficient.
-        """
-        lag = np.asarray(lag, dtype=float)
+        """Kernel for solid-body rotation (kappa=0)."""
+        lag = jnp.asarray(lag, dtype=float)
 
         if lat_dist is None:
             lat_dist = lambda phi: 1.0
 
-        phi_min, phi_max = self.lat_range
-        phi_grid = np.linspace(phi_min, phi_max, self.n_lat)
+        # Average |c_n|^2 over latitude via vmap
+        if self.quadrature == "gauss-legendre":
+            phi_grid = self._quad_nodes
+            quad_weights = self._quad_weights
 
-        weights = np.array([lat_dist(p) for p in phi_grid])
-        norm = np.trapezoid(weights, phi_grid)
+            all_cn_sq = jax.vmap(
+                lambda phi: _cn_squared_coefficients_jax(self.inc, phi, self.n_harmonics)
+            )(phi_grid)
 
-        # Average |c_n|^2 over latitude
-        cn_sq_avg = np.zeros(self.n_harmonics + 1)
-        for j, phi in enumerate(phi_grid):
-            cn_sq_avg += weights[j] * self.cn_squared(phi)
-        cn_sq_avg = cn_sq_avg * (phi_grid[1] - phi_grid[0]) / norm
+            user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
+            norm = jnp.sum(user_weights * quad_weights)
 
-        w0 = 2 * np.pi / self.peq
+            cn_sq_avg = jnp.sum(
+                user_weights[:, None] * quad_weights[:, None] * all_cn_sq, axis=0)
+            cn_sq_avg = cn_sq_avg / norm
+        else:
+            phi_min, phi_max = self.lat_range
+            phi_grid = jnp.linspace(phi_min, phi_max, self.n_lat)
+
+            user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
+            norm = jnp.trapezoid(user_weights, phi_grid)
+
+            all_cn_sq = jax.vmap(
+                lambda phi: _cn_squared_coefficients_jax(self.inc, phi, self.n_harmonics)
+            )(phi_grid)
+
+            cn_sq_avg = jnp.sum(user_weights[:, None] * all_cn_sq, axis=0)
+            cn_sq_avg = cn_sq_avg * (phi_grid[1] - phi_grid[0]) / norm
+
+        w0 = 2 * jnp.pi / self.peq
         R = self.R_Gamma(lag)
 
-        cosine_sum = cn_sq_avg[0] + 2 * sum(
-            cn_sq_avg[n] * np.cos(n * w0 * lag)
-            for n in range(1, len(cn_sq_avg)))
+        ns = jnp.arange(1, len(cn_sq_avg))
+        cosine_terms = jnp.sum(cn_sq_avg[1:] * jnp.cos(ns * w0 * lag[:, None]), axis=1)
+        cosine_sum = cn_sq_avg[0] + 2 * cosine_terms
 
-        return R * cosine_sum * self.nspot / np.pi**2
+        return np.asarray(R * cosine_sum * self.sigma_k**2)
 
     def compute_psd(self, omega, lat_dist=None):
         """
-        Analytic power spectral density (Fourier transform of the kernel).
-
-        The PSD is the latitude-averaged energy spectral density:
-
-            S(omega) = (N_spot / pi^2) * integral over Phi of
-                       [sum_n |c_n(Phi)|^2 |Gamma_hat(omega - n*w0(Phi))|^2]
-                       * p(Phi) dPhi
-
-        where Gamma_hat is the Fourier transform of the squared spot-size
-        envelope, and the sum runs over n = 0, +-1, +-2, ... including
-        both positive and negative harmonics.
+        Analytic power spectral density, vectorized with JAX.
 
         Parameters
         ----------
         omega : array_like
-            Angular frequencies [rad/day] at which to evaluate the PSD.
+            Angular frequencies [rad/day].
         lat_dist : callable or None
-            Latitude probability density p(Phi). If None, uses uniform.
+            Latitude probability density.
 
         Returns
         -------
-        S : ndarray
-            Power spectral density at each omega.
+        freq : ndarray
+            Frequencies in cycles/day.
+        power : ndarray
+            PSD values.
         """
-        omega = np.asarray(omega, dtype=float)
+        omega = jnp.asarray(omega, dtype=float)
 
         if lat_dist is None:
             lat_dist = lambda phi: 1.0
 
-        phi_min, phi_max = self.lat_range
-        phi_grid = np.linspace(phi_min, phi_max, self.n_lat)
-        dphi = phi_grid[1] - phi_grid[0]
-
-        weights = np.array([lat_dist(p) for p in phi_grid])
-        norm = np.trapezoid(weights, phi_grid)
-
-        psd = np.zeros_like(omega)
-        for j, phi in enumerate(phi_grid):
+        def _psd_at_lat(phi):
             cn_sq = self.cn_squared(phi)
             w0 = self.omega0(phi)
 
-            # n = 0 term: |c_0|^2 |Gamma_hat(omega)|^2
+            # n=0 term
             Gh_0 = _Gamma_hat(omega, self.lspot, self.tau, self.alpha_max)
             contrib = cn_sq[0] * Gh_0**2
 
-            # n >= 1 terms: |c_n|^2 [|Gamma_hat(omega - n*w0)|^2
-            #                        + |Gamma_hat(omega + n*w0)|^2]
-            for n in range(1, len(cn_sq)):
-                Gh_plus = _Gamma_hat(omega - n * w0, self.lspot,
-                                     self.tau, self.alpha_max)
-                Gh_minus = _Gamma_hat(omega + n * w0, self.lspot,
-                                      self.tau, self.alpha_max)
-                contrib += cn_sq[n] * (Gh_plus**2 + Gh_minus**2)
+            # n>=1 terms
+            def _harmonic_contrib(n):
+                Gh_plus = _Gamma_hat(omega - n * w0, self.lspot, self.tau, self.alpha_max)
+                Gh_minus = _Gamma_hat(omega + n * w0, self.lspot, self.tau, self.alpha_max)
+                return cn_sq[n] * (Gh_plus**2 + Gh_minus**2)
 
-            psd += weights[j] * contrib
+            ns = jnp.arange(1, len(cn_sq))
+            harmonic_contribs = jax.vmap(lambda n: _harmonic_contrib(n))(ns)
+            contrib = contrib + jnp.sum(harmonic_contribs, axis=0)
 
-        psd = psd * dphi / norm
-        psd = psd * self.nspot / np.pi**2
-        
-        self.psd_omega = omega
-        self.psd_freq = omega / (2 * np.pi)  # convert to cycles/day
-        self.psd_power = psd
+            return contrib
+
+        if self.quadrature == "gauss-legendre":
+            phi_grid = self._quad_nodes
+            quad_weights = self._quad_weights
+
+            all_contribs = jax.vmap(_psd_at_lat)(phi_grid)
+
+            user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
+            norm = jnp.sum(user_weights * quad_weights)
+
+            psd = jnp.sum(user_weights[:, None] * quad_weights[:, None]
+                          * all_contribs, axis=0)
+            psd = psd / norm
+        else:
+            phi_min, phi_max = self.lat_range
+            phi_grid = jnp.linspace(phi_min, phi_max, self.n_lat)
+            dphi = phi_grid[1] - phi_grid[0]
+
+            user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
+            norm = jnp.trapezoid(user_weights, phi_grid)
+
+            all_contribs = jax.vmap(_psd_at_lat)(phi_grid)
+            psd = jnp.sum(user_weights[:, None] * all_contribs, axis=0)
+            psd = psd * dphi / norm
+
+        psd = psd * self.sigma_k**2
+
+        self.psd_omega = np.asarray(omega)
+        self.psd_freq = np.asarray(omega / (2 * jnp.pi))
+        self.psd_power = np.asarray(psd)
 
         return self.psd_freq, self.psd_power
 

@@ -6,7 +6,7 @@ build-backend = "setuptools.backends._legacy:_Backend"
 name = "spotgp"
 version = "0.1.0"
 description = "Gaussian Process kernels for stellar variability from starspot models"
-readme = "docs/index.rst"
+readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
@@ -23,7 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 jax = ["jax", "jaxopt"]
-docs = ["sphinx>=7.0", "sphinx-rtd-theme>=2.0", "numpydoc>=1.6"]
+docs = ["sphinx>=7.0", "furo>=2024.1.29", "numpydoc>=1.6", "sphinx-autodoc-typehints>=2.0"]
 
 [tool.setuptools.packages.find]
 include = ["src*", "src_jax*"]

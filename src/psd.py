@@ -24,31 +24,21 @@ def compute_psd(y, t=None, dt=None,
         Sampling interval.  Used only when ``t`` is None (default: 1).
     normalization : {"psd", "standard", "model", "log"}
         Passed directly to LombScargle.autopower / power.
-        "psd" (default) scales amplitudes so that integrating over positive
-        frequencies recovers the variance of the time series (Parseval's theorem).
     freq_min : float, optional
-        Minimum frequency to evaluate [cycles per unit of ``t``].
-        Defaults to 1 / T_span.
+        Minimum frequency to evaluate.
     freq_max : float, optional
-        Maximum frequency to evaluate.  Defaults to the Nyquist limit
-        (0.5 / dt for even sampling), estimated via LombScargle when ``t`` is given.
+        Maximum frequency to evaluate.
     n_freq : int, optional
-        Number of frequency grid points.  If None, the grid is set automatically
-        via ``samples_per_peak``.
+        Number of frequency grid points.
     samples_per_peak : float, optional
-        Controls the frequency grid density (default 5).  Ignored when
-        ``n_freq`` is specified explicitly.
-    detrend : {"constant", "linear", False}
-        Pre-processing applied to ``y`` before computing the periodogram.
-        "constant" subtracts the mean (equivalent to LombScargle's built-in
-        ``center_data=True``); "linear" removes a linear trend; False skips.
+        Controls the frequency grid density (default 5).
 
     Returns
     -------
     freq  : ndarray
-        Frequencies in cycles per unit time (same units as ``t`` / ``dt``).
+        Frequencies in cycles per unit time.
     power : ndarray
-        PSD (or normalised power) evaluated at each frequency.
+        PSD evaluated at each frequency.
     """
     y = np.asarray(y, dtype=float)
     N = len(y)

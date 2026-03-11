@@ -1,3 +1,2 @@
-*.ipynb
-*.png
-*.pdf
+src/__pycache__/*
+src_jax/__pycache__/*
