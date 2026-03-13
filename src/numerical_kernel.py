@@ -19,7 +19,14 @@ from psd import compute_psd
 
 __all__ = ["NumericalKernel", "generate_sims", "avg_covariance_tlag"]
 
-HPARAM_KEYS = ["peq", "kappa", "inc", "nspot", "lspot", "tau", "alpha_max"]
+# Required keys for all modes
+_REQUIRED_KEYS = {"peq", "kappa", "inc", "lspot", "tau", "alpha_max"}
+
+# Two valid modes for specifying amplitude:
+#   Mode 1: provide sigma_k directly
+#   Mode 2: provide nspot and fspot (sigma_k computed from Eq. kernel_Nspot)
+_AMPLITUDE_KEYS_SIGMA = {"sigma_k"}
+_AMPLITUDE_KEYS_PHYSICAL = {"nspot", "fspot"}
 
 
 # ======================================================================
@@ -80,10 +87,13 @@ class NumericalKernel(object):
     Gaussian Process for Stellar Rotation
 
     Parameters:
-    - hparam: dict or list of hyperparameters.
-              As a dict, keys may appear in any order:
-                {"peq", "kappa", "inc", "nspot", "lspot", "tau", "alpha_max"}
-              As a list, values must be in that canonical order.
+    - hparam: dict of hyperparameters.
+              Required keys: peq, kappa, inc, lspot, tau, alpha_max.
+              For the kernel amplitude, provide EITHER:
+                - sigma_k : overall amplitude prefactor, OR
+                - nspot + fspot : number of spots and spot contrast, from which
+                  sigma_k is computed as sqrt(N_spot) * (1 - f_spot) / pi.
+              Note: nspot is always required for the numerical simulations.
     - tsim: simulation time (default: 20)
     - tsamp: time sampling (default: 0.05)
     - nsim: number of simulations (default: 1e3)
@@ -91,19 +101,27 @@ class NumericalKernel(object):
 
     """
     def __init__(self, hparam, tsim=20, tsamp=0.05, nsim=1e3, verbose=True):
-        
+
         t0 = time.time()
 
-        # normalise hparam to a dict regardless of input type
-        if isinstance(hparam, dict):
-            missing = set(HPARAM_KEYS) - set(hparam.keys())
-            if missing:
-                raise ValueError(f"hparam dict is missing keys: {missing}")
-            self.hparam = {k: hparam[k] for k in HPARAM_KEYS}
-        else:
-            if len(hparam) != len(HPARAM_KEYS):
-                raise ValueError(f"hparam list must have {len(HPARAM_KEYS)} elements: {HPARAM_KEYS}")
-            self.hparam = dict(zip(HPARAM_KEYS, hparam))
+        if not isinstance(hparam, dict):
+            raise TypeError("hparam must be a dict")
+
+        missing = _REQUIRED_KEYS - set(hparam.keys())
+        if missing:
+            raise ValueError(f"hparam dict is missing required keys: {missing}")
+
+        if "nspot" not in hparam:
+            raise ValueError("nspot is required for numerical simulations")
+
+        has_sigma = "sigma_k" in hparam
+        has_physical = "nspot" in hparam and "fspot" in hparam
+
+        if not has_sigma and not has_physical:
+            raise ValueError(
+                "hparam must contain either 'sigma_k' or both 'nspot' and 'fspot'")
+
+        self.hparam = dict(hparam)
 
         self.peq       = self.hparam["peq"]
         self.kappa     = self.hparam["kappa"]
@@ -112,6 +130,15 @@ class NumericalKernel(object):
         self.lspot     = self.hparam["lspot"]
         self.tau       = self.hparam["tau"]
         self.alpha_max = self.hparam["alpha_max"]
+
+        if has_sigma:
+            self.sigma_k = self.hparam["sigma_k"]
+        else:
+            nspot = self.hparam["nspot"]
+            fspot = self.hparam["fspot"]
+            self.sigma_k = np.sqrt(nspot) * (1 - fspot) / np.pi
+            self.hparam["sigma_k"] = self.sigma_k
+
         self.verbose   = verbose
         self.tsim      = tsim
 

@@ -1,0 +1,43 @@
+JAX API (``src_jax``)
+=====================
+
+.. module:: src_jax
+
+JAX-accelerated implementations with JIT compilation and vectorization.
+
+Analytic Kernel
+---------------
+
+.. autoclass:: src_jax.analytic_kernel.AnalyticKernel
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Lightcurve Model
+----------------
+
+.. autoclass:: src_jax.starspot.LightcurveModel
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+GP Solver
+---------
+
+.. autoclass:: src_jax.gp_solver.GPSolver
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+MCMC Sampler
+------------
+
+.. autoclass:: src_jax.mcmc.MCMCSampler
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Power Spectral Density
+----------------------
+
+.. autofunction:: src_jax.psd.compute_psd

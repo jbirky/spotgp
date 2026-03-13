@@ -1,0 +1,27 @@
+/* Use Roboto for body text */
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
+
+body {
+    font-family: 'Roboto', sans-serif;
+}
+
+/* Smaller headings */
+h1, h2, h3, h4 { font-family: 'Roboto', sans-serif; font-weight: 500; }
+strong, b { font-weight: 500; }
+h1 { font-size: 1.8em; }
+h2 { font-size: 1.5em; }
+h3 { font-size: 1.2em; }
+h4 { font-size: 1.0em; }
+
+/* Sidebar */
+body {
+    --color-sidebar-link-text: #06437a;
+    --color-sidebar-link-text--top-level: #06437a;
+    /* --color-sidebar-caption-text: #06437a; */
+    --color-sidebar-brand-text: #06437a;
+    --color-sidebar-search-text: #06437a;
+    --color-sidebar-item-text: #06437a;
+}
+.sidebar-brand, .sidebar-tree, .toc-tree {
+    font-family: 'Roboto', sans-serif;
+}

@@ -5,14 +5,23 @@ from functools import partial
 
 __all__ = ["AnalyticKernel"]
 
-HPARAM_KEYS = ["peq", "kappa", "inc", "nspot", "lspot", "tau", "alpha_max", "sigma_k"]
+# Required keys for all modes (alpha_max only needed for physical-param amplitude)
+_REQUIRED_KEYS = {"peq", "kappa", "inc", "lspot", "tau"}
+
+# Two valid modes for specifying amplitude:
+#   Mode 1: provide sigma_k directly
+#   Mode 2: provide nspot and fspot (sigma_k computed from Eq. kernel_Nspot)
+_AMPLITUDE_KEYS_SIGMA = {"sigma_k"}
+_AMPLITUDE_KEYS_PHYSICAL = {"nspot", "fspot", "alpha_max"}
 
 
 @jax.jit
-def _Gamma_hat(omega, ell, tau, alpha_max):
+def _Gamma_hat(omega, ell, tau):
     """
-    Fourier transform of the squared trapezoidal envelope Gamma(t) = alpha^2(t).
+    Fourier transform of the normalized squared envelope Gamma(t) = alpha^2(t)/alpha_max^2.
     Fully vectorized with JAX.
+
+    The alpha_max dependence is absorbed into sigma_k^2.
 
     Uses safe_w = max(|omega|, eps) to avoid 1/w^3 singularity at omega=0.
     This ensures correct gradients through JAX autodiff (jnp.where alone
@@ -23,23 +32,24 @@ def _Gamma_hat(omega, ell, tau, alpha_max):
     # (the result at omega~0 is overridden by the zero_result branch)
     safe_w = jnp.where(jnp.abs(omega) > 1e-14, omega, 1.0)
 
-    nz_result = (4 * alpha_max**2 / (tau**2 * safe_w**3) *
+    nz_result = (4 / (tau**2 * safe_w**3) *
                  (tau * safe_w * jnp.cos(safe_w * ell / 2)
                   + jnp.sin(safe_w * ell / 2)
                   - jnp.sin(safe_w * ell / 2 + safe_w * tau)))
 
-    zero_result = alpha_max**2 * (ell + 2 * tau / 3)
+    zero_result = ell + 2 * tau / 3
 
     return jnp.where(jnp.abs(omega) > 1e-14, nz_result, zero_result)
 
 
 @jax.jit
-def _R_Gamma(lag, ell, tau_s, alpha_max):
+def _R_Gamma(lag, ell, tau_s):
     """
-    Closed-form autocorrelation of Gamma(t) = alpha^2(t).
+    Normalized closed-form autocorrelation of Gamma(t) = alpha^2(t)/alpha_max^2.
 
     Piecewise degree-5 polynomial derived from direct convolution of the
-    squared trapezoidal envelope (see Appendix D, Eq. R_Gamma_closed).
+    normalized squared trapezoidal envelope (see Appendix D, Eq. R_Gamma_closed).
+    The alpha_max dependence is absorbed into sigma_k^2.
 
     Four intervals on [0, ell + 2*tau_s], zero beyond.
     Assumes ell/2 > tau_s (plateau longer than ramp).
@@ -52,33 +62,30 @@ def _R_Gamma(lag, ell, tau_s, alpha_max):
         Spot plateau duration [days].
     tau_s : float
         Rise/decay timescale [days].
-    alpha_max : float
-        Peak angular radius [rad].
     """
     t = jnp.abs(jnp.asarray(lag, dtype=float).ravel())
-    a4 = alpha_max**4
 
     # Interval 1: 0 <= t <= tau_s
-    R1 = a4 * (ell + 2*tau_s/5
-               - 4*t**2 / (3*tau_s)
-               + 2*t**3 / (3*tau_s**2)
-               - t**5 / (15*tau_s**4))
+    R1 = (ell + 2*tau_s/5
+           - 4*t**2 / (3*tau_s)
+           + 2*t**3 / (3*tau_s**2)
+           - t**5 / (15*tau_s**4))
 
     # Interval 2: tau_s <= t <= ell  (linear)
-    R2 = a4 * (ell + 2*tau_s/3 - t)
+    R2 = ell + 2*tau_s/3 - t
 
     # Interval 3: ell <= t <= ell + tau_s  (degree-5 polynomial P3)
-    R3 = a4 * (t**5 / (30*tau_s**4)
-               - (ell + 2*tau_s) * t**4 / (6*tau_s**4)
-               + (ell**2 + 4*ell*tau_s + 2*tau_s**2) * t**3 / (3*tau_s**4)
-               - ell*(ell**2 + 6*ell*tau_s + 6*tau_s**2) * t**2 / (3*tau_s**4)
-               + (ell**4 + 8*ell**3*tau_s + 12*ell**2*tau_s**2
-                  - 6*tau_s**4) * t / (6*tau_s**4)
-               + (-ell**5 - 10*ell**4*tau_s - 20*ell**3*tau_s**2
-                  + 30*ell*tau_s**4 + 20*tau_s**5) / (30*tau_s**4))
+    R3 = (t**5 / (30*tau_s**4)
+           - (ell + 2*tau_s) * t**4 / (6*tau_s**4)
+           + (ell**2 + 4*ell*tau_s + 2*tau_s**2) * t**3 / (3*tau_s**4)
+           - ell*(ell**2 + 6*ell*tau_s + 6*tau_s**2) * t**2 / (3*tau_s**4)
+           + (ell**4 + 8*ell**3*tau_s + 12*ell**2*tau_s**2
+              - 6*tau_s**4) * t / (6*tau_s**4)
+           + (-ell**5 - 10*ell**4*tau_s - 20*ell**3*tau_s**2
+              + 30*ell*tau_s**4 + 20*tau_s**5) / (30*tau_s**4))
 
     # Interval 4: ell + tau_s <= t <= ell + 2*tau_s
-    R4 = a4 * (ell + 2*tau_s - t)**5 / (30*tau_s**4)
+    R4 = (ell + 2*tau_s - t)**5 / (30*tau_s**4)
 
     # Select the correct interval for each lag value
     R = jnp.where(t <= tau_s, R1,
@@ -201,8 +208,13 @@ class AnalyticKernel:
 
     Parameters
     ----------
-    hparam : dict or list
-        Hyperparameters: peq, kappa, inc, nspot, lspot, tau, alpha_max, sigma_k.
+    hparam : dict
+        Hyperparameters. Required keys: peq, kappa, inc, lspot, tau.
+        For the kernel amplitude, provide EITHER:
+          - sigma_k : overall amplitude prefactor, OR
+          - nspot + fspot + alpha_max : number of spots, spot contrast,
+            and max spot radius, from which sigma_k is computed as
+            sqrt(N_spot) * (1 - f_spot) * alpha_max^2 / pi.
     n_harmonics : int
         Number of harmonics to include (default 2).
     n_lat : int
@@ -217,25 +229,38 @@ class AnalyticKernel:
     def __init__(self, hparam, n_harmonics=2, n_lat=64,
                  lat_range=(0, np.pi), quadrature="trapezoid"):
 
-        if isinstance(hparam, dict):
-            missing = set(HPARAM_KEYS) - set(hparam.keys())
-            if missing:
-                raise ValueError(f"hparam dict is missing keys: {missing}")
-            self.hparam = {k: hparam[k] for k in HPARAM_KEYS}
-        else:
-            if len(hparam) != len(HPARAM_KEYS):
-                raise ValueError(
-                    f"hparam list must have {len(HPARAM_KEYS)} elements: {HPARAM_KEYS}")
-            self.hparam = dict(zip(HPARAM_KEYS, hparam))
+        if not isinstance(hparam, dict):
+            raise TypeError("hparam must be a dict")
+
+        missing = _REQUIRED_KEYS - set(hparam.keys())
+        if missing:
+            raise ValueError(f"hparam dict is missing required keys: {missing}")
+
+        has_sigma = "sigma_k" in hparam
+        has_physical = "nspot" in hparam and "fspot" in hparam and "alpha_max" in hparam
+
+        if not has_sigma and not has_physical:
+            raise ValueError(
+                "hparam must contain either 'sigma_k' or all of "
+                "'nspot', 'fspot', and 'alpha_max'")
+
+        self.hparam = dict(hparam)
 
         self.peq = self.hparam["peq"]
         self.kappa = self.hparam["kappa"]
         self.inc = self.hparam["inc"]
-        self.nspot = self.hparam["nspot"]
         self.lspot = self.hparam["lspot"]
         self.tau = self.hparam["tau"]
-        self.alpha_max = self.hparam["alpha_max"]
-        self.sigma_k = self.hparam["sigma_k"]
+
+        if has_sigma:
+            self.sigma_k = self.hparam["sigma_k"]
+        else:
+            # sigma_k^2 = N_spot * (1 - f_spot)^2 * alpha_max^4 / pi^2
+            nspot = self.hparam["nspot"]
+            fspot = self.hparam["fspot"]
+            alpha_max = self.hparam["alpha_max"]
+            self.sigma_k = np.sqrt(nspot) * (1 - fspot) * alpha_max**2 / np.pi
+            self.hparam["sigma_k"] = self.sigma_k
 
         self.n_harmonics = n_harmonics
         self.n_lat = n_lat
@@ -260,7 +285,7 @@ class AnalyticKernel:
 
     def R_Gamma(self, lag):
         """Autocorrelation of the squared envelope (closed-form piecewise polynomial)."""
-        return _R_Gamma(jnp.asarray(lag), self.lspot, self.tau, self.alpha_max)
+        return _R_Gamma(jnp.asarray(lag), self.lspot, self.tau)
 
     def cn_squared(self, phi):
         """Squared Fourier coefficients at latitude phi."""
@@ -422,13 +447,13 @@ class AnalyticKernel:
             w0 = self.omega0(phi)
 
             # n=0 term
-            Gh_0 = _Gamma_hat(omega, self.lspot, self.tau, self.alpha_max)
+            Gh_0 = _Gamma_hat(omega, self.lspot, self.tau)
             contrib = cn_sq[0] * Gh_0**2
 
             # n>=1 terms
             def _harmonic_contrib(n):
-                Gh_plus = _Gamma_hat(omega - n * w0, self.lspot, self.tau, self.alpha_max)
-                Gh_minus = _Gamma_hat(omega + n * w0, self.lspot, self.tau, self.alpha_max)
+                Gh_plus = _Gamma_hat(omega - n * w0, self.lspot, self.tau)
+                Gh_minus = _Gamma_hat(omega + n * w0, self.lspot, self.tau)
                 return cn_sq[n] * (Gh_plus**2 + Gh_minus**2)
 
             ns = jnp.arange(1, len(cn_sq))
