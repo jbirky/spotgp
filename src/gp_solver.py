@@ -46,6 +46,10 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
     """
     Pure-functional kernel evaluation: theta_arr -> kernel values.
 
+    Uses ``jax.lax.scan`` instead of ``jax.vmap`` for the latitude
+    integration so that only one (M,) buffer is live at a time,
+    reducing peak memory from O(n_lat * M) to O(M).
+
     Parameters
     ----------
     theta_arr : jnp.ndarray, shape (6,)
@@ -66,7 +70,7 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
     # R_Gamma (independent of latitude, closed-form piecewise polynomial)
     R = _R_Gamma(lag_flat, lspot, tau)
 
-    # Latitude integration
+    # Single-latitude contribution (returns shape (M,))
     def _lat_contribution(phi):
         ns = jnp.arange(n_harmonics + 1)
         cn_vals = jax.vmap(lambda n: _cn_general_jax(n, inc, phi))(ns)
@@ -78,19 +82,27 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
         )
         return cn_sq[0] + 2 * cosine_terms
 
+    # Accumulate weighted contributions via scan (one latitude at a time)
     if quad_nodes is not None:
         phi_grid = quad_nodes
-        all_contribs = jax.vmap(_lat_contribution)(phi_grid)
-        norm = jnp.sum(quad_weights)
-        K = jnp.sum(quad_weights[:, None] * all_contribs, axis=0)
-        K = K / norm
+        weights = quad_weights
+        norm = jnp.sum(weights)
     else:
         phi_min, phi_max = lat_range
         phi_grid = jnp.linspace(phi_min, phi_max, n_lat)
         dphi = phi_grid[1] - phi_grid[0]
-        all_contribs = jax.vmap(_lat_contribution)(phi_grid)
-        K = jnp.sum(all_contribs, axis=0) * dphi
-        K = K / (phi_max - phi_min)
+        weights = jnp.ones_like(phi_grid) * dphi
+        norm = phi_max - phi_min
+
+    def _scan_body(K_acc, idx):
+        phi = phi_grid[idx]
+        w = weights[idx]
+        contrib = _lat_contribution(phi)
+        return K_acc + w * contrib, None
+
+    K, _ = jax.lax.scan(_scan_body, jnp.zeros_like(lag_flat),
+                         jnp.arange(len(phi_grid)))
+    K = K / norm
 
     K = R * K * sigma_k ** 2
     return K
@@ -101,6 +113,10 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
                        fit_sigma_n, quad_nodes=None, quad_weights=None):
     """
     Pure-functional GP marginal log-likelihood.
+
+    Exploits the symmetry of the covariance matrix by evaluating the
+    kernel only on the upper-triangular lags (N*(N+1)/2 instead of N^2),
+    halving memory and compute for the kernel evaluation step.
 
     Parameters
     ----------
@@ -131,12 +147,18 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
         theta_kernel = theta_full
         sigma_n = 0.0
 
-    lag_matrix = jnp.abs(x[:, None] - x[None, :])
-    lag_flat = lag_matrix.ravel()
-    K_flat = _kernel_eval(theta_kernel, lag_flat,
-                          n_harmonics, n_lat, lat_range,
-                          quad_nodes=quad_nodes, quad_weights=quad_weights)
-    K = K_flat.reshape(N, N)
+    # Upper-triangular indices (includes diagonal)
+    row_idx, col_idx = jnp.triu_indices(N)
+    lag_upper = jnp.abs(x[row_idx] - x[col_idx])
+
+    K_upper = _kernel_eval(theta_kernel, lag_upper,
+                           n_harmonics, n_lat, lat_range,
+                           quad_nodes=quad_nodes, quad_weights=quad_weights)
+
+    # Reconstruct symmetric matrix from upper triangle
+    K = jnp.zeros((N, N))
+    K = K.at[row_idx, col_idx].set(K_upper)
+    K = K + K.T - jnp.diag(jnp.diag(K))
 
     noise_var = yerr ** 2 + sigma_n ** 2
     K_noise = K + jnp.diag(noise_var) + 1e-8 * jnp.eye(N)
@@ -334,9 +356,20 @@ class GPSolver:
         return jnp.asarray(self.kernel.kernel(jnp.abs(tau)))
 
     def _build_covariance(self):
-        """Build the N x N covariance matrix and Cholesky-factorize it."""
-        lag_matrix = jnp.abs(self.x[:, None] - self.x[None, :])
-        self.K = self._eval_kernel(lag_matrix)
+        """Build the N x N covariance matrix and Cholesky-factorize it.
+
+        Exploits symmetry by evaluating the kernel only on the upper
+        triangle (N*(N+1)/2 lags instead of N^2), halving memory.
+        """
+        N = self.N
+        row_idx, col_idx = jnp.triu_indices(N)
+        lag_upper = jnp.abs(self.x[row_idx] - self.x[col_idx])
+        K_upper = self._eval_kernel(lag_upper)
+
+        K = jnp.zeros((N, N))
+        K = K.at[row_idx, col_idx].set(K_upper)
+        K = K + K.T - jnp.diag(jnp.diag(K))
+        self.K = K
         self.K_noise = self.K + jnp.diag(self.yerr ** 2)
         self._L = jla.cholesky(self.K_noise, lower=True)
 
@@ -427,16 +460,18 @@ class GPSolver:
             mu_prior = jnp.full(M, mu_prior)
         mu_pred = mu_prior + Ks @ self._alpha
 
-        lag_pred = jnp.abs(xpred[:, None] - xpred[None, :])
-        Kss = self._eval_kernel(lag_pred)
-
         V = jla.cho_solve((self._L, True), Ks.T)
-        cov_pred = Kss - Ks @ V
 
         if return_cov:
+            lag_pred = jnp.abs(xpred[:, None] - xpred[None, :])
+            Kss = self._eval_kernel(lag_pred)
+            cov_pred = Kss - Ks @ V
             return np.asarray(mu_pred), np.asarray(cov_pred)
         else:
-            return np.asarray(mu_pred), np.asarray(jnp.diag(cov_pred))
+            # Only need diagonal: k(0) - sum_j V_ji * Ks_ij
+            k0 = self._eval_kernel(jnp.zeros(1))[0]
+            var_pred = k0 - jnp.einsum('ij,ji->i', Ks, V)
+            return np.asarray(mu_pred), np.asarray(var_pred)
 
     def sample_prior(self, xpred, n_samples=1, rng=None):
         """Draw samples from the GP prior."""

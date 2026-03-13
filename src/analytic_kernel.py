@@ -308,7 +308,10 @@ class AnalyticKernel:
         """
         Full GP kernel averaged over latitude.
 
-        Vectorized latitude integration using JAX operations.
+        Uses sequential latitude accumulation (``jax.lax.scan``) instead
+        of ``jax.vmap`` so that only one lag-sized buffer is live at a
+        time, reducing peak memory from O(n_lat * M) to O(M).
+
         Supports both 1D lag arrays and 2D lag matrices (for covariance).
 
         Parameters
@@ -335,7 +338,7 @@ class AnalyticKernel:
 
         n_harmonics = self.n_harmonics
 
-        # Vectorized latitude contribution
+        # Single-latitude contribution (returns shape (M,))
         def _lat_contribution(phi):
             cn_sq = self.cn_squared(phi)
             w0 = self.omega0(phi)
@@ -346,29 +349,27 @@ class AnalyticKernel:
         if self.quadrature == "gauss-legendre":
             phi_grid = self._quad_nodes
             quad_weights = self._quad_weights
-
-            all_contributions = jax.vmap(_lat_contribution)(phi_grid)
-
-            # Apply lat_dist weights
             user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
-            norm = jnp.sum(user_weights * quad_weights)
-
-            K = jnp.sum(user_weights[:, None] * quad_weights[:, None]
-                        * all_contributions, axis=0)
-            K = K / norm
+            weights = user_weights * quad_weights
+            norm = jnp.sum(weights)
         else:
-            # Trapezoid rule
             phi_min, phi_max = self.lat_range
             phi_grid = jnp.linspace(phi_min, phi_max, self.n_lat)
             dphi = phi_grid[1] - phi_grid[0]
+            user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
+            weights = user_weights * dphi
+            norm = jnp.trapezoid(user_weights, phi_grid)
 
-            all_contributions = jax.vmap(_lat_contribution)(phi_grid)
+        # Accumulate weighted contributions one latitude at a time
+        def _scan_body(K_acc, idx):
+            phi = phi_grid[idx]
+            w = weights[idx]
+            contrib = _lat_contribution(phi)
+            return K_acc + w * contrib, None
 
-            weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
-            norm = jnp.trapezoid(weights, phi_grid)
-
-            K = jnp.sum(weights[:, None] * all_contributions, axis=0)
-            K = K * dphi / norm
+        K, _ = jax.lax.scan(_scan_body, jnp.zeros_like(lag_flat),
+                             jnp.arange(len(phi_grid)))
+        K = K / norm
 
         K = R * K * self.sigma_k**2
 
