@@ -27,6 +27,8 @@ pip install spotgp[jax]
 :caption: Tutorials
 
 tutorials/lightcurve_demo
+tutorials/gp_solver_quickstart
+tutorials/run_blackjax
 ```
 
 ```{toctree}
