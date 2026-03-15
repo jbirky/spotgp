@@ -67,15 +67,15 @@ pygments_dark_style = "monokai"    # dark mode (furo only)
 
 # -- nbsphinx ----------------------------------------------------------------
 
-nbsphinx_prolog = """
+# Embed the notebook filename as a hidden meta tag so JS can build the
+# download link without hard-coding paths.
+nbsphinx_prolog = r"""
 .. raw:: html
 
-    <div style="margin-bottom: 1em;">
-      <a href="{{ env.docname.split('/')|last }}.ipynb" download>
-        ⬇ Download notebook
-      </a>
-    </div>
+    <meta name="notebook-source" content="{{ env.docname.split('/')|last }}.ipynb">
 """
+
+html_js_files = ["notebook_download.js"]
 
 # -- Intersphinx mapping -----------------------------------------------------
 

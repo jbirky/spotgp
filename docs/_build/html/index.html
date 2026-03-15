@@ -10,7 +10,7 @@
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=8dab3a3b" />
-    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=16041fcb" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=5a3b8128" />
     
     
 
@@ -195,8 +195,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/lightcurve_demo.html">Starspot Lightcurve Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/gp_solver_quickstart.html">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/run_blackjax.html">MCMC with BlackJAX</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/custom_envelope.html">Custom Envelope Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/custom_latitude_distribution.html">Custom Latitude Distributions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/run_blackjax.html">MCMC with BlackJAX</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -313,7 +314,6 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <li class="toctree-l2"><a class="reference internal" href="tutorials/gp_solver_quickstart.html#6.-Find-MAP-Estimate">6. Find MAP Estimate</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/run_blackjax.html">MCMC with BlackJAX</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/custom_envelope.html">Custom Envelope Functions</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="tutorials/custom_envelope.html#Deriving-R_\Gamma-for-a-Gaussian-envelope">Deriving <span class="math notranslate nohighlight">\(R_\Gamma\)</span> for a Gaussian envelope</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tutorials/custom_envelope.html#Define-a-custom-envelope-subclass">Define a custom envelope subclass</a></li>
@@ -322,6 +322,19 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <li class="toctree-l2"><a class="reference internal" href="tutorials/custom_envelope.html#Compare-power-spectral-densities">Compare power spectral densities</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/custom_latitude_distribution.html">Custom Latitude Distributions</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#1.-Shared-kernel-parameters">1. Shared kernel parameters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#2.-Define-latitude-distributions">2. Define latitude distributions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#3.-Visualize-the-distributions">3. Visualize the distributions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#4.-Compute-kernels-with-each-distribution">4. Compute kernels with each distribution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#5.-Compare-kernel-shapes">5. Compare kernel shapes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#6.-Effect-on-the-power-spectral-density">6. Effect on the power spectral density</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#7.-Latitude-distributions-and-differential-rotation">7. Latitude distributions and differential rotation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#8.-Using-a-custom-lat_dist-with-GPSolver">8. Using a custom <code class="docutils literal notranslate"><span class="pre">lat_dist</span></code> with <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#Tips:">Tips:</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/run_blackjax.html">MCMC with BlackJAX</a></li>
 </ul>
 </div>
 <div class="toctree-wrapper compound">
@@ -419,5 +432,6 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
     <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
     <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
     <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <script src="_static/notebook_download.js?v=e218955f"></script>
     </body>
 </html>

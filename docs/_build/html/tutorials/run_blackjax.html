@@ -3,14 +3,14 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="Custom Envelope Functions" href="custom_envelope.html"><link rel="prev" title="GP Solver with JAX or numpy" href="gp_solver_quickstart.html">
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="API Reference (src_numpy)" href="../api/src_numpy.html"><link rel="prev" title="Custom Latitude Distributions" href="custom_latitude_distribution.html">
 
     <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
         <title>MCMC with BlackJAX - spotgp</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../_static/styles/furo-extensions.css?v=8dab3a3b" />
-    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=16041fcb" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=5a3b8128" />
     
     
 
@@ -195,8 +195,9 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="lightcurve_demo.html">Starspot Lightcurve Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="gp_solver_quickstart.html">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">MCMC with BlackJAX</a></li>
 <li class="toctree-l1"><a class="reference internal" href="custom_envelope.html">Custom Envelope Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="custom_latitude_distribution.html">Custom Latitude Distributions</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">MCMC with BlackJAX</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -245,14 +246,18 @@
 <p><a class="reference download internal" download="" href="../_downloads/a62570759a7623856d7aa03a234c5d02/run_blackjax.py"><code class="xref download docutils literal notranslate"><span class="pre">⬇</span> <span class="pre">Download</span> <span class="pre">script</span></code></a></p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;JAX_ENABLE_X64&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;True&quot;</span>
-<span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;JAX_PLATFORMS&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;gpu&quot;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">jax</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">IPython.display</span><span class="w"> </span><span class="kn">import</span> <span class="n">HTML</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 
 <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;../src&quot;</span><span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">starspot</span><span class="w"> </span><span class="kn">import</span> <span class="n">LightcurveModel</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">mcmc</span><span class="w"> </span><span class="kn">import</span> <span class="n">BlackJAXSampler</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">mcmc</span><span class="w"> </span><span class="kn">import</span> <span class="n">MCMCSampler</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">gp_solver</span><span class="w"> </span><span class="kn">import</span> <span class="n">GPSolver</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">corner</span>
 
@@ -263,14 +268,13 @@
 <span class="c1"># ===================================================================</span>
 
 <span class="c1"># True parameters</span>
-<span class="n">theta_full</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">peq</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">kappa</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">3</span><span class="p">,</span> <span class="n">nspot</span><span class="o">=</span><span class="mi">40</span><span class="p">,</span>
+<span class="n">theta_full</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">peq</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">kappa</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">nspot</span><span class="o">=</span><span class="mi">40</span><span class="p">,</span>
                   <span class="n">lspot</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">tau</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">alpha_max</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">fspot</span><span class="o">=</span><span class="mf">0.</span><span class="p">)</span>
 
-<span class="n">lc</span> <span class="o">=</span> <span class="n">LightcurveModel</span><span class="p">(</span><span class="o">**</span><span class="n">theta_full</span><span class="p">,</span> <span class="n">tsim</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">tsamp</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">lat</span><span class="o">=</span><span class="p">[</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">],</span> <span class="n">long</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">])</span>
+<span class="n">lc</span> <span class="o">=</span> <span class="n">LightcurveModel</span><span class="p">(</span><span class="o">**</span><span class="n">theta_full</span><span class="p">,</span> <span class="n">tsim</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">tsamp</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">lat</span><span class="o">=</span><span class="p">[</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">],</span> <span class="n">long</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">])</span>
 <span class="n">tobs</span> <span class="o">=</span> <span class="n">lc</span><span class="o">.</span><span class="n">t</span>
 <span class="n">flux</span> <span class="o">=</span> <span class="n">lc</span><span class="o">.</span><span class="n">flux</span>
 <span class="n">flux_err</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mf">0.2</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">lc</span><span class="o">.</span><span class="n">flux</span><span class="p">),</span> <span class="n">lc</span><span class="o">.</span><span class="n">flux</span><span class="o">.</span><span class="n">shape</span><span class="p">))</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Generated synthetic lightcurve with </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">tobs</span><span class="p">)</span><span class="si">}</span><span class="s2"> observations.&quot;</span><span class="p">)</span>
 
 <span class="n">gp_true</span> <span class="o">=</span> <span class="n">GPSolver</span><span class="p">(</span><span class="n">tobs</span><span class="p">,</span> <span class="n">flux</span><span class="p">,</span> <span class="n">flux_err</span><span class="p">,</span> <span class="n">theta_full</span><span class="p">)</span>
 <span class="n">theta_true</span> <span class="o">=</span> <span class="n">gp_true</span><span class="o">.</span><span class="n">get_theta</span><span class="p">()</span>
@@ -283,17 +287,17 @@
 <span class="n">theta0</span> <span class="o">=</span> <span class="p">{</span>
     <span class="s2">&quot;peq&quot;</span><span class="p">:</span>       <span class="mf">5.0</span><span class="p">,</span>
     <span class="s2">&quot;kappa&quot;</span><span class="p">:</span>     <span class="mf">0.0</span><span class="p">,</span>
-    <span class="s2">&quot;inc&quot;</span><span class="p">:</span>       <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">4</span><span class="p">,</span>
+    <span class="s2">&quot;inc&quot;</span><span class="p">:</span>       <span class="mf">1.2</span><span class="p">,</span>
+    <span class="s2">&quot;nspot&quot;</span><span class="p">:</span>     <span class="mf">10.0</span><span class="p">,</span>
     <span class="s2">&quot;lspot&quot;</span><span class="p">:</span>     <span class="mf">8.0</span><span class="p">,</span>
     <span class="s2">&quot;tau&quot;</span><span class="p">:</span>       <span class="mf">3.0</span><span class="p">,</span>
-    <span class="s2">&quot;nspot&quot;</span><span class="p">:</span>     <span class="mf">20.0</span><span class="p">,</span>
     <span class="s2">&quot;alpha_max&quot;</span><span class="p">:</span> <span class="mf">0.1</span><span class="p">,</span>
     <span class="s2">&quot;fspot&quot;</span><span class="p">:</span>     <span class="mf">0.0</span><span class="p">,</span>
 <span class="p">}</span>
 
 <span class="c1"># Optional: custom bounds (otherwise uses DEFAULT_BOUNDS)</span>
 <span class="n">bounds</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;peq&quot;</span><span class="p">:</span>       <span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">7.0</span><span class="p">),</span>
+    <span class="s2">&quot;peq&quot;</span><span class="p">:</span>       <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">20.0</span><span class="p">),</span>
     <span class="s2">&quot;kappa&quot;</span><span class="p">:</span>     <span class="p">(</span><span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span>
     <span class="s2">&quot;inc&quot;</span><span class="p">:</span>       <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">),</span>
     <span class="s2">&quot;lspot&quot;</span><span class="p">:</span>     <span class="p">(</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">20.0</span><span class="p">),</span>
@@ -303,23 +307,17 @@
 
 <span class="n">gp</span> <span class="o">=</span> <span class="n">GPSolver</span><span class="p">(</span><span class="n">tobs</span><span class="p">,</span> <span class="n">flux</span><span class="p">,</span> <span class="n">flux_err</span><span class="p">,</span> <span class="n">theta0</span><span class="p">,</span> <span class="n">bounds</span><span class="o">=</span><span class="n">bounds</span><span class="p">)</span>
 
-<span class="n">theta_opts</span> <span class="o">=</span> <span class="p">[]</span>
-<span class="n">fit_vals</span> <span class="o">=</span> <span class="p">[]</span>
-<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">):</span>
-    <span class="n">theta_opt</span><span class="p">,</span> <span class="n">result</span> <span class="o">=</span> <span class="n">gp</span><span class="o">.</span><span class="n">find_map</span><span class="p">(</span><span class="n">keys</span><span class="o">=</span><span class="n">bounds</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span> <span class="n">method</span><span class="o">=</span><span class="s2">&quot;nelder-mead&quot;</span><span class="p">)</span>
-    <span class="n">theta_opts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">theta_opt</span><span class="p">)</span>
-    <span class="n">fit_vals</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">fun</span><span class="p">)</span>
-<span class="n">theta_map</span> <span class="o">=</span> <span class="n">theta_opts</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">fit_vals</span><span class="p">)]</span>    
-    
+<span class="n">theta_map</span><span class="p">,</span> <span class="n">result</span> <span class="o">=</span> <span class="n">gp</span><span class="o">.</span><span class="n">find_map</span><span class="p">(</span><span class="n">keys</span><span class="o">=</span><span class="n">bounds</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span> <span class="n">method</span><span class="o">=</span><span class="s2">&quot;nelder-mead&quot;</span><span class="p">,</span> <span class="n">disp</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
 <span class="c1"># ===================================================================</span>
 <span class="c1"># Run MCMC with BlackJAX</span>
 <span class="c1"># ===================================================================</span>
 
-<span class="n">sampler</span> <span class="o">=</span> <span class="n">BlackJAXSampler</span><span class="p">(</span><span class="n">gp</span><span class="p">)</span>
+<span class="n">sampler</span> <span class="o">=</span> <span class="n">MCMCSampler</span><span class="p">(</span><span class="n">gp</span><span class="p">)</span>
 
 <span class="n">samples</span><span class="p">,</span> <span class="n">info</span> <span class="o">=</span> <span class="n">sampler</span><span class="o">.</span><span class="n">run_nuts</span><span class="p">(</span>
-      <span class="n">n_samples</span><span class="o">=</span><span class="mi">6000</span><span class="p">,</span>
-      <span class="n">n_warmup</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+      <span class="n">n_samples</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+      <span class="n">n_warmup</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span>
       <span class="n">theta_init</span><span class="o">=</span><span class="n">theta_map</span><span class="p">,</span>
       <span class="n">mass_matrix_method</span><span class="o">=</span><span class="s2">&quot;hessian_map&quot;</span><span class="p">,</span>
       <span class="n">progress_bar</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -329,9 +327,7 @@
 <span class="c1"># Save and visualize results</span>
 <span class="c1"># ===================================================================</span>
 
-<span class="n">np</span><span class="o">.</span><span class="n">savez</span><span class="p">(</span><span class="s2">&quot;blackjax_mcmc_results.npz&quot;</span><span class="p">,</span> <span class="n">samples</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">samples</span><span class="p">),</span> <span class="n">info</span><span class="o">=</span><span class="n">info</span><span class="p">,</span> 
-         <span class="n">theta_map</span><span class="o">=</span><span class="n">theta_map</span><span class="p">,</span> <span class="n">theta_true</span><span class="o">=</span><span class="n">theta_true</span><span class="p">,</span> <span class="n">theta_full</span><span class="o">=</span><span class="n">theta_full</span><span class="p">,</span>
-         <span class="n">tobs</span><span class="o">=</span><span class="n">tobs</span><span class="p">,</span> <span class="n">flux</span><span class="o">=</span><span class="n">flux</span><span class="p">,</span> <span class="n">flux_err</span><span class="o">=</span><span class="n">flux_err</span><span class="p">)</span>
+<span class="n">np</span><span class="o">.</span><span class="n">savez</span><span class="p">(</span><span class="s2">&quot;blackjax_mcmc_results.npz&quot;</span><span class="p">,</span> <span class="n">samples</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">samples</span><span class="p">),</span> <span class="n">info</span><span class="o">=</span><span class="n">info</span><span class="p">,</span> <span class="n">theta_map</span><span class="o">=</span><span class="n">theta_map</span><span class="p">,</span> <span class="n">theta_best</span><span class="o">=</span><span class="n">theta_map</span><span class="p">)</span>
 
 <span class="n">fig</span> <span class="o">=</span> <span class="n">corner</span><span class="o">.</span><span class="n">corner</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">samples</span><span class="p">),</span> <span class="n">labels</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">bounds</span><span class="o">.</span><span class="n">keys</span><span class="p">()),</span> <span class="n">truths</span><span class="o">=</span><span class="p">[</span><span class="n">theta_true</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">bounds</span><span class="o">.</span><span class="n">keys</span><span class="p">()])</span>
 <span class="n">fig</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s2">&quot;blackjax_corner_plot.png&quot;</span><span class="p">)</span>
@@ -347,23 +343,23 @@
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="custom_envelope.html">
+          <a class="next-page" href="../api/src_numpy.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Custom Envelope Functions</div>
+                <div class="title">API Reference (<code class="docutils literal notranslate"><span class="pre">src_numpy</span></code>)</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="gp_solver_quickstart.html">
+          <a class="prev-page" href="custom_latitude_distribution.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></div>
+                <div class="title">Custom Latitude Distributions</div>
                 
               </div>
             </a>
@@ -396,5 +392,6 @@
     <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="../_static/scripts/furo.js?v=46bd48cc"></script>
     <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../_static/notebook_download.js?v=e218955f"></script>
     </body>
 </html>

@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="MCMC with BlackJAX" href="run_blackjax.html"><link rel="prev" title="Starspot Lightcurve Model" href="lightcurve_demo.html">
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="Custom Envelope Functions" href="custom_envelope.html"><link rel="prev" title="Starspot Lightcurve Model" href="lightcurve_demo.html">
 
     <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
         <title>GP Solver with JAX or numpy - spotgp</title>
@@ -11,7 +11,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
     <link rel="stylesheet" type="text/css" href="../_static/styles/furo-extensions.css?v=8dab3a3b" />
-    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=16041fcb" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=5a3b8128" />
     
     
 
@@ -196,8 +196,9 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="lightcurve_demo.html">Starspot Lightcurve Model</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a></li>
-<li class="toctree-l1"><a class="reference internal" href="run_blackjax.html">MCMC with BlackJAX</a></li>
 <li class="toctree-l1"><a class="reference internal" href="custom_envelope.html">Custom Envelope Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="custom_latitude_distribution.html">Custom Latitude Distributions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="run_blackjax.html">MCMC with BlackJAX</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -241,11 +242,7 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <div style="margin-bottom: 1em;">
-  <a href="gp_solver_quickstart.ipynb" download>
-    ⬇ Download notebook
-  </a>
-</div><section id="GP-Solver-with-JAX-or-numpy">
+          <meta name="notebook-source" content="gp_solver_quickstart.ipynb"><section id="GP-Solver-with-JAX-or-numpy">
 <h1>GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code><a class="headerlink" href="#GP-Solver-with-JAX-or-numpy" title="Link to this heading">¶</a></h1>
 <p>This notebook shows how to use <code class="docutils literal notranslate"><span class="pre">src_numpy</span></code> and <code class="docutils literal notranslate"><span class="pre">src_jax</span></code> to:</p>
 <ol class="arabic simple">
@@ -523,12 +520,12 @@ sigma_k              nan     0.0014     0.0026
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="run_blackjax.html">
+          <a class="next-page" href="custom_envelope.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">MCMC with BlackJAX</div>
+                <div class="title">Custom Envelope Functions</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -598,5 +595,6 @@ sigma_k              nan     0.0014     0.0026
     <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
     <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
     <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <script src="../_static/notebook_download.js?v=e218955f"></script>
     </body>
 </html>

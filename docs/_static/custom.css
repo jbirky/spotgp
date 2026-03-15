@@ -25,3 +25,24 @@ body {
 .sidebar-brand, .sidebar-tree, .toc-tree {
     font-family: 'Roboto', sans-serif;
 }
+
+/* "Download notebook" link at bottom of right-side TOC */
+.nb-download-link {
+    margin-top: auto;
+    padding: 0.75em 0;
+    border-top: 1px solid var(--color-background-border, #e0e0e0);
+    font-size: 0.85em;
+}
+.nb-download-link a {
+    color: var(--color-sidebar-link-text, #06437a);
+    text-decoration: none;
+}
+.nb-download-link a:hover {
+    text-decoration: underline;
+}
+
+/* Make the TOC drawer a flex column so the download link sticks to the bottom */
+.toc-drawer {
+    display: flex;
+    flex-direction: column;
+}

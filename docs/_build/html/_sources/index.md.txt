@@ -47,8 +47,9 @@ Both `src_numpy` and `src_jax` expose the same interface. The JAX backend adds J
 
 tutorials/lightcurve_demo
 tutorials/gp_solver_quickstart
-tutorials/run_blackjax
 tutorials/custom_envelope
+tutorials/custom_latitude_distribution
+tutorials/run_blackjax
 ```
 
 ```{toctree}

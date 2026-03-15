@@ -9,7 +9,7 @@
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo-extensions.css?v=8dab3a3b" />
-    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=16041fcb" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=5a3b8128" />
     
     
 
@@ -194,8 +194,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../tutorials/lightcurve_demo.html">Starspot Lightcurve Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../tutorials/gp_solver_quickstart.html">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../tutorials/run_blackjax.html">MCMC with BlackJAX</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../tutorials/custom_envelope.html">Custom Envelope Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/custom_latitude_distribution.html">Custom Latitude Distributions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/run_blackjax.html">MCMC with BlackJAX</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -431,6 +432,119 @@
     <span class="k">return</span> <span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">data_fit</span> <span class="o">+</span> <span class="n">log_det</span> <span class="o">+</span> <span class="n">N</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">))</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_mat_to_banded</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Pack the lower triangle of a symmetric matrix into scipy lower banded</span>
+<span class="sd">    storage: ``ab[k, i] = A[i+k, i]`` for k = 0 .. b.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    A : (n, n) ndarray</span>
+<span class="sd">    b : int  bandwidth</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    ab : (b+1, n) ndarray</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">ab</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">b</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">b</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">ab</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="p">:</span><span class="n">n</span> <span class="o">-</span> <span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="o">-</span><span class="n">k</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">ab</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_banded_kernel</span><span class="p">(</span><span class="n">kernel_eval_func</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">bandwidth</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Build the kernel covariance directly in scipy lower banded storage,</span>
+<span class="sd">    evaluating only the O(N*b) entries within the band.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    kernel_eval_func : callable</span>
+<span class="sd">        Evaluates the kernel on an array of lags and returns kernel values.</span>
+<span class="sd">    x : ndarray, shape (N,)</span>
+<span class="sd">        Observation times.</span>
+<span class="sd">    bandwidth : int</span>
+<span class="sd">        Number of sub-diagonals.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    cb : ndarray, shape (b+1, N)</span>
+<span class="sd">        Lower banded storage: ``cb[d, i] = K(x[i+d], x[i])``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">N</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">b</span> <span class="o">=</span> <span class="n">bandwidth</span>
+    <span class="n">cb</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">b</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">N</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">b</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">n_entries</span> <span class="o">=</span> <span class="n">N</span> <span class="o">-</span> <span class="n">d</span>
+        <span class="n">lags</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="n">d</span><span class="p">:</span> <span class="n">d</span> <span class="o">+</span> <span class="n">n_entries</span><span class="p">]</span> <span class="o">-</span> <span class="n">x</span><span class="p">[:</span><span class="n">n_entries</span><span class="p">])</span>
+        <span class="n">cb</span><span class="p">[</span><span class="n">d</span><span class="p">,</span> <span class="p">:</span><span class="n">n_entries</span><span class="p">]</span> <span class="o">=</span> <span class="n">kernel_eval_func</span><span class="p">(</span><span class="n">lags</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">cb</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_banded_kernel_theta</span><span class="p">(</span><span class="n">theta_kernel</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">bandwidth</span><span class="p">,</span>
+                                <span class="n">n_harmonics</span><span class="p">,</span> <span class="n">n_lat</span><span class="p">,</span> <span class="n">lat_range</span><span class="p">,</span>
+                                <span class="n">quad_nodes</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">quad_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Like ``_build_banded_kernel`` but takes a raw theta array for use in</span>
+<span class="sd">    the pure-functional log-likelihood.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">kernel_eval_func</span><span class="p">(</span><span class="n">lags</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">_kernel_eval</span><span class="p">(</span><span class="n">theta_kernel</span><span class="p">,</span> <span class="n">lags</span><span class="p">,</span>
+                            <span class="n">n_harmonics</span><span class="p">,</span> <span class="n">n_lat</span><span class="p">,</span> <span class="n">lat_range</span><span class="p">,</span>
+                            <span class="n">quad_nodes</span><span class="o">=</span><span class="n">quad_nodes</span><span class="p">,</span> <span class="n">quad_weights</span><span class="o">=</span><span class="n">quad_weights</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_build_banded_kernel</span><span class="p">(</span><span class="n">kernel_eval_func</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">bandwidth</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_gp_log_likelihood_banded</span><span class="p">(</span><span class="n">theta_full</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span><span class="p">,</span> <span class="n">mean_val</span><span class="p">,</span>
+                               <span class="n">n_harmonics</span><span class="p">,</span> <span class="n">n_lat</span><span class="p">,</span> <span class="n">lat_range</span><span class="p">,</span>
+                               <span class="n">fit_sigma_n</span><span class="p">,</span> <span class="n">bandwidth</span><span class="p">,</span>
+                               <span class="n">quad_nodes</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">quad_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    GP marginal log-likelihood using scipy banded Cholesky.</span>
+
+<span class="sd">    Builds the covariance directly in banded storage, evaluating only the</span>
+<span class="sd">    O(N*b) entries within the band instead of the full N^2 matrix.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    bandwidth : int</span>
+<span class="sd">        Number of sub-diagonals to retain.</span>
+<span class="sd">    All other parameters are the same as ``_gp_log_likelihood``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">N</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="n">n_kernel</span> <span class="o">=</span> <span class="mi">6</span>
+    <span class="k">if</span> <span class="n">fit_sigma_n</span><span class="p">:</span>
+        <span class="n">theta_kernel</span> <span class="o">=</span> <span class="n">theta_full</span><span class="p">[:</span><span class="n">n_kernel</span><span class="p">]</span>
+        <span class="n">sigma_n</span> <span class="o">=</span> <span class="n">theta_full</span><span class="p">[</span><span class="n">n_kernel</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">theta_kernel</span> <span class="o">=</span> <span class="n">theta_full</span>
+        <span class="n">sigma_n</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+    <span class="n">cb</span> <span class="o">=</span> <span class="n">_build_banded_kernel_theta</span><span class="p">(</span><span class="n">theta_kernel</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">bandwidth</span><span class="p">,</span>
+                                     <span class="n">n_harmonics</span><span class="p">,</span> <span class="n">n_lat</span><span class="p">,</span> <span class="n">lat_range</span><span class="p">,</span>
+                                     <span class="n">quad_nodes</span><span class="o">=</span><span class="n">quad_nodes</span><span class="p">,</span>
+                                     <span class="n">quad_weights</span><span class="o">=</span><span class="n">quad_weights</span><span class="p">)</span>
+
+    <span class="c1"># Add noise to diagonal (d=0 row)</span>
+    <span class="n">noise_var</span> <span class="o">=</span> <span class="n">yerr</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">sigma_n</span> <span class="o">**</span> <span class="mi">2</span>
+    <span class="n">cb</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="p">:]</span> <span class="o">+=</span> <span class="n">noise_var</span> <span class="o">+</span> <span class="mf">1e-8</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">cb_factor</span> <span class="o">=</span> <span class="n">sla</span><span class="o">.</span><span class="n">cholesky_banded</span><span class="p">(</span><span class="n">cb</span><span class="p">,</span> <span class="n">lower</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">sla</span><span class="o">.</span><span class="n">LinAlgError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">inf</span>
+
+    <span class="n">resid</span> <span class="o">=</span> <span class="n">y</span> <span class="o">-</span> <span class="n">mean_val</span>
+    <span class="n">alpha</span> <span class="o">=</span> <span class="n">sla</span><span class="o">.</span><span class="n">cho_solve_banded</span><span class="p">((</span><span class="n">cb_factor</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span> <span class="n">resid</span><span class="p">)</span>
+
+    <span class="n">data_fit</span> <span class="o">=</span> <span class="n">resid</span> <span class="o">@</span> <span class="n">alpha</span>
+    <span class="n">log_det</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">cb_factor</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="p">:]))</span>   <span class="c1"># diagonal is first row</span>
+
+    <span class="k">return</span> <span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">data_fit</span> <span class="o">+</span> <span class="n">log_det</span> <span class="o">+</span> <span class="n">N</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">))</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_default_log_prior</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">,</span> <span class="n">bounds</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Default log-prior: soft uniform within bounds.</span>
@@ -513,7 +627,8 @@
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span><span class="p">,</span> <span class="n">hparam</span><span class="p">,</span> <span class="n">kernel_type</span><span class="o">=</span><span class="s2">&quot;analytic&quot;</span><span class="p">,</span>
                  <span class="n">mean</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fit_sigma_n</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">bounds</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                 <span class="n">log_prior</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kernel_kwargs</span><span class="p">):</span>
+                 <span class="n">log_prior</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">matrix_solver</span><span class="o">=</span><span class="s2">&quot;cholesky_banded&quot;</span><span class="p">,</span>
+                 <span class="o">**</span><span class="n">kernel_kwargs</span><span class="p">):</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
@@ -539,6 +654,14 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">mean_val</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">mean</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">mean_func</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">t</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">mean_val</span>
 
+        <span class="c1"># Matrix solver</span>
+        <span class="n">_valid_solvers</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;cholesky_full&quot;</span><span class="p">,</span> <span class="s2">&quot;cholesky_banded&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">matrix_solver</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_valid_solvers</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;matrix_solver must be one of </span><span class="si">{</span><span class="n">_valid_solvers</span><span class="si">}</span><span class="s2">, &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;got &#39;</span><span class="si">{</span><span class="n">matrix_solver</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">matrix_solver</span> <span class="o">=</span> <span class="n">matrix_solver</span>
+
         <span class="c1"># Build kernel</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">kernel_type</span> <span class="o">=</span> <span class="n">kernel_type</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">kernel_kwargs</span> <span class="o">=</span> <span class="n">kernel_kwargs</span>
@@ -546,6 +669,10 @@
 
         <span class="c1"># Update hparam with computed sigma_k (if nspot/fspot were given)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">kernel</span><span class="o">.</span><span class="n">hparam</span><span class="p">)</span>
+
+        <span class="c1"># Bandwidth for banded solver</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">matrix_solver</span> <span class="o">==</span> <span class="s2">&quot;cholesky_banded&quot;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">bandwidth</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_bandwidth</span><span class="p">()</span>
 
         <span class="c1"># Build covariance and factorize</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_build_covariance</span><span class="p">()</span>
@@ -615,31 +742,63 @@
         <span class="n">tau</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">tau</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">kernel</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">tau</span><span class="p">)))</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_build_covariance</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build the N x N covariance matrix and Cholesky-factorize it.</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compute_bandwidth</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Bandwidth in samples for the banded Cholesky solver.</span>
 
-<span class="sd">        Exploits symmetry by evaluating the kernel only on the upper</span>
-<span class="sd">        triangle (N*(N+1)/2 lags instead of N^2).</span>
+<span class="sd">        Derived from ``lspot + 2 * tau`` divided by the time sampling.</span>
+<span class="sd">        Assumes uniform sampling; uses ``x[1] - x[0]`` as the step size.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">N</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">N</span>
-        <span class="n">row_idx</span><span class="p">,</span> <span class="n">col_idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">triu_indices</span><span class="p">(</span><span class="n">N</span><span class="p">)</span>
-        <span class="n">lag_upper</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="n">row_idx</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="n">col_idx</span><span class="p">])</span>
-        <span class="n">K_upper</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_eval_kernel</span><span class="p">(</span><span class="n">lag_upper</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">N</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">N</span>
+        <span class="n">dt</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">lspot</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;lspot&quot;</span><span class="p">])</span>
+        <span class="n">tau</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;tau&quot;</span><span class="p">])</span>
+        <span class="n">b</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ceil</span><span class="p">((</span><span class="n">lspot</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">tau</span><span class="p">)</span> <span class="o">/</span> <span class="n">dt</span><span class="p">))</span>
+        <span class="k">return</span> <span class="nb">min</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">N</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
 
-        <span class="n">K</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">N</span><span class="p">,</span> <span class="n">N</span><span class="p">))</span>
-        <span class="n">K</span><span class="p">[</span><span class="n">row_idx</span><span class="p">,</span> <span class="n">col_idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">K_upper</span>
-        <span class="n">K</span> <span class="o">=</span> <span class="n">K</span> <span class="o">+</span> <span class="n">K</span><span class="o">.</span><span class="n">T</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">K</span><span class="p">))</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">K</span> <span class="o">=</span> <span class="n">K</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">K_noise</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">K</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">yerr</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_L</span> <span class="o">=</span> <span class="n">sla</span><span class="o">.</span><span class="n">cholesky</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">K_noise</span><span class="p">,</span> <span class="n">lower</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_covariance</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build the covariance matrix and Cholesky-factorize it.</span>
 
+<span class="sd">        For ``cholesky_full``: builds the full N x N matrix (upper-triangle</span>
+<span class="sd">        symmetry trick, N*(N+1)/2 kernel evals).</span>
+
+<span class="sd">        For ``cholesky_banded``: builds directly in scipy banded storage,</span>
+<span class="sd">        evaluating only the O(N*b) entries within the band.  The full</span>
+<span class="sd">        matrices ``self.K`` and ``self.K_noise`` are set to ``None``</span>
+<span class="sd">        to avoid O(N^2) memory.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">mu</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mean_func</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isscalar</span><span class="p">(</span><span class="n">mu</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_mu</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">N</span><span class="p">,</span> <span class="n">mu</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_mu</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">mu</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_resid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">y</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mu</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_alpha</span> <span class="o">=</span> <span class="n">sla</span><span class="o">.</span><span class="n">cho_solve</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_L</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resid</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">matrix_solver</span> <span class="o">==</span> <span class="s2">&quot;cholesky_banded&quot;</span><span class="p">:</span>
+            <span class="n">cb</span> <span class="o">=</span> <span class="n">_build_banded_kernel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_eval_kernel</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">,</span>
+                                       <span class="bp">self</span><span class="o">.</span><span class="n">bandwidth</span><span class="p">)</span>
+            <span class="n">cb</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="p">:]</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">yerr</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="mf">1e-8</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">K</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">K_noise</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cb</span> <span class="o">=</span> <span class="n">sla</span><span class="o">.</span><span class="n">cholesky_banded</span><span class="p">(</span><span class="n">cb</span><span class="p">,</span> <span class="n">lower</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_L_diag</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cb</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="p">:]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_alpha</span> <span class="o">=</span> <span class="n">sla</span><span class="o">.</span><span class="n">cho_solve_banded</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_cb</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resid</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">N</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">N</span>
+            <span class="n">row_idx</span><span class="p">,</span> <span class="n">col_idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">triu_indices</span><span class="p">(</span><span class="n">N</span><span class="p">)</span>
+            <span class="n">lag_upper</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="n">row_idx</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="n">col_idx</span><span class="p">])</span>
+            <span class="n">K_upper</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_eval_kernel</span><span class="p">(</span><span class="n">lag_upper</span><span class="p">)</span>
+
+            <span class="n">K</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">N</span><span class="p">,</span> <span class="n">N</span><span class="p">))</span>
+            <span class="n">K</span><span class="p">[</span><span class="n">row_idx</span><span class="p">,</span> <span class="n">col_idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">K_upper</span>
+            <span class="n">K</span> <span class="o">=</span> <span class="n">K</span> <span class="o">+</span> <span class="n">K</span><span class="o">.</span><span class="n">T</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">K</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">K</span> <span class="o">=</span> <span class="n">K</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">K_noise</span> <span class="o">=</span> <span class="n">K</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">yerr</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">+</span> <span class="mf">1e-8</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="n">N</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_L</span> <span class="o">=</span> <span class="n">sla</span><span class="o">.</span><span class="n">cholesky</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">K_noise</span><span class="p">,</span> <span class="n">lower</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_L_diag</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_L</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_alpha</span> <span class="o">=</span> <span class="n">sla</span><span class="o">.</span><span class="n">cho_solve</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_L</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resid</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_build_logposterior</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Build log-posterior and its numerical gradient.&quot;&quot;&quot;</span>
@@ -650,12 +809,19 @@
         <span class="n">custom_prior</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_log_prior</span>
         <span class="n">fit_sn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fit_sigma_n</span>
         <span class="n">qn</span><span class="p">,</span> <span class="n">qw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quad_nodes</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quad_weights</span>
+        <span class="n">bw</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;bandwidth&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">solver</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">matrix_solver</span>
 
         <span class="k">def</span><span class="w"> </span><span class="nf">log_posterior</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">):</span>
             <span class="n">theta_arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
-            <span class="n">ll</span> <span class="o">=</span> <span class="n">_gp_log_likelihood</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span><span class="p">,</span> <span class="n">mean_val</span><span class="p">,</span>
-                                    <span class="n">n_h</span><span class="p">,</span> <span class="n">n_l</span><span class="p">,</span> <span class="n">lr</span><span class="p">,</span> <span class="n">fit_sn</span><span class="p">,</span>
-                                    <span class="n">quad_nodes</span><span class="o">=</span><span class="n">qn</span><span class="p">,</span> <span class="n">quad_weights</span><span class="o">=</span><span class="n">qw</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">solver</span> <span class="o">==</span> <span class="s2">&quot;cholesky_banded&quot;</span><span class="p">:</span>
+                <span class="n">ll</span> <span class="o">=</span> <span class="n">_gp_log_likelihood_banded</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span><span class="p">,</span> <span class="n">mean_val</span><span class="p">,</span>
+                                               <span class="n">n_h</span><span class="p">,</span> <span class="n">n_l</span><span class="p">,</span> <span class="n">lr</span><span class="p">,</span> <span class="n">fit_sn</span><span class="p">,</span> <span class="n">bw</span><span class="p">,</span>
+                                               <span class="n">quad_nodes</span><span class="o">=</span><span class="n">qn</span><span class="p">,</span> <span class="n">quad_weights</span><span class="o">=</span><span class="n">qw</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">ll</span> <span class="o">=</span> <span class="n">_gp_log_likelihood</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span><span class="p">,</span> <span class="n">mean_val</span><span class="p">,</span>
+                                        <span class="n">n_h</span><span class="p">,</span> <span class="n">n_l</span><span class="p">,</span> <span class="n">lr</span><span class="p">,</span> <span class="n">fit_sn</span><span class="p">,</span>
+                                        <span class="n">quad_nodes</span><span class="o">=</span><span class="n">qn</span><span class="p">,</span> <span class="n">quad_weights</span><span class="o">=</span><span class="n">qw</span><span class="p">)</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">ll</span><span class="p">):</span>
                 <span class="k">return</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">inf</span>
             <span class="k">if</span> <span class="n">custom_prior</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -695,7 +861,7 @@
 <span class="sd">            log p(y | X, theta)</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">data_fit</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resid</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">_alpha</span>
-        <span class="n">log_det</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_L</span><span class="p">)))</span>
+        <span class="n">log_det</span> <span class="o">=</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_L_diag</span><span class="p">))</span>
         <span class="k">return</span> <span class="nb">float</span><span class="p">(</span>
             <span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">data_fit</span> <span class="o">+</span> <span class="n">log_det</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">N</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)))</span></div>
 
@@ -733,7 +899,10 @@
             <span class="n">mu_prior</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">mu_prior</span><span class="p">)</span>
         <span class="n">mu_pred</span> <span class="o">=</span> <span class="n">mu_prior</span> <span class="o">+</span> <span class="n">Ks</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">_alpha</span>
 
-        <span class="n">V</span> <span class="o">=</span> <span class="n">sla</span><span class="o">.</span><span class="n">cho_solve</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_L</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span> <span class="n">Ks</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">matrix_solver</span> <span class="o">==</span> <span class="s2">&quot;cholesky_banded&quot;</span><span class="p">:</span>
+            <span class="n">V</span> <span class="o">=</span> <span class="n">sla</span><span class="o">.</span><span class="n">cho_solve_banded</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_cb</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span> <span class="n">Ks</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">V</span> <span class="o">=</span> <span class="n">sla</span><span class="o">.</span><span class="n">cho_solve</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">_L</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span> <span class="n">Ks</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="n">return_cov</span><span class="p">:</span>
             <span class="n">lag_pred</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">xpred</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">-</span> <span class="n">xpred</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:])</span>
@@ -1205,7 +1374,16 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">hparam</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_build_kernel</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">kernel</span><span class="o">.</span><span class="n">hparam</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_build_covariance</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">matrix_solver</span> <span class="o">==</span> <span class="s2">&quot;cholesky_banded&quot;</span><span class="p">:</span>
+            <span class="n">new_bw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_bandwidth</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">new_bw</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bandwidth</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">bandwidth</span> <span class="o">=</span> <span class="n">new_bw</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_build_covariance</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_build_logposterior</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_build_covariance</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_build_covariance</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">theta0</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
             <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span><span class="p">],</span>
             <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span></div>
@@ -1669,5 +1847,6 @@
     <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
     <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/notebook_download.js?v=e218955f"></script>
     </body>
 </html>

@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="API Reference (src_numpy)" href="../api/src_numpy.html"><link rel="prev" title="MCMC with BlackJAX" href="run_blackjax.html">
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="Custom Latitude Distributions" href="custom_latitude_distribution.html"><link rel="prev" title="GP Solver with JAX or numpy" href="gp_solver_quickstart.html">
 
     <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
         <title>Custom Envelope Functions - spotgp</title>
@@ -11,7 +11,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
     <link rel="stylesheet" type="text/css" href="../_static/styles/furo-extensions.css?v=8dab3a3b" />
-    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=16041fcb" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=5a3b8128" />
     
     
 
@@ -196,8 +196,9 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="lightcurve_demo.html">Starspot Lightcurve Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="gp_solver_quickstart.html">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a></li>
-<li class="toctree-l1"><a class="reference internal" href="run_blackjax.html">MCMC with BlackJAX</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Custom Envelope Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="custom_latitude_distribution.html">Custom Latitude Distributions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="run_blackjax.html">MCMC with BlackJAX</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -241,11 +242,7 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <div style="margin-bottom: 1em;">
-  <a href="custom_envelope.ipynb" download>
-    ⬇ Download notebook
-  </a>
-</div><section id="Custom-Envelope-Functions">
+          <meta name="notebook-source" content="custom_envelope.ipynb"><section id="Custom-Envelope-Functions">
 <h1>Custom Envelope Functions<a class="headerlink" href="#Custom-Envelope-Functions" title="Link to this heading">¶</a></h1>
 <p>The <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code> models starspot appearance and disappearance with a <strong>trapezoidal squared envelope</strong>: spots rise exponentially with timescale <code class="docutils literal notranslate"><span class="pre">tau</span></code>, hold a constant flux deficit for duration <code class="docutils literal notranslate"><span class="pre">lspot</span></code>, then decay symmetrically.</p>
 <p>The kernel is computed as:</p>
@@ -613,23 +610,23 @@ $\displaystyle \sqrt{2} \sqrt{\pi} \sigma e^{- \frac{\omega^{2} \sigma^{2}}{2}}$
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="../api/src_numpy.html">
+          <a class="next-page" href="custom_latitude_distribution.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">API Reference (<code class="docutils literal notranslate"><span class="pre">src_numpy</span></code>)</div>
+                <div class="title">Custom Latitude Distributions</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="run_blackjax.html">
+          <a class="prev-page" href="gp_solver_quickstart.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">MCMC with BlackJAX</div>
+                <div class="title">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></div>
                 
               </div>
             </a>
@@ -687,5 +684,6 @@ $\displaystyle \sqrt{2} \sqrt{\pi} \sigma e^{- \frac{\omega^{2} \sigma^{2}}{2}}$
     <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
     <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
     <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <script src="../_static/notebook_download.js?v=e218955f"></script>
     </body>
 </html>
