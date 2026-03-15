@@ -55,5 +55,6 @@ tutorials/custom_envelope
 :maxdepth: 2
 :caption: API Reference
 
-api/src
+api/src_numpy
+api/src_jax
 ```

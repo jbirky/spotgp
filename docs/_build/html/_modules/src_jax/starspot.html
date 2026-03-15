@@ -1,0 +1,965 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html">
+
+    <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
+        <title>src_jax.starspot - spotgp</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=16041fcb" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f0f0f0;
+  --color-code-foreground: black;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #272822;
+  --color-code-foreground: #f8f8f2;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #272822;
+  --color-code-foreground: #f8f8f2;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../../index.html"><div class="brand">spotgp</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon no-toc" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../../index.html">
+  
+  <span class="sidebar-brand-text">spotgp</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/lightcurve_demo.html">Starspot Lightcurve Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/gp_solver_quickstart.html">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/run_blackjax.html">MCMC with BlackJAX</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/custom_envelope.html">Custom Envelope Functions</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../api/src_numpy.html">API Reference (<code class="docutils literal notranslate"><span class="pre">src_numpy</span></code>)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api/src_jax.html">API Reference (<code class="docutils literal notranslate"><span class="pre">src_jax</span></code>)</a></li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon no-toc" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <h1>Source code for src_jax.starspot</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">jax</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">matplotlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">rc</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">style</span><span class="o">.</span><span class="n">use</span><span class="p">(</span><span class="s1">&#39;classic&#39;</span><span class="p">)</span>
+<span class="n">rc</span><span class="p">(</span><span class="s1">&#39;font&#39;</span><span class="p">,</span> <span class="o">**</span><span class="p">{</span><span class="s1">&#39;family&#39;</span><span class="p">:</span> <span class="s1">&#39;serif&#39;</span><span class="p">,</span> <span class="s1">&#39;serif&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;Computer Modern&#39;</span><span class="p">]})</span>
+<span class="n">rc</span><span class="p">(</span><span class="s1">&#39;text&#39;</span><span class="p">,</span> <span class="n">usetex</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">rc</span><span class="p">(</span><span class="s1">&#39;figure&#39;</span><span class="p">,</span> <span class="n">facecolor</span><span class="o">=</span><span class="s1">&#39;w&#39;</span><span class="p">)</span>
+<span class="n">rc</span><span class="p">(</span><span class="s1">&#39;xtick&#39;</span><span class="p">,</span> <span class="n">labelsize</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+<span class="n">rc</span><span class="p">(</span><span class="s1">&#39;ytick&#39;</span><span class="p">,</span> <span class="n">labelsize</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;LightcurveModel&quot;</span><span class="p">,</span> <span class="s2">&quot;compute_sigmak&quot;</span><span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">compute_sigmak</span><span class="p">(</span><span class="n">nspot</span><span class="p">,</span> <span class="n">alpha_max</span><span class="p">,</span> <span class="n">fspot</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute the kernel amplitude prefactor sigma_k.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    nspot : float</span>
+<span class="sd">        Number of spots.</span>
+<span class="sd">    alpha_max : float</span>
+<span class="sd">        Peak spot angular radius [rad].</span>
+<span class="sd">    fspot : float, optional</span>
+<span class="sd">        Spot contrast fraction (default 0).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    sigma_k : float</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">nspot</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">fspot</span><span class="p">)</span> <span class="o">*</span> <span class="n">alpha_max</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span>
+
+
+<span class="c1"># =====================================================================</span>
+<span class="c1"># Spot projection helpers for animation</span>
+<span class="c1"># =====================================================================</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_projected_spot_patch</span><span class="p">(</span><span class="n">lon</span><span class="p">,</span> <span class="n">lat</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">inc</span><span class="p">,</span> <span class="n">n_pts</span><span class="o">=</span><span class="mi">60</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Compute the 2D projected outline of a circular spot on a sphere.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    lon : float</span>
+<span class="sd">        Spot longitude (radians).</span>
+<span class="sd">    lat : float</span>
+<span class="sd">        Spot latitude (radians).</span>
+<span class="sd">    alpha : float</span>
+<span class="sd">        Spot angular radius (radians).</span>
+<span class="sd">    inc : float</span>
+<span class="sd">        Stellar inclination (radians).</span>
+<span class="sd">    n_pts : int</span>
+<span class="sd">        Number of points in the outline polygon.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    front_x, front_y : ndarray or None</span>
+<span class="sd">        Visible portion outline.</span>
+<span class="sd">    back_x, back_y : ndarray or None</span>
+<span class="sd">        Hidden (far-side) portion outline.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Spot center direction in observer frame</span>
+    <span class="n">cx</span> <span class="o">=</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">lat</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">lat</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">lon</span><span class="p">)</span>
+    <span class="n">cy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">lat</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">lon</span><span class="p">)</span>
+    <span class="n">cz</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">lat</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">lat</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">lon</span><span class="p">)</span>
+
+    <span class="n">c_vec</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">cx</span><span class="p">,</span> <span class="n">cy</span><span class="p">,</span> <span class="n">cz</span><span class="p">])</span>
+
+    <span class="c1"># Build orthonormal basis on the tangent plane at spot center</span>
+    <span class="n">up</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])</span> <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">cz</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mf">0.9</span> <span class="k">else</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>
+    <span class="n">e1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">c_vec</span><span class="p">,</span> <span class="n">up</span><span class="p">)</span>
+    <span class="n">e1</span> <span class="o">/=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">e1</span><span class="p">)</span>
+    <span class="n">e2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cross</span><span class="p">(</span><span class="n">c_vec</span><span class="p">,</span> <span class="n">e1</span><span class="p">)</span>
+    <span class="n">e2</span> <span class="o">/=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">e2</span><span class="p">)</span>
+
+    <span class="c1"># Trace the spot boundary on the unit sphere</span>
+    <span class="n">phi</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">,</span> <span class="n">n_pts</span><span class="p">)</span>
+    <span class="n">pts</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">alpha</span><span class="p">)</span> <span class="o">*</span> <span class="n">c_vec</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span>
+           <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">alpha</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">phi</span><span class="p">)</span> <span class="o">*</span> <span class="n">e1</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span>
+                              <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">phi</span><span class="p">)</span> <span class="o">*</span> <span class="n">e2</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]))</span>
+
+    <span class="n">proj_x</span> <span class="o">=</span> <span class="n">pts</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>  <span class="c1"># right on sky</span>
+    <span class="n">proj_y</span> <span class="o">=</span> <span class="n">pts</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>  <span class="c1"># up on sky</span>
+    <span class="n">visible</span> <span class="o">=</span> <span class="n">pts</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span>
+
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">visible</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">proj_x</span><span class="p">,</span> <span class="n">proj_y</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="k">elif</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">visible</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">proj_x</span><span class="p">,</span> <span class="n">proj_y</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">fx</span><span class="p">,</span> <span class="n">fy</span> <span class="o">=</span> <span class="n">_extract_visible</span><span class="p">(</span><span class="n">proj_x</span><span class="p">,</span> <span class="n">proj_y</span><span class="p">,</span> <span class="n">pts</span><span class="p">,</span> <span class="n">visible</span><span class="p">,</span> <span class="n">n_pts</span><span class="p">)</span>
+        <span class="n">bx</span><span class="p">,</span> <span class="n">by</span> <span class="o">=</span> <span class="n">_extract_hidden</span><span class="p">(</span><span class="n">proj_x</span><span class="p">,</span> <span class="n">proj_y</span><span class="p">,</span> <span class="n">pts</span><span class="p">,</span> <span class="n">visible</span><span class="p">,</span> <span class="n">n_pts</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">fx</span><span class="p">,</span> <span class="n">fy</span><span class="p">,</span> <span class="n">bx</span><span class="p">,</span> <span class="n">by</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_extract_visible</span><span class="p">(</span><span class="n">proj_x</span><span class="p">,</span> <span class="n">proj_y</span><span class="p">,</span> <span class="n">pts</span><span class="p">,</span> <span class="n">visible</span><span class="p">,</span> <span class="n">n_pts</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Extract visible portion of spot outline with limb interpolation.&quot;&quot;&quot;</span>
+    <span class="n">xs</span><span class="p">,</span> <span class="n">ys</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_pts</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">visible</span><span class="p">[</span><span class="n">i</span><span class="p">]:</span>
+            <span class="n">xs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">proj_x</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+            <span class="n">ys</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">proj_y</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">visible</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]:</span>
+                <span class="n">t</span> <span class="o">=</span> <span class="n">pts</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span><span class="n">pts</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">pts</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="n">i</span><span class="p">])</span>
+                <span class="n">xs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">proj_x</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">t</span> <span class="o">*</span> <span class="p">(</span><span class="n">proj_x</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="n">proj_x</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]))</span>
+                <span class="n">ys</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">proj_y</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">t</span> <span class="o">*</span> <span class="p">(</span><span class="n">proj_y</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="n">proj_y</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]))</span>
+            <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">n_pts</span> <span class="o">-</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">visible</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]:</span>
+                <span class="n">t</span> <span class="o">=</span> <span class="n">pts</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span><span class="n">pts</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="n">pts</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])</span>
+                <span class="n">xs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">proj_x</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">t</span> <span class="o">*</span> <span class="p">(</span><span class="n">proj_x</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">proj_x</span><span class="p">[</span><span class="n">i</span><span class="p">]))</span>
+                <span class="n">ys</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">proj_y</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">t</span> <span class="o">*</span> <span class="p">(</span><span class="n">proj_y</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">proj_y</span><span class="p">[</span><span class="n">i</span><span class="p">]))</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">xs</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">xs</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">ys</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_extract_hidden</span><span class="p">(</span><span class="n">proj_x</span><span class="p">,</span> <span class="n">proj_y</span><span class="p">,</span> <span class="n">pts</span><span class="p">,</span> <span class="n">visible</span><span class="p">,</span> <span class="n">n_pts</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Extract hidden portion of spot outline with limb interpolation.&quot;&quot;&quot;</span>
+    <span class="n">xs</span><span class="p">,</span> <span class="n">ys</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_pts</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">visible</span><span class="p">[</span><span class="n">i</span><span class="p">]:</span>
+            <span class="n">xs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">proj_x</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+            <span class="n">ys</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">proj_y</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">visible</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]:</span>
+                <span class="n">t</span> <span class="o">=</span> <span class="n">pts</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span><span class="n">pts</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">pts</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="n">i</span><span class="p">])</span>
+                <span class="n">xs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">proj_x</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">t</span> <span class="o">*</span> <span class="p">(</span><span class="n">proj_x</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="n">proj_x</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]))</span>
+                <span class="n">ys</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">proj_y</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">t</span> <span class="o">*</span> <span class="p">(</span><span class="n">proj_y</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="n">proj_y</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]))</span>
+            <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">n_pts</span> <span class="o">-</span> <span class="mi">1</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">visible</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]:</span>
+                <span class="n">t</span> <span class="o">=</span> <span class="n">pts</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span><span class="n">pts</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span> <span class="o">-</span> <span class="n">pts</span><span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])</span>
+                <span class="n">xs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">proj_x</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">t</span> <span class="o">*</span> <span class="p">(</span><span class="n">proj_x</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">proj_x</span><span class="p">[</span><span class="n">i</span><span class="p">]))</span>
+                <span class="n">ys</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">proj_y</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">t</span> <span class="o">*</span> <span class="p">(</span><span class="n">proj_y</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">proj_y</span><span class="p">[</span><span class="n">i</span><span class="p">]))</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">xs</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">xs</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">ys</span><span class="p">)</span>
+
+
+<span class="nd">@jax</span><span class="o">.</span><span class="n">jit</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_zeta</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Calculate zeta(x) for spot limb darkening.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">heaviside</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">heaviside</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span> <span class="o">-</span> <span class="n">x</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+            <span class="o">+</span> <span class="n">jnp</span><span class="o">.</span><span class="n">heaviside</span><span class="p">(</span><span class="o">-</span><span class="n">x</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
+
+
+<span class="nd">@jax</span><span class="o">.</span><span class="n">jit</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_alphak</span><span class="p">(</span><span class="n">teval</span><span class="p">,</span> <span class="n">tmaxk</span><span class="p">,</span> <span class="n">lspot</span><span class="p">,</span> <span class="n">tem</span><span class="p">,</span> <span class="n">tdec</span><span class="p">,</span> <span class="n">alpha_max</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute spot angular size evolution (vectorized over time).&quot;&quot;&quot;</span>
+    <span class="n">dt1</span> <span class="o">=</span> <span class="n">teval</span> <span class="o">-</span> <span class="n">tmaxk</span> <span class="o">+</span> <span class="n">lspot</span><span class="o">/</span><span class="mi">2</span> <span class="o">+</span> <span class="n">tem</span>
+    <span class="n">dt2</span> <span class="o">=</span> <span class="n">teval</span> <span class="o">-</span> <span class="n">tmaxk</span> <span class="o">+</span> <span class="n">lspot</span><span class="o">/</span><span class="mi">2</span>
+    <span class="n">dt3</span> <span class="o">=</span> <span class="n">teval</span> <span class="o">-</span> <span class="n">tmaxk</span> <span class="o">-</span> <span class="n">lspot</span><span class="o">/</span><span class="mi">2</span>
+    <span class="n">dt4</span> <span class="o">=</span> <span class="n">teval</span> <span class="o">-</span> <span class="n">tmaxk</span> <span class="o">-</span> <span class="n">lspot</span><span class="o">/</span><span class="mi">2</span> <span class="o">-</span> <span class="n">tdec</span>
+
+    <span class="n">alphak</span>  <span class="o">=</span> <span class="p">(</span><span class="n">dt1</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">heaviside</span><span class="p">(</span><span class="n">dt1</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">-</span> <span class="n">dt2</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">heaviside</span><span class="p">(</span><span class="n">dt2</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span> <span class="o">/</span> <span class="n">tem</span>
+    <span class="n">alphak</span> <span class="o">+=</span> <span class="o">-</span><span class="p">(</span><span class="n">dt3</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">heaviside</span><span class="p">(</span><span class="n">dt3</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">-</span> <span class="n">dt4</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">heaviside</span><span class="p">(</span><span class="n">dt4</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span> <span class="o">/</span> <span class="n">tdec</span>
+    <span class="n">alphak</span> <span class="o">*=</span> <span class="n">alpha_max</span>
+
+    <span class="k">return</span> <span class="n">alphak</span>
+
+
+<span class="nd">@jax</span><span class="o">.</span><span class="n">jit</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_betak</span><span class="p">(</span><span class="n">teval</span><span class="p">,</span> <span class="n">longk</span><span class="p">,</span> <span class="n">latk</span><span class="p">,</span> <span class="n">tmaxk</span><span class="p">,</span> <span class="n">peq</span><span class="p">,</span> <span class="n">kappa</span><span class="p">,</span> <span class="n">inc</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute spot angle from disk center (vectorized over time).&quot;&quot;&quot;</span>
+    <span class="n">longk_t</span> <span class="o">=</span> <span class="n">longk</span> <span class="o">+</span> <span class="mi">2</span><span class="o">*</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="n">peq</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">kappa</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">latk</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">teval</span> <span class="o">-</span> <span class="n">tmaxk</span><span class="p">)</span>
+
+    <span class="n">cosb</span>  <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">latk</span><span class="p">)</span>
+    <span class="n">cosb</span> <span class="o">+=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">latk</span><span class="p">)</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">longk_t</span><span class="p">)</span>
+    <span class="n">betak_t</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arccos</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">cosb</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">betak_t</span><span class="p">,</span> <span class="n">longk_t</span>
+
+
+<span class="nd">@jax</span><span class="o">.</span><span class="n">jit</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_dflux_single_spot</span><span class="p">(</span><span class="n">teval</span><span class="p">,</span> <span class="n">longk</span><span class="p">,</span> <span class="n">latk</span><span class="p">,</span> <span class="n">tmaxk</span><span class="p">,</span>
+                       <span class="n">peq</span><span class="p">,</span> <span class="n">kappa</span><span class="p">,</span> <span class="n">inc</span><span class="p">,</span> <span class="n">lspot</span><span class="p">,</span> <span class="n">tem</span><span class="p">,</span> <span class="n">tdec</span><span class="p">,</span> <span class="n">alpha_max</span><span class="p">,</span> <span class="n">fspot</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Compute flux deficit for a single spot over all time steps.</span>
+<span class="sd">    Fully vectorized over time using JAX.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">betak_t</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_betak</span><span class="p">(</span><span class="n">teval</span><span class="p">,</span> <span class="n">longk</span><span class="p">,</span> <span class="n">latk</span><span class="p">,</span> <span class="n">tmaxk</span><span class="p">,</span> <span class="n">peq</span><span class="p">,</span> <span class="n">kappa</span><span class="p">,</span> <span class="n">inc</span><span class="p">)</span>
+    <span class="n">alphak_t</span> <span class="o">=</span> <span class="n">_alphak</span><span class="p">(</span><span class="n">teval</span><span class="p">,</span> <span class="n">tmaxk</span><span class="p">,</span> <span class="n">lspot</span><span class="p">,</span> <span class="n">tem</span><span class="p">,</span> <span class="n">tdec</span><span class="p">,</span> <span class="n">alpha_max</span><span class="p">)</span>
+
+    <span class="n">cosa</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">alphak_t</span><span class="p">)</span>
+    <span class="n">sina</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">alphak_t</span><span class="p">)</span>
+    <span class="n">cosb</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">betak_t</span><span class="p">)</span>
+    <span class="n">sinb</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">betak_t</span><span class="p">)</span>
+
+    <span class="c1"># Avoid division by zero with small epsilon</span>
+    <span class="n">eps</span> <span class="o">=</span> <span class="mf">1e-30</span>
+    <span class="n">cota</span> <span class="o">=</span> <span class="n">cosa</span> <span class="o">/</span> <span class="p">(</span><span class="n">sina</span> <span class="o">+</span> <span class="n">eps</span><span class="p">)</span>
+    <span class="n">cscb</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">sinb</span> <span class="o">+</span> <span class="n">eps</span><span class="p">)</span>
+    <span class="n">cotb</span> <span class="o">=</span> <span class="n">cosb</span> <span class="o">/</span> <span class="p">(</span><span class="n">sinb</span> <span class="o">+</span> <span class="n">eps</span><span class="p">)</span>
+
+    <span class="c1"># Clamp argument for arccos to [-1, 1]</span>
+    <span class="n">arg1</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">cosa</span> <span class="o">*</span> <span class="n">cscb</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+    <span class="n">arg2</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="o">-</span><span class="n">cota</span> <span class="o">*</span> <span class="n">cotb</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+    <span class="n">sqrt_arg</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">cosa</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">cscb</span><span class="o">**</span><span class="mi">2</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+    <span class="n">Ak</span>  <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arccos</span><span class="p">(</span><span class="n">arg1</span><span class="p">)</span>
+    <span class="n">Ak</span> <span class="o">+=</span> <span class="n">cosb</span> <span class="o">*</span> <span class="n">sina</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arccos</span><span class="p">(</span><span class="n">arg2</span><span class="p">)</span>
+    <span class="n">Ak</span> <span class="o">-=</span> <span class="n">cosa</span> <span class="o">*</span> <span class="n">sinb</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">sqrt_arg</span><span class="p">)</span>
+
+    <span class="c1"># Simple spot limb darkening factor (no limb darkening case)</span>
+    <span class="n">factor</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">fspot</span>
+
+    <span class="n">dspot</span> <span class="o">=</span> <span class="n">Ak</span> <span class="o">/</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">factor</span>
+
+    <span class="c1"># Zero out contributions where spot has zero size</span>
+    <span class="n">dspot</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">alphak_t</span> <span class="o">&gt;</span> <span class="mf">1e-15</span><span class="p">,</span> <span class="n">dspot</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">dspot</span>
+
+
+<span class="c1"># Vectorize over spots (batch the single-spot function over spot index)</span>
+<span class="n">_dflux_all_spots</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">vmap</span><span class="p">(</span>
+    <span class="n">_dflux_single_spot</span><span class="p">,</span>
+    <span class="n">in_axes</span><span class="o">=</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span>    <span class="c1"># teval shared; longk, latk, tmaxk per-spot</span>
+             <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>  <span class="c1"># scalar params shared</span>
+<span class="p">)</span>
+
+
+<div class="viewcode-block" id="LightcurveModel">
+<a class="viewcode-back" href="../../api/src_jax.html#src_jax.starspot.LightcurveModel">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LightcurveModel</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    JAX-accelerated star with spots and its lightcurve.</span>
+
+<span class="sd">    Same interface as the numpy version but uses JAX for vectorized</span>
+<span class="sd">    computation across all spots simultaneously.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        peq (float): Equatorial period of the star.</span>
+<span class="sd">        kappa (float): Differential rotation shear.</span>
+<span class="sd">        inc (float): Inclination of the star.</span>
+<span class="sd">        nspot (int): Number of spots.</span>
+<span class="sd">        tau (float, optional): Timescale for both emergence and decay of the spots. Defaults to None.</span>
+<span class="sd">        tem (float, optional): Emergence timescale of the spots. Defaults to 2.</span>
+<span class="sd">        tdec (float, optional): Decay timescale of the spots. Defaults to 2.</span>
+<span class="sd">        alpha_max (float, optional): Maximum angular area of the spots. Defaults to 0.1.</span>
+<span class="sd">        fspot (float, optional): Spot contrast fraction. Defaults to 0.</span>
+<span class="sd">        lspot (float, optional): Spot lifetime. Defaults to 5.</span>
+<span class="sd">        long (list, optional): Range of spot longitudes. Defaults to [0, 2*pi].</span>
+<span class="sd">        lat (list, optional): Range of spot latitudes. Defaults to [0, pi].</span>
+<span class="sd">        tsim (float, optional): End simulation time. Defaults to 28.</span>
+<span class="sd">        tsamp (float, optional): Sampling cadence. Defaults to 0.02.</span>
+<span class="sd">        limb_darkening (bool, optional): Flag to enable limb darkening. Defaults to False.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">peq</span><span class="o">=</span><span class="mf">4.0</span><span class="p">,</span> <span class="n">kappa</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">nspot</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
+                 <span class="n">tau</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tem</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">tdec</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">alpha_max</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">fspot</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">lspot</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+                 <span class="n">long</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">],</span> <span class="n">lat</span><span class="o">=</span><span class="p">[</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">],</span>
+                 <span class="n">tsim</span><span class="o">=</span><span class="mi">28</span><span class="p">,</span> <span class="n">tsamp</span><span class="o">=</span><span class="mf">0.02</span><span class="p">,</span> <span class="n">limb_darkening</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+
+        <span class="c1"># simulation parameters</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tsim</span> <span class="o">=</span> <span class="n">tsim</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tsamp</span> <span class="o">=</span> <span class="n">tsamp</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">t</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tsim</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tsamp</span><span class="p">)</span>
+
+        <span class="c1"># star properties</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">peq</span> <span class="o">=</span> <span class="n">peq</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">kappa</span> <span class="o">=</span> <span class="n">kappa</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inc</span> <span class="o">=</span> <span class="n">inc</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inc_deg</span> <span class="o">=</span> <span class="n">inc</span> <span class="o">*</span> <span class="mi">180</span><span class="o">/</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nspot</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">nspot</span><span class="p">)</span>
+
+        <span class="c1"># spot properties (scalars)</span>
+        <span class="k">if</span> <span class="n">tau</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tem</span> <span class="o">=</span> <span class="n">tau</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tdec</span> <span class="o">=</span> <span class="n">tau</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tem</span> <span class="o">=</span> <span class="n">tem</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tdec</span> <span class="o">=</span> <span class="n">tdec</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">alpha_max</span> <span class="o">=</span> <span class="n">alpha_max</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fspot</span> <span class="o">=</span> <span class="n">fspot</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lspot</span> <span class="o">=</span> <span class="n">lspot</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">long</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_assign_property</span><span class="p">(</span><span class="n">long</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_assign_property</span><span class="p">(</span><span class="n">lat</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tmax</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tsim</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nspot</span><span class="p">)</span>
+
+        <span class="c1"># limb darkening</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">limb_darkening</span> <span class="o">=</span> <span class="n">limb_darkening</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">limbc</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.3999</span><span class="p">,</span> <span class="mf">0.4269</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.0227</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.0839</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">limbd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">limbc</span>
+
+        <span class="c1"># compute lightcurve using JAX</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">flux</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">Flux</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">t</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_assign_property</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">var</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">var</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="n">var</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">var</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">var</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">var</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">nspot</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;Invalid datatype for model parameter. &quot;</span>
+                            <span class="s2">&quot;Valid types: int, float, list, np.ndarray&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="LightcurveModel.Flux">
+<a class="viewcode-back" href="../../api/src_jax.html#src_jax.starspot.LightcurveModel.Flux">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">Flux</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">teval</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Compute the full lightcurve using JAX vmap over all spots.</span>
+
+<span class="sd">        Instead of a Python loop over nspot, all spots are computed</span>
+<span class="sd">        in parallel via JAX&#39;s vmap.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">teval_jax</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">teval</span><span class="p">)</span>
+        <span class="n">long_jax</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">long</span><span class="p">))</span>
+        <span class="n">lat_jax</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lat</span><span class="p">))</span>
+        <span class="n">tmax_jax</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tmax</span><span class="p">)</span>
+
+        <span class="c1"># Compute all spots in parallel via vmap</span>
+        <span class="n">dspots</span> <span class="o">=</span> <span class="n">_dflux_all_spots</span><span class="p">(</span>
+            <span class="n">teval_jax</span><span class="p">,</span> <span class="n">long_jax</span><span class="p">,</span> <span class="n">lat_jax</span><span class="p">,</span> <span class="n">tmax_jax</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">peq</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">kappa</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">inc</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">lspot</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tem</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tdec</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">alpha_max</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">fspot</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Convert back to numpy for storage</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dspots</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">dspots</span><span class="p">)</span>
+
+        <span class="c1"># Stellar limb darkening</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dlimb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stellar_limb</span><span class="p">()</span>
+
+        <span class="c1"># Total remaining flux</span>
+        <span class="n">flux</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">dlimb</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dspots</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">flux</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_stellar_limb</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">limb_darkening</span><span class="p">:</span>
+            <span class="n">ncoeff</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">limbc</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">([</span><span class="n">n</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">limbc</span><span class="p">[</span><span class="n">n</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span><span class="n">n</span> <span class="o">+</span> <span class="n">ncoeff</span><span class="p">)</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ncoeff</span><span class="p">)])</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+
+<div class="viewcode-block" id="LightcurveModel.plot_lightcurve">
+<a class="viewcode-back" href="../../api/src_jax.html#src_jax.starspot.LightcurveModel.plot_lightcurve">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">plot_lightcurve</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">show_spots</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">show_title</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Plot the lightcurve.&quot;&quot;&quot;</span>
+        <span class="n">flux</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">flux</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">dlimb</span>
+        <span class="n">fig</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">6</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">show_spots</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">ii</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nspot</span><span class="p">):</span>
+                <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">t</span><span class="p">,</span> <span class="mi">1</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">dspots</span><span class="p">[</span><span class="n">ii</span><span class="p">],</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">t</span><span class="p">,</span> <span class="n">flux</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;k&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">show_title</span><span class="p">:</span>
+            <span class="n">title</span> <span class="o">=</span> <span class="sa">r</span><span class="s2">&quot;$P_{{\rm eq}}$=</span><span class="si">{:.1f}</span><span class="s2"> d, &quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">peq</span><span class="p">)</span>
+            <span class="n">title</span> <span class="o">+=</span> <span class="sa">r</span><span class="s2">&quot;$\kappa$=</span><span class="si">{:.2f}</span><span class="s2">, &quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">kappa</span><span class="p">)</span>
+            <span class="n">title</span> <span class="o">+=</span> <span class="sa">r</span><span class="s2">&quot;$i$=</span><span class="si">{:.0f}</span><span class="s2"> deg, &quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">inc_deg</span><span class="p">)</span>
+            <span class="n">title</span> <span class="o">+=</span> <span class="sa">r</span><span class="s2">&quot;nspot=</span><span class="si">{:.0f}</span><span class="s2">, &quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nspot</span><span class="p">)</span>
+            <span class="n">title</span> <span class="o">+=</span> <span class="sa">r</span><span class="s2">&quot;$\alpha_{{\rm max}}$=</span><span class="si">{:.1f}</span><span class="s2">, &quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">alpha_max</span><span class="p">)</span>
+            <span class="n">title</span> <span class="o">+=</span> <span class="sa">r</span><span class="s2">&quot;$l_{{\rm spot}}$=</span><span class="si">{:.2f}</span><span class="s2">, &quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lspot</span><span class="p">)</span>
+            <span class="n">title</span> <span class="o">+=</span> <span class="sa">r</span><span class="s2">&quot;$\tau_{{\rm em}}$=</span><span class="si">{:.2f}</span><span class="s2">, &quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tem</span><span class="p">)</span>
+            <span class="n">title</span> <span class="o">+=</span> <span class="sa">r</span><span class="s2">&quot;$\tau_{{\rm dec}}$=</span><span class="si">{:.2f}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tdec</span><span class="p">)</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="n">title</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">25</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;Time [days]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">24</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;Flux&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">24</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">ylim</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">flux</span><span class="p">)</span><span class="o">-</span><span class="mf">2e-3</span><span class="p">,</span> <span class="mi">1</span><span class="o">+</span><span class="mf">1e-3</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">xlim</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">t</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">t</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">minorticks_on</span><span class="p">()</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">ticklabel_format</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;both&#39;</span><span class="p">,</span> <span class="n">style</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">useOffset</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">fig</span></div>
+
+
+<div class="viewcode-block" id="LightcurveModel.animate_lightcurve">
+<a class="viewcode-back" href="../../api/src_jax.html#src_jax.starspot.LightcurveModel.animate_lightcurve">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">animate_lightcurve</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fps</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">duration</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">outfile</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                           <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">show_spots</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">show_grid</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                           <span class="n">show_params</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">14</span><span class="p">,</span> <span class="mf">5.5</span><span class="p">),</span>
+                           <span class="n">save_last_frame</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">show_dr</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                           <span class="n">label_size</span><span class="o">=</span><span class="mi">18</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Animate the starspot evolution with two panels: a 2D projection</span>
+<span class="sd">        of the rotating star (left) and the lightcurve (right).</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        fps : int</span>
+<span class="sd">            Frames per second (default 30).</span>
+<span class="sd">        duration : float</span>
+<span class="sd">            Animation duration in seconds (default 10).</span>
+<span class="sd">        outfile : str or None</span>
+<span class="sd">            Output file path (.mp4 or .gif). If None, returns the</span>
+<span class="sd">            animation object without saving.</span>
+<span class="sd">        dpi : int</span>
+<span class="sd">            Resolution (default 150).</span>
+<span class="sd">        show_spots : bool</span>
+<span class="sd">            If True, show individual spot contributions on the</span>
+<span class="sd">            lightcurve panel (default True).</span>
+<span class="sd">        show_grid : bool</span>
+<span class="sd">            If True, draw latitude/longitude grid on the star</span>
+<span class="sd">            (default True).</span>
+<span class="sd">        show_params : bool</span>
+<span class="sd">            If True, show parameter annotation on the lightcurve</span>
+<span class="sd">            panel (default True).</span>
+<span class="sd">        figsize : tuple</span>
+<span class="sd">            Figure size (default (14, 5.5)).</span>
+<span class="sd">        save_last_frame : str or None</span>
+<span class="sd">            If provided, save the last frame of the animation as a</span>
+<span class="sd">            static image to this file path (e.g. &quot;frame.png&quot;).</span>
+<span class="sd">        show_dr : bool</span>
+<span class="sd">            If True, color the stellar disk by latitude-dependent</span>
+<span class="sd">            rotation frequency and display a colorbar (default True).</span>
+<span class="sd">        label_size : int or float</span>
+<span class="sd">            Font size for all labels, tick marks, and text in the</span>
+<span class="sd">            plot (default 18).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        anim : matplotlib.animation.FuncAnimation</span>
+<span class="sd">            The animation object.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.animation</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">animation</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">matplotlib.patches</span><span class="w"> </span><span class="kn">import</span> <span class="n">Circle</span>
+
+        <span class="n">t</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">t</span>
+        <span class="n">flux</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">flux</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">dlimb</span>
+        <span class="n">inc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">inc</span>
+        <span class="n">nspot</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">nspot</span>
+        <span class="n">n_times</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+
+        <span class="n">spot_longs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">long</span><span class="p">)</span>
+        <span class="n">spot_lats</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lat</span><span class="p">)</span>
+        <span class="n">spot_tmaxs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tmax</span>
+
+        <span class="c1"># Precompute spot alphas and longitudes for all times</span>
+        <span class="n">t_jax</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+        <span class="n">spot_alphas</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">nspot</span><span class="p">,</span> <span class="n">n_times</span><span class="p">))</span>
+        <span class="n">spot_longs_t</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">nspot</span><span class="p">,</span> <span class="n">n_times</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nspot</span><span class="p">):</span>
+            <span class="n">spot_alphas</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">_alphak</span><span class="p">(</span>
+                <span class="n">t_jax</span><span class="p">,</span> <span class="n">spot_tmaxs</span><span class="p">[</span><span class="n">k</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">lspot</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">tem</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tdec</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">alpha_max</span><span class="p">))</span>
+            <span class="n">_</span><span class="p">,</span> <span class="n">longk_t</span> <span class="o">=</span> <span class="n">_betak</span><span class="p">(</span>
+                <span class="n">t_jax</span><span class="p">,</span> <span class="n">spot_longs</span><span class="p">[</span><span class="n">k</span><span class="p">],</span> <span class="n">spot_lats</span><span class="p">[</span><span class="n">k</span><span class="p">],</span> <span class="n">spot_tmaxs</span><span class="p">[</span><span class="n">k</span><span class="p">],</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">peq</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">kappa</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">inc</span><span class="p">)</span>
+            <span class="n">spot_longs_t</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">longk_t</span><span class="p">)</span>
+
+        <span class="c1"># --- Set up figure ---</span>
+        <span class="n">fig</span><span class="p">,</span> <span class="p">(</span><span class="n">ax_star</span><span class="p">,</span> <span class="n">ax_lc</span><span class="p">)</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span>
+            <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="n">figsize</span><span class="p">,</span>
+            <span class="n">gridspec_kw</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;width_ratios&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mf">1.6</span><span class="p">]})</span>
+
+        <span class="c1"># Star panel</span>
+        <span class="n">ax_star</span><span class="o">.</span><span class="n">set_aspect</span><span class="p">(</span><span class="s2">&quot;equal&quot;</span><span class="p">)</span>
+        <span class="n">ax_star</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="o">-</span><span class="mf">1.35</span><span class="p">,</span> <span class="mf">1.35</span><span class="p">)</span>
+        <span class="n">ax_star</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="o">-</span><span class="mf">1.35</span><span class="p">,</span> <span class="mf">1.35</span><span class="p">)</span>
+        <span class="n">ax_star</span><span class="o">.</span><span class="n">set_axis_off</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">show_dr</span><span class="p">:</span>
+            <span class="c1"># Color the stellar disk by differential rotation rate</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">matplotlib.colors</span><span class="w"> </span><span class="kn">import</span> <span class="n">Normalize</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.cm</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">cm</span>
+
+            <span class="n">omega_eq</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">peq</span>
+            <span class="n">omega_min</span> <span class="o">=</span> <span class="n">omega_eq</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">kappa</span><span class="p">)</span>
+            <span class="n">omega_max</span> <span class="o">=</span> <span class="n">omega_eq</span>
+            <span class="k">if</span> <span class="n">omega_min</span> <span class="o">&gt;</span> <span class="n">omega_max</span><span class="p">:</span>
+                <span class="n">omega_min</span><span class="p">,</span> <span class="n">omega_max</span> <span class="o">=</span> <span class="n">omega_max</span><span class="p">,</span> <span class="n">omega_min</span>
+            <span class="c1"># Small padding so uniform case still renders</span>
+            <span class="k">if</span> <span class="n">omega_max</span> <span class="o">-</span> <span class="n">omega_min</span> <span class="o">&lt;</span> <span class="mf">1e-12</span><span class="p">:</span>
+                <span class="n">omega_max</span> <span class="o">=</span> <span class="n">omega_min</span> <span class="o">+</span> <span class="mf">1e-12</span>
+            <span class="n">norm</span> <span class="o">=</span> <span class="n">Normalize</span><span class="p">(</span><span class="n">vmin</span><span class="o">=</span><span class="n">omega_min</span><span class="p">,</span> <span class="n">vmax</span><span class="o">=</span><span class="n">omega_max</span><span class="p">)</span>
+            <span class="n">cmap</span> <span class="o">=</span> <span class="n">cm</span><span class="o">.</span><span class="n">coolwarm</span>
+
+            <span class="c1"># Build an image of Omega(lat) on the projected disk (left half)</span>
+            <span class="n">n_pix</span> <span class="o">=</span> <span class="mi">300</span>
+            <span class="n">xp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">n_pix</span><span class="p">)</span>
+            <span class="n">yp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">n_pix</span><span class="p">)</span>
+            <span class="n">XP</span><span class="p">,</span> <span class="n">YP</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">meshgrid</span><span class="p">(</span><span class="n">xp</span><span class="p">,</span> <span class="n">yp</span><span class="p">)</span>
+            <span class="n">R2</span> <span class="o">=</span> <span class="n">XP</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">YP</span><span class="o">**</span><span class="mi">2</span>
+
+            <span class="c1"># For each pixel inside the unit disk, invert the projection</span>
+            <span class="c1"># to find the stellar latitude. Observer frame:</span>
+            <span class="c1">#   cx = YP (up on sky), cy = XP (right on sky),</span>
+            <span class="c1">#   cz = sqrt(1 - R2) (toward observer)</span>
+            <span class="c1"># Star-frame latitude: sin(lat) = -sin(inc)*cx + cos(inc)*cz</span>
+            <span class="n">CZ</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">R2</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+            <span class="n">sin_lat</span> <span class="o">=</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">YP</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">CZ</span>
+            <span class="n">sin_lat</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">sin_lat</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+            <span class="n">lat_map</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arcsin</span><span class="p">(</span><span class="n">sin_lat</span><span class="p">)</span>
+
+            <span class="n">omega_map</span> <span class="o">=</span> <span class="n">omega_eq</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">kappa</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">lat_map</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+
+            <span class="c1"># Disk background</span>
+            <span class="n">stellar_disk</span> <span class="o">=</span> <span class="n">Circle</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">fc</span><span class="o">=</span><span class="s2">&quot;lightyellow&quot;</span><span class="p">,</span>
+                                  <span class="n">ec</span><span class="o">=</span><span class="s2">&quot;k&quot;</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">1.5</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">ax_star</span><span class="o">.</span><span class="n">add_patch</span><span class="p">(</span><span class="n">stellar_disk</span><span class="p">)</span>
+
+            <span class="c1"># Render DR shading clipped to the stellar disk</span>
+            <span class="n">dr_img</span> <span class="o">=</span> <span class="n">ax_star</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">omega_map</span><span class="p">,</span> <span class="n">extent</span><span class="o">=</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span>
+                                    <span class="n">origin</span><span class="o">=</span><span class="s2">&quot;lower&quot;</span><span class="p">,</span> <span class="n">interpolation</span><span class="o">=</span><span class="s2">&quot;bilinear&quot;</span><span class="p">,</span>
+                                    <span class="n">cmap</span><span class="o">=</span><span class="n">cmap</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span><span class="n">norm</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">clip_circle</span> <span class="o">=</span> <span class="n">Circle</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="n">ax_star</span><span class="o">.</span><span class="n">transData</span><span class="p">)</span>
+            <span class="n">dr_img</span><span class="o">.</span><span class="n">set_clip_path</span><span class="p">(</span><span class="n">clip_circle</span><span class="p">)</span>
+
+            <span class="c1"># Colorbar on the left side</span>
+            <span class="n">cbar</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">colorbar</span><span class="p">(</span><span class="n">dr_img</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">ax_star</span><span class="p">,</span> <span class="n">fraction</span><span class="o">=</span><span class="mf">0.046</span><span class="p">,</span> <span class="n">pad</span><span class="o">=</span><span class="mf">0.04</span><span class="p">,</span>
+                                <span class="n">location</span><span class="o">=</span><span class="s2">&quot;left&quot;</span><span class="p">)</span>
+            <span class="n">cbar</span><span class="o">.</span><span class="n">set_label</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;$\Omega$ [rad/d]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_size</span><span class="p">)</span>
+            <span class="n">cbar</span><span class="o">.</span><span class="n">ax</span><span class="o">.</span><span class="n">tick_params</span><span class="p">(</span><span class="n">labelsize</span><span class="o">=</span><span class="n">label_size</span> <span class="o">-</span> <span class="mi">2</span><span class="p">)</span>
+            <span class="c1"># Annotate faster (blue, high Omega) and slower (red, low Omega)</span>
+            <span class="n">cbar</span><span class="o">.</span><span class="n">ax</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="mf">0.6</span><span class="p">,</span> <span class="mf">1.02</span><span class="p">,</span> <span class="s2">&quot;faster&quot;</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="n">cbar</span><span class="o">.</span><span class="n">ax</span><span class="o">.</span><span class="n">transAxes</span><span class="p">,</span>
+                         <span class="n">ha</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span> <span class="n">va</span><span class="o">=</span><span class="s2">&quot;bottom&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_size</span> <span class="o">-</span> <span class="mi">2</span><span class="p">,</span>
+                         <span class="n">color</span><span class="o">=</span><span class="s2">&quot;red&quot;</span><span class="p">)</span>
+            <span class="n">cbar</span><span class="o">.</span><span class="n">ax</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="mf">0.6</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.02</span><span class="p">,</span> <span class="s2">&quot;slower&quot;</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="n">cbar</span><span class="o">.</span><span class="n">ax</span><span class="o">.</span><span class="n">transAxes</span><span class="p">,</span>
+                         <span class="n">ha</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span> <span class="n">va</span><span class="o">=</span><span class="s2">&quot;top&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_size</span> <span class="o">-</span> <span class="mi">2</span><span class="p">,</span>
+                         <span class="n">color</span><span class="o">=</span><span class="s2">&quot;blue&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">stellar_disk</span> <span class="o">=</span> <span class="n">Circle</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">fc</span><span class="o">=</span><span class="s2">&quot;lightyellow&quot;</span><span class="p">,</span>
+                                  <span class="n">ec</span><span class="o">=</span><span class="s2">&quot;k&quot;</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">1.5</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">ax_star</span><span class="o">.</span><span class="n">add_patch</span><span class="p">(</span><span class="n">stellar_disk</span><span class="p">)</span>
+
+        <span class="c1"># Grid lines on the star</span>
+        <span class="k">if</span> <span class="n">show_grid</span><span class="p">:</span>
+            <span class="n">phi_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">lat_deg</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">30</span><span class="p">,</span> <span class="mi">60</span><span class="p">,</span> <span class="o">-</span><span class="mi">30</span><span class="p">,</span> <span class="o">-</span><span class="mi">60</span><span class="p">]:</span>
+                <span class="n">lat_r</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">lat_deg</span><span class="p">)</span>
+                <span class="n">gx</span> <span class="o">=</span> <span class="p">(</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">lat_r</span><span class="p">)</span>
+                      <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">lat_r</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">phi_grid</span><span class="p">))</span>
+                <span class="n">gy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">lat_r</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">phi_grid</span><span class="p">)</span>
+                <span class="n">gz</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">lat_r</span><span class="p">)</span>
+                      <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">inc</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">lat_r</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">phi_grid</span><span class="p">))</span>
+                <span class="n">mask</span> <span class="o">=</span> <span class="n">gz</span> <span class="o">&gt;</span> <span class="mi">0</span>
+                <span class="n">style</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;k--&quot;</span><span class="p">,</span> <span class="mf">0.6</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">)</span> <span class="k">if</span> <span class="n">lat_deg</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="p">(</span><span class="s2">&quot;k-&quot;</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">)</span>
+                <span class="n">ax_star</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">mask</span><span class="p">,</span> <span class="n">gy</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">),</span>
+                             <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">mask</span><span class="p">,</span> <span class="n">gx</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">),</span>
+                             <span class="n">style</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">lw</span><span class="o">=</span><span class="n">style</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">alpha</span><span class="o">=</span><span class="n">style</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+
+        <span class="c1"># Rotation axis arrow</span>
+        <span class="n">ax_star</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span>
+            <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">xy</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mf">1.2</span><span class="p">),</span> <span class="n">xytext</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.3</span><span class="p">),</span>
+            <span class="n">arrowprops</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">arrowstyle</span><span class="o">=</span><span class="s2">&quot;-&gt;, head_width=0.08&quot;</span><span class="p">,</span>
+                            <span class="n">color</span><span class="o">=</span><span class="s2">&quot;0.5&quot;</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">1.2</span><span class="p">))</span>
+
+        <span class="c1"># Spot patches (updated each frame)</span>
+        <span class="n">spot_colors</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">cm</span><span class="o">.</span><span class="n">Set1</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">nspot</span><span class="p">,</span> <span class="mi">1</span><span class="p">)))</span>
+        <span class="n">spot_patches</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">ghost_patches</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nspot</span><span class="p">):</span>
+            <span class="n">c</span> <span class="o">=</span> <span class="n">spot_colors</span><span class="p">[</span><span class="n">k</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">spot_colors</span><span class="p">)]</span>
+            <span class="n">patch</span><span class="p">,</span> <span class="o">=</span> <span class="n">ax_star</span><span class="o">.</span><span class="n">fill</span><span class="p">([],</span> <span class="p">[],</span> <span class="n">color</span><span class="o">=</span><span class="n">c</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.85</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+            <span class="n">ghost</span><span class="p">,</span> <span class="o">=</span> <span class="n">ax_star</span><span class="o">.</span><span class="n">fill</span><span class="p">([],</span> <span class="p">[],</span> <span class="n">color</span><span class="o">=</span><span class="n">c</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.15</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+                                  <span class="n">linestyle</span><span class="o">=</span><span class="s2">&quot;--&quot;</span><span class="p">,</span> <span class="n">edgecolor</span><span class="o">=</span><span class="n">c</span><span class="p">,</span>
+                                  <span class="n">linewidth</span><span class="o">=</span><span class="mf">0.8</span><span class="p">)</span>
+            <span class="n">spot_patches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">patch</span><span class="p">)</span>
+            <span class="n">ghost_patches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ghost</span><span class="p">)</span>
+
+        <span class="n">time_text</span> <span class="o">=</span> <span class="n">ax_star</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.25</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_size</span><span class="p">,</span>
+                                 <span class="n">ha</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span> <span class="n">va</span><span class="o">=</span><span class="s2">&quot;top&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Lightcurve panel (percent dip: 0 = no dip, positive = dimmer)</span>
+        <span class="n">dip</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">flux</span><span class="p">)</span> <span class="o">*</span> <span class="mi">100</span>  <span class="c1"># percent</span>
+        <span class="n">dip_spots</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dspots</span> <span class="o">*</span> <span class="mi">100</span>  <span class="c1"># per-spot percent dip</span>
+        <span class="n">dip_max</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">dip</span><span class="p">)</span>
+        <span class="n">dip_range</span> <span class="o">=</span> <span class="n">dip_max</span> <span class="k">if</span> <span class="n">dip_max</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="mf">1.0</span>
+
+        <span class="n">ax_lc</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="n">t</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">t</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">ax_lc</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="o">-</span><span class="mf">0.05</span> <span class="o">*</span> <span class="n">dip_range</span><span class="p">,</span>
+                        <span class="n">dip_max</span> <span class="o">+</span> <span class="mf">0.1</span> <span class="o">*</span> <span class="n">dip_range</span><span class="p">)</span>
+        <span class="n">ax_lc</span><span class="o">.</span><span class="n">invert_yaxis</span><span class="p">()</span>
+        <span class="n">ax_lc</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Time [days]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_size</span><span class="p">)</span>
+        <span class="n">ax_lc</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;Flux dip [\%]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_size</span><span class="p">)</span>
+        <span class="n">ax_lc</span><span class="o">.</span><span class="n">tick_params</span><span class="p">(</span><span class="n">labelsize</span><span class="o">=</span><span class="n">label_size</span> <span class="o">-</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="n">ax_lc</span><span class="o">.</span><span class="n">minorticks_on</span><span class="p">()</span>
+
+        <span class="c1"># Full lightcurve as faint background</span>
+        <span class="n">ax_lc</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">dip</span><span class="p">,</span> <span class="s2">&quot;k-&quot;</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.15</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># Traced lightcurve (builds up)</span>
+        <span class="n">lc_line</span><span class="p">,</span> <span class="o">=</span> <span class="n">ax_lc</span><span class="o">.</span><span class="n">plot</span><span class="p">([],</span> <span class="p">[],</span> <span class="s2">&quot;k-&quot;</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">1.2</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+
+        <span class="c1"># Individual spot contributions</span>
+        <span class="n">spot_lc_lines</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">show_spots</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nspot</span><span class="p">):</span>
+                <span class="n">c</span> <span class="o">=</span> <span class="n">spot_colors</span><span class="p">[</span><span class="n">k</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">spot_colors</span><span class="p">)]</span>
+                <span class="n">ln</span><span class="p">,</span> <span class="o">=</span> <span class="n">ax_lc</span><span class="o">.</span><span class="n">plot</span><span class="p">([],</span> <span class="p">[],</span> <span class="s2">&quot;-&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">c</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span>
+                                 <span class="n">alpha</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">spot_lc_lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ln</span><span class="p">)</span>
+
+        <span class="c1"># Vertical time marker</span>
+        <span class="n">vline</span> <span class="o">=</span> <span class="n">ax_lc</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;C3&quot;</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span>
+                              <span class="n">ls</span><span class="o">=</span><span class="s2">&quot;--&quot;</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+
+        <span class="n">fig</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+
+        <span class="c1"># Parameter annotation above the figure</span>
+        <span class="k">if</span> <span class="n">show_params</span><span class="p">:</span>
+            <span class="n">param_text</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">rf</span><span class="s2">&quot;$P_</span><span class="se">{{</span><span class="s2">\rm eq</span><span class="se">}}</span><span class="s2">=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">peq</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">$ d,  &quot;</span>
+                <span class="sa">rf</span><span class="s2">&quot;$\kappa=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">kappa</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">$,  &quot;</span>
+                <span class="sa">rf</span><span class="s2">&quot;$I=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">inc_deg</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2">^\circ$,  &quot;</span>
+                <span class="sa">rf</span><span class="s2">&quot;$N_</span><span class="se">{{</span><span class="s2">\rm spot</span><span class="se">}}</span><span class="s2">=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">nspot</span><span class="si">}</span><span class="s2">$,  &quot;</span>
+                <span class="sa">rf</span><span class="s2">&quot;$\alpha_</span><span class="se">{{</span><span class="s2">\rm max</span><span class="se">}}</span><span class="s2">=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">alpha_max</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">$ rad,  &quot;</span>
+                <span class="sa">rf</span><span class="s2">&quot;$\ell_</span><span class="se">{{</span><span class="s2">\rm spot</span><span class="se">}}</span><span class="s2">=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">lspot</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2">$ d,  &quot;</span>
+                <span class="sa">rf</span><span class="s2">&quot;$\tau_</span><span class="se">{{</span><span class="s2">\rm em</span><span class="se">}}</span><span class="s2">=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">tem</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">$ d,  &quot;</span>
+                <span class="sa">rf</span><span class="s2">&quot;$\tau_</span><span class="se">{{</span><span class="s2">\rm dec</span><span class="se">}}</span><span class="s2">=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">tdec</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">$ d&quot;</span>
+            <span class="p">)</span>
+            <span class="n">fig</span><span class="o">.</span><span class="n">text</span><span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.99</span><span class="p">,</span> <span class="n">param_text</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_size</span><span class="p">,</span>
+                     <span class="n">ha</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span> <span class="n">va</span><span class="o">=</span><span class="s2">&quot;top&quot;</span><span class="p">)</span>
+            <span class="n">fig</span><span class="o">.</span><span class="n">subplots_adjust</span><span class="p">(</span><span class="n">top</span><span class="o">=</span><span class="mf">0.90</span><span class="p">)</span>
+
+        <span class="c1"># --- Animation ---</span>
+        <span class="n">n_frames</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">fps</span> <span class="o">*</span> <span class="n">duration</span><span class="p">)</span>
+        <span class="n">frame_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">n_times</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span>
+                                    <span class="n">n_frames</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+        <span class="n">empty_xy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="n">frame_num</span><span class="p">):</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="n">frame_indices</span><span class="p">[</span><span class="n">frame_num</span><span class="p">]</span>
+            <span class="n">t_now</span> <span class="o">=</span> <span class="n">t</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+
+            <span class="c1"># Update spots on the star</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nspot</span><span class="p">):</span>
+                <span class="n">alpha_k</span> <span class="o">=</span> <span class="n">spot_alphas</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">idx</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">alpha_k</span> <span class="o">&lt;</span> <span class="mf">1e-6</span><span class="p">:</span>
+                    <span class="n">spot_patches</span><span class="p">[</span><span class="n">k</span><span class="p">]</span><span class="o">.</span><span class="n">set_xy</span><span class="p">(</span><span class="n">empty_xy</span><span class="p">)</span>
+                    <span class="n">ghost_patches</span><span class="p">[</span><span class="n">k</span><span class="p">]</span><span class="o">.</span><span class="n">set_xy</span><span class="p">(</span><span class="n">empty_xy</span><span class="p">)</span>
+                    <span class="k">continue</span>
+
+                <span class="n">lon_k</span> <span class="o">=</span> <span class="n">spot_longs_t</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="n">idx</span><span class="p">]</span>
+                <span class="n">lat_k</span> <span class="o">=</span> <span class="n">spot_lats</span><span class="p">[</span><span class="n">k</span><span class="p">]</span>
+
+                <span class="n">fx</span><span class="p">,</span> <span class="n">fy</span><span class="p">,</span> <span class="n">bx</span><span class="p">,</span> <span class="n">by</span> <span class="o">=</span> <span class="n">_projected_spot_patch</span><span class="p">(</span>
+                    <span class="n">lon_k</span><span class="p">,</span> <span class="n">lat_k</span><span class="p">,</span> <span class="n">alpha_k</span><span class="p">,</span> <span class="n">inc</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">fx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">fx</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">3</span><span class="p">:</span>
+                    <span class="n">spot_patches</span><span class="p">[</span><span class="n">k</span><span class="p">]</span><span class="o">.</span><span class="n">set_xy</span><span class="p">(</span>
+                        <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">fx</span><span class="p">,</span> <span class="n">fy</span><span class="p">]))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">spot_patches</span><span class="p">[</span><span class="n">k</span><span class="p">]</span><span class="o">.</span><span class="n">set_xy</span><span class="p">(</span><span class="n">empty_xy</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">bx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">bx</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">3</span><span class="p">:</span>
+                    <span class="n">ghost_patches</span><span class="p">[</span><span class="n">k</span><span class="p">]</span><span class="o">.</span><span class="n">set_xy</span><span class="p">(</span>
+                        <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">bx</span><span class="p">,</span> <span class="n">by</span><span class="p">]))</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">ghost_patches</span><span class="p">[</span><span class="n">k</span><span class="p">]</span><span class="o">.</span><span class="n">set_xy</span><span class="p">(</span><span class="n">empty_xy</span><span class="p">)</span>
+
+            <span class="n">time_text</span><span class="o">.</span><span class="n">set_text</span><span class="p">(</span><span class="sa">rf</span><span class="s2">&quot;$t = </span><span class="si">{</span><span class="n">t_now</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">$ d&quot;</span><span class="p">)</span>
+
+            <span class="c1"># Update lightcurve trace</span>
+            <span class="n">lc_line</span><span class="o">.</span><span class="n">set_data</span><span class="p">(</span><span class="n">t</span><span class="p">[:</span><span class="n">idx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">dip</span><span class="p">[:</span><span class="n">idx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])</span>
+
+            <span class="c1"># Update individual spot traces</span>
+            <span class="k">if</span> <span class="n">show_spots</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">nspot</span><span class="p">):</span>
+                    <span class="n">spot_lc_lines</span><span class="p">[</span><span class="n">k</span><span class="p">]</span><span class="o">.</span><span class="n">set_data</span><span class="p">(</span>
+                        <span class="n">t</span><span class="p">[:</span><span class="n">idx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">dip_spots</span><span class="p">[</span><span class="n">k</span><span class="p">,</span> <span class="p">:</span><span class="n">idx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])</span>
+
+            <span class="n">vline</span><span class="o">.</span><span class="n">set_xdata</span><span class="p">([</span><span class="n">t_now</span><span class="p">])</span>
+
+            <span class="k">return</span> <span class="p">(</span><span class="n">spot_patches</span> <span class="o">+</span> <span class="n">ghost_patches</span>
+                    <span class="o">+</span> <span class="p">[</span><span class="n">time_text</span><span class="p">,</span> <span class="n">lc_line</span><span class="p">,</span> <span class="n">vline</span><span class="p">]</span>
+                    <span class="o">+</span> <span class="n">spot_lc_lines</span><span class="p">)</span>
+
+        <span class="n">anim</span> <span class="o">=</span> <span class="n">animation</span><span class="o">.</span><span class="n">FuncAnimation</span><span class="p">(</span>
+            <span class="n">fig</span><span class="p">,</span> <span class="n">update</span><span class="p">,</span> <span class="n">frames</span><span class="o">=</span><span class="n">n_frames</span><span class="p">,</span>
+            <span class="n">interval</span><span class="o">=</span><span class="mi">1000</span> <span class="o">/</span> <span class="n">fps</span><span class="p">,</span> <span class="n">blit</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">outfile</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+            <span class="n">outdir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">outfile</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">outdir</span><span class="p">:</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">outdir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">outfile</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;.gif&quot;</span><span class="p">):</span>
+                <span class="n">writer</span> <span class="o">=</span> <span class="n">animation</span><span class="o">.</span><span class="n">PillowWriter</span><span class="p">(</span><span class="n">fps</span><span class="o">=</span><span class="n">fps</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">writer</span> <span class="o">=</span> <span class="n">animation</span><span class="o">.</span><span class="n">FFMpegWriter</span><span class="p">(</span><span class="n">fps</span><span class="o">=</span><span class="n">fps</span><span class="p">,</span> <span class="n">bitrate</span><span class="o">=</span><span class="mi">2000</span><span class="p">)</span>
+
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Rendering </span><span class="si">{</span><span class="n">n_frames</span><span class="si">}</span><span class="s2"> frames to </span><span class="si">{</span><span class="n">outfile</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
+            <span class="n">anim</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">outfile</span><span class="p">,</span> <span class="n">writer</span><span class="o">=</span><span class="n">writer</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="n">dpi</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Done.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Save the last frame as a static image</span>
+        <span class="k">if</span> <span class="n">save_last_frame</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">update</span><span class="p">(</span><span class="n">n_frames</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">fig</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">save_last_frame</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="n">dpi</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s2">&quot;tight&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Last frame saved to </span><span class="si">{</span><span class="n">save_last_frame</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">anim</span></div>
+</div>
+
+</pre></div>
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          
+          
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2026, Jessica Birky
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer no-toc">
+      
+      
+      
+    </aside>
+  </div>
+</div><script src="../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    </body>
+</html>
