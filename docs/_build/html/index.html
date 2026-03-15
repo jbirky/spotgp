@@ -7,7 +7,7 @@
 
     <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
         <title>spotgp</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d111a655" />
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=8dab3a3b" />
     <link rel="stylesheet" type="text/css" href="_static/custom.css?v=16041fcb" />
@@ -17,20 +17,20 @@
 
 <style>
   body {
-    --color-code-background: #f2f2f2;
-  --color-code-foreground: #1e1e1e;
+    --color-code-background: #f0f0f0;
+  --color-code-foreground: black;
   
   }
   @media not print {
     body[data-theme="dark"] {
-      --color-code-background: #202020;
-  --color-code-foreground: #d0d0d0;
+      --color-code-background: #272822;
+  --color-code-foreground: #f8f8f2;
   
     }
     @media (prefers-color-scheme: dark) {
       body:not([data-theme="light"]) {
-        --color-code-background: #202020;
-  --color-code-foreground: #d0d0d0;
+        --color-code-background: #272822;
+  --color-code-foreground: #f8f8f2;
   
       }
     }
@@ -258,6 +258,41 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[jax]&quot;</span>
 </pre></div>
 </div>
+</section>
+<section id="modules">
+<h2>Modules<a class="headerlink" href="#modules" title="Link to this heading">¶</a></h2>
+<p>Both <code class="docutils literal notranslate"><span class="pre">src_numpy</span></code> and <code class="docutils literal notranslate"><span class="pre">src_jax</span></code> expose the same interface. The JAX backend adds JIT compilation, <code class="docutils literal notranslate"><span class="pre">vmap</span></code>-vectorized latitude integration, and automatic differentiation (required for NUTS sampling). The main class modules for the package are:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Module</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">starspot</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">LightcurveModel</span></code> — physical simulator for rotating spotted stars. Generates synthetic flux time series from spot parameters (size, contrast, lifetime, latitude). Includes animation utilities.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">analytic_kernel</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code> — closed-form GP kernel derived from a trapezoidal spot envelope. Computes the autocorrelation $R_\Gamma(\tau)$ and power spectral density analytically via Fourier coefficients of the spot visibility function averaged over latitude.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">numerical_kernel</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">NumericalKernel</span></code> — empirical kernel estimated by Monte Carlo averaging of synthetic lightcurve autocorrelations. Useful for validating the analytic kernel equations.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">gp_solver</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">GPSolver</span></code> — Gaussian Process inference engine. Builds the covariance matrix from a kernel, evaluates the marginal log-likelihood via Cholesky decomposition, and finds the MAP estimate. The JAX version supports autodiff gradients.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">mcmc</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MCMCSampler</span></code>  — A class for analyzing and visualizing MCMC results. Sampling functions using specific packages are build in inheritance classes (e.g. <code class="docutils literal notranslate"><span class="pre">BlackJAXSampler</span></code>).</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<br>
+<br>
+</section>
+<section id="documentation-contents">
+<h2>Documentation Contents<a class="headerlink" href="#documentation-contents" title="Link to this heading">¶</a></h2>
 <div class="toctree-wrapper compound">
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
@@ -351,7 +386,9 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#"><code class="docutils literal notranslate"><span class="pre">spotgp</span></code></a><ul>
-<li><a class="reference internal" href="#installation">Installation</a><ul>
+<li><a class="reference internal" href="#installation">Installation</a></li>
+<li><a class="reference internal" href="#modules">Modules</a></li>
+<li><a class="reference internal" href="#documentation-contents">Documentation Contents</a><ul>
 </ul>
 </li>
 </ul>

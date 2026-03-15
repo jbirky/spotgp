@@ -61,6 +61,10 @@ html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 html_title = "spotgp"
 
+highlight_language  = "python3"
+pygments_style      = "friendly"   # light mode
+pygments_dark_style = "monokai"    # dark mode (furo only)
+
 # -- nbsphinx ----------------------------------------------------------------
 
 nbsphinx_prolog = """

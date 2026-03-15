@@ -16,7 +16,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 1,
+   "execution_count": 21,
    "id": "imports",
    "metadata": {},
    "outputs": [],
@@ -39,7 +39,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 2,
+   "execution_count": 22,
    "id": "generate-data",
    "metadata": {},
    "outputs": [
@@ -97,7 +97,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 3,
+   "execution_count": 23,
    "id": "numpy-gp",
    "metadata": {},
    "outputs": [
@@ -105,7 +105,7 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "[numpy] build:         0.138 s\n",
+      "[numpy] build:         0.137 s\n",
       "[numpy] log-likelihood: 0.000 s  →  1108.41\n"
      ]
     }
@@ -137,7 +137,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": null,
+   "execution_count": 24,
    "id": "jax-gp",
    "metadata": {},
    "outputs": [
@@ -145,8 +145,8 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "[jax]   build:          0.320 s\n",
-      "[jax]   log-likelihood:  0.001 s  →  1108.41\n"
+      "[jax]   build:          0.321 s\n",
+      "[jax]   log-likelihood:  0.000 s  →  1108.41\n"
      ]
     }
    ],
@@ -183,7 +183,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 7,
+   "execution_count": 25,
    "id": "predict",
    "metadata": {},
    "outputs": [
@@ -240,7 +240,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 17,
+   "execution_count": 26,
    "id": "acf",
    "metadata": {},
    "outputs": [
@@ -286,7 +286,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": 20,
+   "execution_count": 27,
    "id": "map",
    "metadata": {},
    "outputs": [
@@ -294,8 +294,8 @@
      "name": "stdout",
      "output_type": "stream",
      "text": [
-      "[numpy] MAP in 37.09 s\n",
-      "[jax]   MAP in 5.05 s\n",
+      "[numpy] MAP in 39.52 s\n",
+      "[jax]   MAP in 5.10 s\n",
       "\n",
       "Parameter       true      numpy MAP  jax MAP\n",
       "--------------------------------------------------\n",
@@ -332,14 +332,6 @@
     "    jv = theta_map_jax.get(k, float('nan'))\n",
     "    print(f\"{k:<14}  {tv:8.4f}   {nv:8.4f}   {jv:8.4f}\")"
    ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "8a7f7c52",
-   "metadata": {},
-   "outputs": [],
-   "source": []
   }
  ],
  "metadata": {
