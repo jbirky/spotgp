@@ -20,5 +20,5 @@ document.addEventListener("DOMContentLoaded", function () {
   link.textContent = "\u2B07 Download notebook";
 
   wrapper.appendChild(link);
-  tocDrawer.appendChild(wrapper);
+  tocDrawer.insertBefore(wrapper, tocDrawer.firstChild);
 });

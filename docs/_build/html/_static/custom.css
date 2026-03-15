@@ -26,11 +26,11 @@ body {
     font-family: 'Roboto', sans-serif;
 }
 
-/* "Download notebook" link at bottom of right-side TOC */
+/* "Download notebook" link at top of right-side TOC */
 .nb-download-link {
-    margin-top: auto;
-    padding: 0.75em 0;
-    border-top: 1px solid var(--color-background-border, #e0e0e0);
+    padding: 0 0 0.75em 0;
+    border-bottom: 1px solid var(--color-background-border, #e0e0e0);
+    margin-bottom: 0.5em;
     font-size: 0.85em;
 }
 .nb-download-link a {
