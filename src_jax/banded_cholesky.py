@@ -4,136 +4,272 @@ Banded Cholesky factorization and triangular solve for JAX.
 Provides O(n * b²) factorization for symmetric positive definite matrices
 whose non-zero entries are confined to a band of width b around the diagonal.
 The bandwidth b must be a Python integer (compile-time constant) so that
-the inner loop over offsets is unrolled at JAX trace time.
+array shapes are known at trace time, but all inner loops use
+``jax.lax.fori_loop`` to keep the XLA graph compact.
 
-Useful for GP covariance matrices whose kernel has compact support — e.g.
-the trapezoidal AnalyticKernel, which is exactly zero beyond lag > lspot + 2*tau.
+Uses compact banded storage of shape (b+1, n) throughout, giving true
+O(n·b²) compute and O(n·b) memory.
+
+Compact storage convention
+--------------------------
+A lower-triangular banded matrix L with bandwidth b has at most (b+1)
+non-zero entries per column.  We store it in a (b+1, n) array ``Lc`` where::
+
+    Lc[d, j] = L[j + d, j]     for d = 0 .. b
+
+So ``Lc[0, :]`` holds the diagonal, ``Lc[1, :]`` the first sub-diagonal, etc.
 
 Functions
 ---------
-banded_cholesky(A, b)       Cholesky factor of a banded SPD matrix.
-banded_solve(L, rhs)        Solve A x = rhs given its Cholesky factor.
+banded_cholesky_compact(Ac, b)  Cholesky in compact storage.
+banded_solve_compact(Lc, rhs, b)  Solve A x = rhs from compact Cholesky factor.
+banded_cholesky(A, b)           Legacy wrapper: full (n, n) in/out.
+banded_solve(L, rhs, b)         Legacy wrapper: full (n, n) in.
 """
 
 import jax
 import jax.numpy as jnp
 
-__all__ = ["banded_cholesky", "banded_solve"]
+__all__ = [
+    "banded_cholesky_compact", "banded_solve_compact",
+    "banded_cholesky", "banded_solve",
+]
 
 
-def banded_cholesky(A, b):
+# ── Compact banded storage helpers ──────────────────────────────
+
+def _full_to_compact(A, b):
+    """Extract lower band of (n, n) matrix A into compact (b+1, n) storage."""
+    n = A.shape[0]
+    j_idx = jnp.arange(n)
+    rows = []
+    for d in range(b + 1):
+        i_idx = jnp.minimum(j_idx + d, n - 1)
+        vals = A[i_idx, j_idx]
+        vals = jnp.where(j_idx + d < n, vals, 0.0)
+        rows.append(vals)
+    return jnp.stack(rows, axis=0)  # (b+1, n)
+
+
+def _compact_to_full(Lc, n):
+    """Expand compact (b+1, n) storage back to full (n, n) lower triangular."""
+    bp1 = Lc.shape[0]
+    L = jnp.zeros((n, n))
+    j_idx = jnp.arange(n)
+    for d in range(bp1):
+        i_idx = j_idx + d
+        mask = i_idx < n
+        i_safe = jnp.minimum(i_idx, n - 1)
+        L = L.at[i_safe, j_idx].add(jnp.where(mask, Lc[d], 0.0))
+    return L
+
+
+# ── Core factorization in compact storage ───────────────────────
+
+def banded_cholesky_compact(Ac, b):
     """
     Cholesky factorization of a symmetric positive definite banded matrix.
 
-    Uses ``jax.lax.scan`` over columns, unrolling the inner loop over the
-    b sub-diagonal offsets at trace time so b must be a Python ``int``.
+    Operates entirely in compact (b+1, n) storage — no (n, n) matrix
+    is ever allocated.
 
     Parameters
     ----------
-    A : jnp.ndarray, shape (n, n)
-        Symmetric positive definite matrix. Only entries within distance b
-        of the diagonal are read; all others are ignored.
+    Ac : jnp.ndarray, shape (b+1, n)
+        Input matrix in compact lower-banded storage:
+        ``Ac[d, j] = A[j+d, j]`` for d = 0 .. b.
     b : int
         Bandwidth (compile-time constant). Must satisfy 0 <= b < n.
 
     Returns
     -------
-    L : jnp.ndarray, shape (n, n)
-        Lower triangular Cholesky factor such that ``L @ L.T == A``
-        (within the band). Entries outside the band are zero.
+    Lc : jnp.ndarray, shape (b+1, n)
+        Lower Cholesky factor in compact storage:
+        ``Lc[d, j] = L[j+d, j]``.
     """
-    n = A.shape[0]
+    n = Ac.shape[1]
 
-    def step(L, i):
-        # Row i of L has been partially filled by previous steps;
-        # L[i, 0:i] contains the already-computed off-diagonal entries.
-        row_i = L[i]
+    def step(Lc, j):
+        # ── Diagonal ──
+        # Lc[0, j] = sqrt(Ac[0, j] - sum_{s=1..b} Lc[s, j-s]^2)
+        s_idx = jnp.arange(1, b + 1)           # [1, 2, ..., b]
+        k_idx = j - s_idx                       # [j-1, j-2, ..., j-b]
+        k_safe = jnp.maximum(k_idx, 0)
+        valid = k_idx >= 0
+        vals = Lc[s_idx, k_safe]
+        vals = jnp.where(valid, vals, 0.0)
+        diag_sum = jnp.dot(vals, vals)
 
-        # Diagonal: L[i,i] = sqrt(A[i,i] - sum_k L[i,k]^2)
-        lii = jnp.sqrt(A[i, i] - jnp.dot(row_i, row_i))
+        ljj = jnp.sqrt(Ac[0, j] - diag_sum)
+        Lc = Lc.at[0, j].set(ljj)
 
-        # Sub-diagonal entries L[i+k, i] for k = 1 .. b
-        # L[i+k, i] = (A[i+k, i] - dot(L[i+k, :], L[i, :])) / L[i,i]
-        # At this point L[i+k, :i] holds previously computed values;
-        # L[i+k, i] is still 0, so the dot product is correct.
-        #
-        # Guard: when j = i+k >= n, use jnp.where to skip the write entirely
-        # rather than clamping the index (clamping would overwrite valid entries).
-        new_col = jnp.zeros(n).at[i].set(lii)
-        for k in range(1, b + 1):          # unrolled at trace time
-            j = i + k
-            j_safe = jnp.minimum(j, n - 1)  # safe index for array reads
-            val = jnp.where(
-                j < n,
-                (A[j_safe, i] - jnp.dot(L[j_safe], row_i)) / lii,
-                0.0,
-            )
-            # Only write when j is a valid row; otherwise leave new_col unchanged
-            new_col = jnp.where(j < n, new_col.at[j_safe].set(val), new_col)
+        # ── Sub-diagonal entries for d = 1..b ──
+        d_idx = jnp.arange(1, b + 1)  # [1, 2, ..., b]
 
-        return L.at[:, i].set(new_col), None
+        ds_idx = d_idx[:, None] + s_idx[None, :]  # (b, b)
+        ds_safe = jnp.minimum(ds_idx, b)
+        row_vals = Lc[ds_safe, k_safe[None, :]]    # (b, b)
+        mask = (ds_idx <= b) & valid[None, :]       # (b, b)
+        row_vals = jnp.where(mask, row_vals, 0.0)
 
-    L, _ = jax.lax.scan(step, jnp.zeros_like(A), jnp.arange(n))
-    return L
+        dots = row_vals @ vals  # (b,)
+
+        new_vals = (Ac[d_idx, j] - dots) / ljj     # (b,)
+        i_idx = j + d_idx
+        new_vals = jnp.where(i_idx < n, new_vals, 0.0)
+
+        Lc = Lc.at[d_idx, j].set(new_vals)
+
+        return Lc, None
+
+    Lc = jnp.zeros((b + 1, n))
+    Lc, _ = jax.lax.scan(step, Lc, jnp.arange(n))
+
+    return Lc
 
 
-def _banded_solve_vec(L, rhs):
+# ── Banded triangular solve in compact storage ──────────────────
+
+def _banded_solve_vec_compact(Lc, rhs, b):
     """
-    Solve A x = rhs for a 1-D rhs given the lower Cholesky factor L of A.
-
-    Two sequential scans: forward substitution (L y = rhs) then
-    backward substitution (L.T x = y).
+    Solve A x = rhs for a 1-D rhs given compact Cholesky factor Lc.
 
     Parameters
     ----------
-    L   : (n, n) lower triangular Cholesky factor.
+    Lc  : (b+1, n) compact lower Cholesky factor.
     rhs : (n,) right-hand side vector.
+    b   : int  bandwidth.
 
     Returns
     -------
     x : (n,) solution vector.
     """
-    n = L.shape[0]
+    n = Lc.shape[1]
+    s_idx = jnp.arange(1, b + 1)  # [1, 2, ..., b]
 
     # Forward substitution: L y = rhs
-    def fwd(y, i):
-        yi = (rhs[i] - jnp.dot(L[i], y)) / L[i, i]
+    # y[i] = (rhs[i] - sum_{s=1..b} L[i, i-s] * y[i-s]) / L[i,i]
+    # L[i, i-s] = Lc[s, i-s]
+    def fwd_banded(y, i):
+        k_idx = i - s_idx
+        k_safe = jnp.maximum(k_idx, 0)
+        valid = k_idx >= 0
+        l_vals = jnp.where(valid, Lc[s_idx, k_safe], 0.0)
+        y_vals = jnp.where(valid, y[k_safe], 0.0)
+        yi = (rhs[i] - jnp.dot(l_vals, y_vals)) / Lc[0, i]
         return y.at[i].set(yi), None
 
-    y, _ = jax.lax.scan(fwd, jnp.zeros(n), jnp.arange(n))
+    y, _ = jax.lax.scan(fwd_banded, jnp.zeros(n), jnp.arange(n))
 
-    # Backward substitution: L.T x = y  (scan in reverse via n-1-i)
-    # When processing actual = n-1-i, all x[actual+1:] are already set
-    # and x[actual] is still 0, so dot(L[:, actual], x) correctly sums
-    # only the super-diagonal contributions.
-    def bwd(x, i):
-        actual = n - 1 - i
-        xi = (y[actual] - jnp.dot(L[:, actual], x)) / L[actual, actual]
-        return x.at[actual].set(xi), None
+    # Backward substitution: L^T x = y
+    # x[i] = (y[i] - sum_{s=1..b} L[i+s, i] * x[i+s]) / L[i,i]
+    # L[i+s, i] = Lc[s, i]
+    def bwd_banded(x, idx):
+        i = n - 1 - idx
+        j_idx = i + s_idx
+        j_safe = jnp.minimum(j_idx, n - 1)
+        valid = j_idx < n
+        l_vals = jnp.where(valid, Lc[s_idx, i], 0.0)
+        x_vals = jnp.where(valid, x[j_safe], 0.0)
+        xi = (y[i] - jnp.dot(l_vals, x_vals)) / Lc[0, i]
+        return x.at[i].set(xi), None
 
-    x, _ = jax.lax.scan(bwd, jnp.zeros(n), jnp.arange(n))
+    x, _ = jax.lax.scan(bwd_banded, jnp.zeros(n), jnp.arange(n))
     return x
 
 
-def banded_solve(L, rhs):
+def banded_solve_compact(Lc, rhs, b):
     """
-    Solve A x = rhs given the lower Cholesky factor L of A.
+    Solve A x = rhs given the compact lower Cholesky factor Lc of A.
 
     Parameters
     ----------
-    L   : jnp.ndarray, shape (n, n)
-        Lower triangular Cholesky factor from ``banded_cholesky``.
+    Lc  : jnp.ndarray, shape (b+1, n)
+        Lower Cholesky factor in compact banded storage.
     rhs : jnp.ndarray, shape (n,) or (n, k)
         Right-hand side. For a matrix rhs, each column is solved
         independently via ``jax.vmap``.
+    b   : int
+        Bandwidth.
 
     Returns
     -------
     x : jnp.ndarray, same shape as rhs.
     """
     if rhs.ndim == 1:
-        return _banded_solve_vec(L, rhs)
+        return _banded_solve_vec_compact(Lc, rhs, b)
     # Matrix rhs: vmap over columns
     return jax.vmap(
-        lambda col: _banded_solve_vec(L, col), in_axes=1, out_axes=1
+        lambda col: _banded_solve_vec_compact(Lc, col, b),
+        in_axes=1, out_axes=1,
     )(rhs)
+
+
+# ── Legacy wrappers (full N×N in/out) ───────────────────────────
+
+def banded_cholesky(A, b):
+    """
+    Cholesky factorization of a symmetric positive definite banded matrix.
+
+    Legacy wrapper that accepts/returns full (n, n) matrices.
+    Prefer ``banded_cholesky_compact`` for O(n·b) memory.
+
+    Parameters
+    ----------
+    A : jnp.ndarray, shape (n, n)
+        Symmetric positive definite matrix.
+    b : int
+        Bandwidth (compile-time constant).
+
+    Returns
+    -------
+    L : jnp.ndarray, shape (n, n)
+        Lower triangular Cholesky factor.
+    """
+    n = A.shape[0]
+    Ac = _full_to_compact(A, b)
+    Lc = banded_cholesky_compact(Ac, b)
+    return _compact_to_full(Lc, n)
+
+
+def banded_solve(L, rhs, b=None):
+    """
+    Solve A x = rhs given the lower Cholesky factor L of A.
+
+    Legacy wrapper that accepts a full (n, n) Cholesky factor.
+    Prefer ``banded_solve_compact`` for O(n·b) memory.
+
+    Parameters
+    ----------
+    L   : jnp.ndarray, shape (n, n)
+        Lower triangular Cholesky factor from ``banded_cholesky``.
+    rhs : jnp.ndarray, shape (n,) or (n, k)
+        Right-hand side.
+    b   : int or None
+        Bandwidth. If None, falls back to full O(n²) dot products.
+
+    Returns
+    -------
+    x : jnp.ndarray, same shape as rhs.
+    """
+    n = L.shape[0]
+
+    if b is None:
+        # Fallback: full dot products
+        def fwd(y, i):
+            yi = (rhs[i] - jnp.dot(L[i], y)) / L[i, i]
+            return y.at[i].set(yi), None
+
+        y, _ = jax.lax.scan(fwd, jnp.zeros(n), jnp.arange(n))
+
+        def bwd(x, i):
+            actual = n - 1 - i
+            xi = (y[actual] - jnp.dot(L[:, actual], x)) / L[actual, actual]
+            return x.at[actual].set(xi), None
+
+        x, _ = jax.lax.scan(bwd, jnp.zeros(n), jnp.arange(n))
+        return x
+
+    # Convert to compact and use the compact solver
+    Lc = _full_to_compact(L, b)
+    return banded_solve_compact(Lc, rhs, b)

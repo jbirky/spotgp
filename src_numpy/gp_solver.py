@@ -216,6 +216,49 @@ def _mat_to_banded(A, b):
     return ab
 
 
+def _build_banded_kernel(kernel_eval_func, x, bandwidth):
+    """
+    Build the kernel covariance directly in scipy lower banded storage,
+    evaluating only the O(N*b) entries within the band.
+
+    Parameters
+    ----------
+    kernel_eval_func : callable
+        Evaluates the kernel on an array of lags and returns kernel values.
+    x : ndarray, shape (N,)
+        Observation times.
+    bandwidth : int
+        Number of sub-diagonals.
+
+    Returns
+    -------
+    cb : ndarray, shape (b+1, N)
+        Lower banded storage: ``cb[d, i] = K(x[i+d], x[i])``.
+    """
+    N = len(x)
+    b = bandwidth
+    cb = np.zeros((b + 1, N))
+    for d in range(b + 1):
+        n_entries = N - d
+        lags = np.abs(x[d: d + n_entries] - x[:n_entries])
+        cb[d, :n_entries] = kernel_eval_func(lags)
+    return cb
+
+
+def _build_banded_kernel_theta(theta_kernel, x, bandwidth,
+                                n_harmonics, n_lat, lat_range,
+                                quad_nodes=None, quad_weights=None):
+    """
+    Like ``_build_banded_kernel`` but takes a raw theta array for use in
+    the pure-functional log-likelihood.
+    """
+    def kernel_eval_func(lags):
+        return _kernel_eval(theta_kernel, lags,
+                            n_harmonics, n_lat, lat_range,
+                            quad_nodes=quad_nodes, quad_weights=quad_weights)
+    return _build_banded_kernel(kernel_eval_func, x, bandwidth)
+
+
 def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                n_harmonics, n_lat, lat_range,
                                fit_sigma_n, bandwidth,
@@ -223,8 +266,8 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
     """
     GP marginal log-likelihood using scipy banded Cholesky.
 
-    Identical to ``_gp_log_likelihood`` except factorization uses
-    ``scipy.linalg.cholesky_banded`` on the lower banded form of K_noise.
+    Builds the covariance directly in banded storage, evaluating only the
+    O(N*b) entries within the band instead of the full N^2 matrix.
 
     Parameters
     ----------
@@ -242,21 +285,15 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
         theta_kernel = theta_full
         sigma_n = 0.0
 
-    row_idx, col_idx = np.triu_indices(N)
-    lag_upper = np.abs(x[row_idx] - x[col_idx])
+    cb = _build_banded_kernel_theta(theta_kernel, x, bandwidth,
+                                     n_harmonics, n_lat, lat_range,
+                                     quad_nodes=quad_nodes,
+                                     quad_weights=quad_weights)
 
-    K_upper = _kernel_eval(theta_kernel, lag_upper,
-                           n_harmonics, n_lat, lat_range,
-                           quad_nodes=quad_nodes, quad_weights=quad_weights)
-
-    K = np.zeros((N, N))
-    K[row_idx, col_idx] = K_upper
-    K = K + K.T - np.diag(np.diag(K))
-
+    # Add noise to diagonal (d=0 row)
     noise_var = yerr ** 2 + sigma_n ** 2
-    K_noise = K + np.diag(noise_var) + 1e-8 * np.eye(N)
+    cb[0, :] += noise_var + 1e-8
 
-    cb = _mat_to_banded(K_noise, bandwidth)
     try:
         cb_factor = sla.cholesky_banded(cb, lower=True)
     except sla.LinAlgError:
@@ -351,7 +388,7 @@ class GPSolver:
 
     def __init__(self, x, y, yerr, hparam, kernel_type="analytic",
                  mean=None, fit_sigma_n=False, bounds=None,
-                 log_prior=None, matrix_solver="cholesky_full",
+                 log_prior=None, matrix_solver="cholesky_banded",
                  **kernel_kwargs):
 
         self.x = np.asarray(x, dtype=np.float64)
@@ -482,24 +519,16 @@ class GPSolver:
         return min(b, self.N - 1)
 
     def _build_covariance(self):
-        """Build the N x N covariance matrix and Cholesky-factorize it.
+        """Build the covariance matrix and Cholesky-factorize it.
 
-        Exploits symmetry by evaluating the kernel only on the upper
-        triangle (N*(N+1)/2 lags instead of N^2).
-        Uses ``self.matrix_solver`` to choose between full and banded
-        Cholesky factorization.
+        For ``cholesky_full``: builds the full N x N matrix (upper-triangle
+        symmetry trick, N*(N+1)/2 kernel evals).
+
+        For ``cholesky_banded``: builds directly in scipy banded storage,
+        evaluating only the O(N*b) entries within the band.  The full
+        matrices ``self.K`` and ``self.K_noise`` are set to ``None``
+        to avoid O(N^2) memory.
         """
-        N = self.N
-        row_idx, col_idx = np.triu_indices(N)
-        lag_upper = np.abs(self.x[row_idx] - self.x[col_idx])
-        K_upper = self._eval_kernel(lag_upper)
-
-        K = np.zeros((N, N))
-        K[row_idx, col_idx] = K_upper
-        K = K + K.T - np.diag(np.diag(K))
-        self.K = K
-        self.K_noise = K + np.diag(self.yerr ** 2) + 1e-8 * np.eye(N)
-
         mu = self.mean_func(self.x)
         if np.isscalar(mu):
             self._mu = np.full(self.N, mu)
@@ -508,11 +537,26 @@ class GPSolver:
         self._resid = self.y - self._mu
 
         if self.matrix_solver == "cholesky_banded":
-            cb = _mat_to_banded(self.K_noise, self.bandwidth)
+            cb = _build_banded_kernel(self._eval_kernel, self.x,
+                                       self.bandwidth)
+            cb[0, :] += self.yerr ** 2 + 1e-8
+            self.K = None
+            self.K_noise = None
             self._cb = sla.cholesky_banded(cb, lower=True)
             self._L_diag = self._cb[0, :]
             self._alpha = sla.cho_solve_banded((self._cb, True), self._resid)
         else:
+            N = self.N
+            row_idx, col_idx = np.triu_indices(N)
+            lag_upper = np.abs(self.x[row_idx] - self.x[col_idx])
+            K_upper = self._eval_kernel(lag_upper)
+
+            K = np.zeros((N, N))
+            K[row_idx, col_idx] = K_upper
+            K = K + K.T - np.diag(np.diag(K))
+            self.K = K
+            self.K_noise = K + np.diag(self.yerr ** 2) + 1e-8 * np.eye(N)
+
             self._L = sla.cholesky(self.K_noise, lower=True)
             self._L_diag = np.diag(self._L)
             self._alpha = sla.cho_solve((self._L, True), self._resid)

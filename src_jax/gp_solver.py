@@ -20,14 +20,16 @@ try:
         _AMPLITUDE_KEYS_PHYSICAL, _R_Gamma, _cn_general_jax,
         _gauss_legendre_grid,
     )
-    from .banded_cholesky import banded_cholesky, banded_solve
+    from .banded_cholesky import (banded_cholesky, banded_solve,
+                                   banded_cholesky_compact, banded_solve_compact)
 except ImportError:
     from analytic_kernel import (
         AnalyticKernel, _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
         _AMPLITUDE_KEYS_PHYSICAL, _R_Gamma, _cn_general_jax,
         _gauss_legendre_grid,
     )
-    from banded_cholesky import banded_cholesky, banded_solve
+    from banded_cholesky import (banded_cholesky, banded_solve,
+                                 banded_cholesky_compact, banded_solve_compact)
 
 __all__ = ["GPSolver"]
 
@@ -177,6 +179,49 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
     return -0.5 * (data_fit + log_det + N * jnp.log(2 * jnp.pi))
 
 
+def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
+                              n_harmonics, n_lat, lat_range,
+                              quad_nodes=None, quad_weights=None):
+    """
+    Build the kernel covariance directly in compact (b+1, N) banded storage.
+
+    Evaluates only the O(N*b) within-band lags instead of the full N^2 matrix.
+
+    Parameters
+    ----------
+    theta_kernel : jnp.ndarray, shape (6,)
+        Kernel hyperparameters.
+    x : jnp.ndarray, shape (N,)
+        Observation times.
+    bandwidth : int
+        Number of sub-diagonals.
+    n_harmonics, n_lat, lat_range : kernel config.
+    quad_nodes, quad_weights : jnp.ndarray or None
+
+    Returns
+    -------
+    cb : jnp.ndarray, shape (b+1, N)
+        Compact lower-banded storage: ``cb[d, i] = K(x[i+d], x[i])``.
+    """
+    N = x.shape[0]
+    b = bandwidth
+
+    # Build index arrays: for diagonal d, entry i has lag |x[i+d] - x[i]|
+    d_idx = jnp.arange(b + 1)[:, None]   # (b+1, 1)
+    i_idx = jnp.arange(N)[None, :]       # (1, N)
+    j_idx = i_idx + d_idx                 # (b+1, N)  row index = i+d
+    j_safe = jnp.minimum(j_idx, N - 1)
+    valid = j_idx < N                     # (b+1, N)
+
+    lags_flat = jnp.abs(x[j_safe] - x[i_idx]).ravel()  # ((b+1)*N,)
+    K_flat = _kernel_eval(theta_kernel, lags_flat,
+                          n_harmonics, n_lat, lat_range,
+                          quad_nodes=quad_nodes, quad_weights=quad_weights)
+    cb = K_flat.reshape(b + 1, N)
+    cb = jnp.where(valid, cb, 0.0)
+    return cb
+
+
 def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                n_harmonics, n_lat, lat_range,
                                fit_sigma_n, bandwidth,
@@ -184,8 +229,10 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
     """
     Pure-functional GP marginal log-likelihood using banded Cholesky.
 
-    Identical to ``_gp_log_likelihood`` except factorization uses
-    ``banded_cholesky(K_noise, bandwidth)`` instead of ``jla.cholesky``.
+    Builds the covariance directly in compact (b+1, N) banded storage,
+    evaluating only the O(N*b) within-band lags.  The Cholesky factorization
+    and solve operate entirely in compact storage — no (N, N) matrix is
+    ever allocated.
 
     ``bandwidth`` must be a Python ``int`` (captured in the JIT closure
     at trace time so the inner scan loop can be unrolled statically).
@@ -206,26 +253,23 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
         theta_kernel = theta_full
         sigma_n = 0.0
 
-    row_idx, col_idx = jnp.triu_indices(N)
-    lag_upper = jnp.abs(x[row_idx] - x[col_idx])
+    # Build covariance in compact banded storage: O(N*b) instead of O(N^2)
+    cb = _build_banded_kernel_jax(theta_kernel, x, bandwidth,
+                                   n_harmonics, n_lat, lat_range,
+                                   quad_nodes=quad_nodes,
+                                   quad_weights=quad_weights)
 
-    K_upper = _kernel_eval(theta_kernel, lag_upper,
-                           n_harmonics, n_lat, lat_range,
-                           quad_nodes=quad_nodes, quad_weights=quad_weights)
-
-    K = jnp.zeros((N, N))
-    K = K.at[row_idx, col_idx].set(K_upper)
-    K = K + K.T - jnp.diag(jnp.diag(K))
-
+    # Add noise to diagonal (row 0 of compact storage)
     noise_var = yerr ** 2 + sigma_n ** 2
-    K_noise = K + jnp.diag(noise_var) + 1e-8 * jnp.eye(N)
+    cb = cb.at[0, :].add(noise_var + 1e-8)
 
-    L = banded_cholesky(K_noise, bandwidth)
+    # Factorize and solve in compact storage
+    Lc = banded_cholesky_compact(cb, bandwidth)
     resid = y - mean_val
-    alpha = banded_solve(L, resid)
+    alpha = banded_solve_compact(Lc, resid, bandwidth)
 
     data_fit = resid @ alpha
-    log_det = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))
+    log_det = 2.0 * jnp.sum(jnp.log(Lc[0, :]))
 
     return -0.5 * (data_fit + log_det + N * jnp.log(2 * jnp.pi))
 
@@ -310,7 +354,7 @@ class GPSolver:
 
     def __init__(self, x, y, yerr, hparam, kernel_type="analytic",
                  mean=None, fit_sigma_n=False, bounds=None,
-                 log_prior=None, matrix_solver="cholesky_full",
+                 log_prior=None, matrix_solver="cholesky_banded",
                  **kernel_kwargs):
 
         self.x = jnp.asarray(x, dtype=jnp.float64)
@@ -396,9 +440,8 @@ class GPSolver:
         # Prior
         self._custom_log_prior = log_prior
 
-        # Precompute lag matrix
-        self._lag_flat = jnp.abs(
-            self.x[:, None] - self.x[None, :]).ravel()
+        # Lag matrix is computed lazily (only needed for Fisher info)
+        self._lag_flat = None
 
         # Build JIT-compiled log-posterior
         self._build_logposterior()
@@ -441,24 +484,16 @@ class GPSolver:
         return min(b, self.N - 1)
 
     def _build_covariance(self):
-        """Build the N x N covariance matrix and Cholesky-factorize it.
+        """Build the covariance matrix and Cholesky-factorize it.
 
-        Exploits symmetry by evaluating the kernel only on the upper
-        triangle (N*(N+1)/2 lags instead of N^2), halving memory.
-        Uses ``self.matrix_solver`` to choose between full and banded
-        Cholesky factorization.
+        For ``cholesky_full``: builds the full N x N matrix (upper-triangle
+        symmetry trick, N*(N+1)/2 kernel evals).
+
+        For ``cholesky_banded``: builds directly in compact (b+1, N) banded
+        storage, evaluating only the O(N*b) within-band entries.  No (N, N)
+        matrix is ever allocated; ``self.K`` and ``self.K_noise`` are set
+        to ``None``.
         """
-        N = self.N
-        row_idx, col_idx = jnp.triu_indices(N)
-        lag_upper = jnp.abs(self.x[row_idx] - self.x[col_idx])
-        K_upper = self._eval_kernel(lag_upper)
-
-        K = jnp.zeros((N, N))
-        K = K.at[row_idx, col_idx].set(K_upper)
-        K = K + K.T - jnp.diag(jnp.diag(K))
-        self.K = K
-        self.K_noise = K + jnp.diag(self.yerr ** 2) + 1e-8 * jnp.eye(N)
-
         mu = self.mean_func(self.x)
         if jnp.isscalar(mu):
             self._mu = jnp.full(self.N, mu)
@@ -467,9 +502,42 @@ class GPSolver:
         self._resid = self.y - self._mu
 
         if self.matrix_solver == "cholesky_banded":
-            self._L = banded_cholesky(self.K_noise, self.bandwidth)
-            self._alpha = banded_solve(self._L, self._resid)
+            # Build kernel directly in compact (b+1, N) storage
+            N = self.N
+            b = self.bandwidth
+            d_idx = jnp.arange(b + 1)[:, None]   # (b+1, 1)
+            i_idx = jnp.arange(N)[None, :]       # (1, N)
+            j_idx = i_idx + d_idx                 # (b+1, N)
+            j_safe = jnp.minimum(j_idx, N - 1)
+            valid = j_idx < N
+
+            lags_flat = jnp.abs(self.x[j_safe] - self.x[i_idx]).ravel()
+            K_flat = self._eval_kernel(lags_flat)
+            cb = K_flat.reshape(b + 1, N)
+            cb = jnp.where(valid, cb, 0.0)
+
+            # Add noise to diagonal (row 0)
+            cb = cb.at[0, :].add(self.yerr ** 2 + 1e-8)
+
+            self.K = None
+            self.K_noise = None
+            self._Lc = banded_cholesky_compact(cb, self.bandwidth)
+            self._L = None
+            self._alpha = banded_solve_compact(
+                self._Lc, self._resid, self.bandwidth)
         else:
+            N = self.N
+            row_idx, col_idx = jnp.triu_indices(N)
+            lag_upper = jnp.abs(self.x[row_idx] - self.x[col_idx])
+            K_upper = self._eval_kernel(lag_upper)
+
+            K = jnp.zeros((N, N))
+            K = K.at[row_idx, col_idx].set(K_upper)
+            K = K + K.T - jnp.diag(jnp.diag(K))
+            self.K = K
+            self.K_noise = K + jnp.diag(self.yerr ** 2) + 1e-8 * jnp.eye(N)
+
+            self._Lc = None
             self._L = jla.cholesky(self.K_noise, lower=True)
             self._alpha = jla.cho_solve((self._L, True), self._resid)
 
@@ -530,7 +598,10 @@ class GPSolver:
             log p(y | X, theta)
         """
         data_fit = self._resid @ self._alpha
-        log_det = 2.0 * jnp.sum(jnp.log(jnp.diag(self._L)))
+        if self._Lc is not None:
+            log_det = 2.0 * jnp.sum(jnp.log(self._Lc[0, :]))
+        else:
+            log_det = 2.0 * jnp.sum(jnp.log(jnp.diag(self._L)))
         return float(
             -0.5 * (data_fit + log_det + self.N * jnp.log(2 * jnp.pi)))
 
@@ -566,7 +637,7 @@ class GPSolver:
         mu_pred = mu_prior + Ks @ self._alpha
 
         if self.matrix_solver == "cholesky_banded":
-            V = banded_solve(self._L, Ks.T)
+            V = banded_solve_compact(self._Lc, Ks.T, self.bandwidth)
         else:
             V = jla.cho_solve((self._L, True), Ks.T)
 
@@ -1357,6 +1428,9 @@ class GPSolver:
 
         N = self.N
         n_params = theta_map.shape[0]
+        if self._lag_flat is None:
+            self._lag_flat = jnp.abs(
+                self.x[:, None] - self.x[None, :]).ravel()
         lag_flat = self._lag_flat
         fit_sn = self.fit_sigma_n
         qn, qw = self._quad_nodes, self._quad_weights
