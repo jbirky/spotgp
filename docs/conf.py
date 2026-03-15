@@ -61,6 +61,18 @@ html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 html_title = "spotgp"
 
+# -- nbsphinx ----------------------------------------------------------------
+
+nbsphinx_prolog = """
+.. raw:: html
+
+    <div style="margin-bottom: 1em;">
+      <a href="{{ env.docname.split('/')|last }}.ipynb" download>
+        ⬇ Download notebook
+      </a>
+    </div>
+"""
+
 # -- Intersphinx mapping -----------------------------------------------------
 
 intersphinx_mapping = {

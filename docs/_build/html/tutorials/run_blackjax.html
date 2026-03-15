@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="API Reference (src)" href="../api/src.html"><link rel="prev" title="GP Solver with JAX or numpy" href="gp_solver_quickstart.html">
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="Custom Envelope Functions" href="custom_envelope.html"><link rel="prev" title="GP Solver with JAX or numpy" href="gp_solver_quickstart.html">
 
     <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
         <title>MCMC with BlackJAX - spotgp</title>
@@ -196,6 +196,7 @@
 <li class="toctree-l1"><a class="reference internal" href="lightcurve_demo.html">Starspot Lightcurve Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="gp_solver_quickstart.html">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">MCMC with BlackJAX</a></li>
+<li class="toctree-l1"><a class="reference internal" href="custom_envelope.html">Custom Envelope Functions</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -240,6 +241,7 @@
         <article role="main" id="furo-main-content">
           <section id="mcmc-with-blackjax">
 <h1>MCMC with BlackJAX<a class="headerlink" href="#mcmc-with-blackjax" title="Link to this heading">¶</a></h1>
+<p><a class="reference download internal" download="" href="../_downloads/a62570759a7623856d7aa03a234c5d02/run_blackjax.py"><code class="xref download docutils literal notranslate"><span class="pre">⬇</span> <span class="pre">Download</span> <span class="pre">script</span></code></a></p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;JAX_ENABLE_X64&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;True&quot;</span>
 <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;JAX_PLATFORMS&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;gpu&quot;</span>
@@ -326,7 +328,9 @@
 <span class="c1"># Save and visualize results</span>
 <span class="c1"># ===================================================================</span>
 
-<span class="n">np</span><span class="o">.</span><span class="n">savez</span><span class="p">(</span><span class="s2">&quot;blackjax_mcmc_results.npz&quot;</span><span class="p">,</span> <span class="n">samples</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">samples</span><span class="p">),</span> <span class="n">info</span><span class="o">=</span><span class="n">info</span><span class="p">,</span> <span class="n">theta_map</span><span class="o">=</span><span class="n">theta_map</span><span class="p">,</span> <span class="n">theta_true</span><span class="o">=</span><span class="n">theta_true</span><span class="p">,</span> <span class="n">theta_full</span><span class="o">=</span><span class="n">theta_full</span><span class="p">)</span>
+<span class="n">np</span><span class="o">.</span><span class="n">savez</span><span class="p">(</span><span class="s2">&quot;blackjax_mcmc_results.npz&quot;</span><span class="p">,</span> <span class="n">samples</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">samples</span><span class="p">),</span> <span class="n">info</span><span class="o">=</span><span class="n">info</span><span class="p">,</span> 
+         <span class="n">theta_map</span><span class="o">=</span><span class="n">theta_map</span><span class="p">,</span> <span class="n">theta_true</span><span class="o">=</span><span class="n">theta_true</span><span class="p">,</span> <span class="n">theta_full</span><span class="o">=</span><span class="n">theta_full</span><span class="p">,</span>
+         <span class="n">tobs</span><span class="o">=</span><span class="n">tobs</span><span class="p">,</span> <span class="n">flux</span><span class="o">=</span><span class="n">flux</span><span class="p">,</span> <span class="n">flux_err</span><span class="o">=</span><span class="n">flux_err</span><span class="p">)</span>
 
 <span class="n">fig</span> <span class="o">=</span> <span class="n">corner</span><span class="o">.</span><span class="n">corner</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">samples</span><span class="p">),</span> <span class="n">labels</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">bounds</span><span class="o">.</span><span class="n">keys</span><span class="p">()),</span> <span class="n">truths</span><span class="o">=</span><span class="p">[</span><span class="n">theta_true</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">bounds</span><span class="o">.</span><span class="n">keys</span><span class="p">()])</span>
 <span class="n">fig</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s2">&quot;blackjax_corner_plot.png&quot;</span><span class="p">)</span>
@@ -342,12 +346,12 @@
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="../api/src.html">
+          <a class="next-page" href="custom_envelope.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">API Reference (<code class="docutils literal notranslate"><span class="pre">src</span></code>)</div>
+                <div class="title">Custom Envelope Functions</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>

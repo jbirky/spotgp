@@ -31,6 +31,7 @@ pip install -e ".[jax]"
 tutorials/lightcurve_demo
 tutorials/gp_solver_quickstart
 tutorials/run_blackjax
+tutorials/custom_envelope
 ```
 
 ```{toctree}

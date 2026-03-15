@@ -13,13 +13,15 @@ lightcurves. Both NumPy and JAX backends are available.
 ## Installation
 
 ```bash
-pip install spotgp
+git clone https://github.com/jbirky/spotgp.git
+cd spotgp
+pip install -e .
 ```
 
 For JAX acceleration:
 
 ```bash
-pip install spotgp[jax]
+pip install -e ".[jax]"
 ```
 
 ```{toctree}
@@ -29,6 +31,7 @@ pip install spotgp[jax]
 tutorials/lightcurve_demo
 tutorials/gp_solver_quickstart
 tutorials/run_blackjax
+tutorials/custom_envelope
 ```
 
 ```{toctree}
