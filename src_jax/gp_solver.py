@@ -20,12 +20,14 @@ try:
         _AMPLITUDE_KEYS_PHYSICAL, _R_Gamma, _cn_general_jax,
         _gauss_legendre_grid,
     )
+    from .banded_cholesky import banded_cholesky, banded_solve
 except ImportError:
     from analytic_kernel import (
         AnalyticKernel, _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
         _AMPLITUDE_KEYS_PHYSICAL, _R_Gamma, _cn_general_jax,
         _gauss_legendre_grid,
     )
+    from banded_cholesky import banded_cholesky, banded_solve
 
 __all__ = ["GPSolver"]
 
@@ -175,6 +177,59 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
     return -0.5 * (data_fit + log_det + N * jnp.log(2 * jnp.pi))
 
 
+def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
+                               n_harmonics, n_lat, lat_range,
+                               fit_sigma_n, bandwidth,
+                               quad_nodes=None, quad_weights=None):
+    """
+    Pure-functional GP marginal log-likelihood using banded Cholesky.
+
+    Identical to ``_gp_log_likelihood`` except factorization uses
+    ``banded_cholesky(K_noise, bandwidth)`` instead of ``jla.cholesky``.
+
+    ``bandwidth`` must be a Python ``int`` (captured in the JIT closure
+    at trace time so the inner scan loop can be unrolled statically).
+
+    Parameters
+    ----------
+    bandwidth : int
+        Number of sub-diagonals to retain (compile-time constant).
+    All other parameters are the same as ``_gp_log_likelihood``.
+    """
+    N = x.shape[0]
+
+    n_kernel = 6
+    if fit_sigma_n:
+        theta_kernel = theta_full[:n_kernel]
+        sigma_n = theta_full[n_kernel]
+    else:
+        theta_kernel = theta_full
+        sigma_n = 0.0
+
+    row_idx, col_idx = jnp.triu_indices(N)
+    lag_upper = jnp.abs(x[row_idx] - x[col_idx])
+
+    K_upper = _kernel_eval(theta_kernel, lag_upper,
+                           n_harmonics, n_lat, lat_range,
+                           quad_nodes=quad_nodes, quad_weights=quad_weights)
+
+    K = jnp.zeros((N, N))
+    K = K.at[row_idx, col_idx].set(K_upper)
+    K = K + K.T - jnp.diag(jnp.diag(K))
+
+    noise_var = yerr ** 2 + sigma_n ** 2
+    K_noise = K + jnp.diag(noise_var) + 1e-8 * jnp.eye(N)
+
+    L = banded_cholesky(K_noise, bandwidth)
+    resid = y - mean_val
+    alpha = banded_solve(L, resid)
+
+    data_fit = resid @ alpha
+    log_det = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))
+
+    return -0.5 * (data_fit + log_det + N * jnp.log(2 * jnp.pi))
+
+
 def _default_log_prior(theta_arr, bounds):
     """
     Default log-prior: soft uniform within bounds.
@@ -255,7 +310,8 @@ class GPSolver:
 
     def __init__(self, x, y, yerr, hparam, kernel_type="analytic",
                  mean=None, fit_sigma_n=False, bounds=None,
-                 log_prior=None, **kernel_kwargs):
+                 log_prior=None, matrix_solver="cholesky_full",
+                 **kernel_kwargs):
 
         self.x = jnp.asarray(x, dtype=jnp.float64)
         self.y = jnp.asarray(y, dtype=jnp.float64)
@@ -281,6 +337,14 @@ class GPSolver:
             self.mean_val = float(mean)
             self.mean_func = lambda t: self.mean_val
 
+        # Matrix solver
+        _valid_solvers = ("cholesky_full", "cholesky_banded")
+        if matrix_solver not in _valid_solvers:
+            raise ValueError(
+                f"matrix_solver must be one of {_valid_solvers}, "
+                f"got '{matrix_solver}'")
+        self.matrix_solver = matrix_solver
+
         # Build kernel
         self.kernel_type = kernel_type
         self.kernel_kwargs = kernel_kwargs
@@ -288,6 +352,10 @@ class GPSolver:
 
         # Update hparam with computed sigma_k (if nspot/fspot were given)
         self.hparam = dict(self.kernel.hparam)
+
+        # Bandwidth for banded solver (compile-time constant derived from hparam)
+        if self.matrix_solver == "cholesky_banded":
+            self.bandwidth = self._compute_bandwidth()
 
         # Build covariance and factorize
         self._build_covariance()
@@ -357,11 +425,28 @@ class GPSolver:
         tau = jnp.asarray(tau, dtype=float)
         return jnp.asarray(self.kernel.kernel(jnp.abs(tau)))
 
+    def _compute_bandwidth(self):
+        """
+        Bandwidth in samples for the banded Cholesky solver.
+
+        Derived from ``lspot + 2 * tau`` divided by the time sampling.
+        Assumes uniform sampling; uses ``x[1] - x[0]`` as the step size.
+        """
+        if self.N < 2:
+            return self.N
+        dt = float(self.x[1] - self.x[0])
+        lspot = float(self.hparam["lspot"])
+        tau = float(self.hparam["tau"])
+        b = int(np.ceil((lspot + 2.0 * tau) / dt))
+        return min(b, self.N - 1)
+
     def _build_covariance(self):
         """Build the N x N covariance matrix and Cholesky-factorize it.
 
         Exploits symmetry by evaluating the kernel only on the upper
         triangle (N*(N+1)/2 lags instead of N^2), halving memory.
+        Uses ``self.matrix_solver`` to choose between full and banded
+        Cholesky factorization.
         """
         N = self.N
         row_idx, col_idx = jnp.triu_indices(N)
@@ -372,8 +457,7 @@ class GPSolver:
         K = K.at[row_idx, col_idx].set(K_upper)
         K = K + K.T - jnp.diag(jnp.diag(K))
         self.K = K
-        self.K_noise = self.K + jnp.diag(self.yerr ** 2)
-        self._L = jla.cholesky(self.K_noise, lower=True)
+        self.K_noise = K + jnp.diag(self.yerr ** 2) + 1e-8 * jnp.eye(N)
 
         mu = self.mean_func(self.x)
         if jnp.isscalar(mu):
@@ -381,7 +465,13 @@ class GPSolver:
         else:
             self._mu = jnp.asarray(mu)
         self._resid = self.y - self._mu
-        self._alpha = jla.cho_solve((self._L, True), self._resid)
+
+        if self.matrix_solver == "cholesky_banded":
+            self._L = banded_cholesky(self.K_noise, self.bandwidth)
+            self._alpha = banded_solve(self._L, self._resid)
+        else:
+            self._L = jla.cholesky(self.K_noise, lower=True)
+            self._alpha = jla.cho_solve((self._L, True), self._resid)
 
     def _build_logposterior(self):
         """Build JIT-compiled log-posterior and its gradient."""
@@ -393,16 +483,29 @@ class GPSolver:
         fit_sn = self.fit_sigma_n
         qn, qw = self._quad_nodes, self._quad_weights
 
-        @jax.jit
-        def log_posterior(theta_arr):
-            ll = _gp_log_likelihood(theta_arr, x, y, yerr, mean_val,
-                                    n_h, n_l, lr, fit_sn,
-                                    quad_nodes=qn, quad_weights=qw)
-            if custom_prior is not None:
-                lp = custom_prior(theta_arr)
-            else:
-                lp = _default_log_prior(theta_arr, bounds)
-            return ll + lp
+        if self.matrix_solver == "cholesky_banded":
+            # Capture bandwidth as a Python int in the closure so that
+            # jax.lax.scan inside banded_cholesky is unrolled statically.
+            b = self.bandwidth
+
+            @jax.jit
+            def log_posterior(theta_arr):
+                ll = _gp_log_likelihood_banded(
+                    theta_arr, x, y, yerr, mean_val,
+                    n_h, n_l, lr, fit_sn, b,
+                    quad_nodes=qn, quad_weights=qw)
+                lp = (custom_prior(theta_arr) if custom_prior is not None
+                      else _default_log_prior(theta_arr, bounds))
+                return ll + lp
+        else:
+            @jax.jit
+            def log_posterior(theta_arr):
+                ll = _gp_log_likelihood(theta_arr, x, y, yerr, mean_val,
+                                        n_h, n_l, lr, fit_sn,
+                                        quad_nodes=qn, quad_weights=qw)
+                lp = (custom_prior(theta_arr) if custom_prior is not None
+                      else _default_log_prior(theta_arr, bounds))
+                return ll + lp
 
         @jax.jit
         def neg_log_posterior(theta_arr):
@@ -462,7 +565,10 @@ class GPSolver:
             mu_prior = jnp.full(M, mu_prior)
         mu_pred = mu_prior + Ks @ self._alpha
 
-        V = jla.cho_solve((self._L, True), Ks.T)
+        if self.matrix_solver == "cholesky_banded":
+            V = banded_solve(self._L, Ks.T)
+        else:
+            V = jla.cho_solve((self._L, True), Ks.T)
 
         if return_cov:
             lag_pred = jnp.abs(xpred[:, None] - xpred[None, :])
@@ -935,7 +1041,16 @@ class GPSolver:
         self.hparam = dict(hparam)
         self._build_kernel()
         self.hparam = dict(self.kernel.hparam)
-        self._build_covariance()
+        if self.matrix_solver == "cholesky_banded":
+            new_bw = self._compute_bandwidth()
+            if new_bw != self.bandwidth:
+                self.bandwidth = new_bw
+                self._build_covariance()
+                self._build_logposterior()
+            else:
+                self._build_covariance()
+        else:
+            self._build_covariance()
         self.theta0 = jnp.array(
             [float(self.hparam.get(k, 0.0)) for k in self.param_keys],
             dtype=jnp.float64)

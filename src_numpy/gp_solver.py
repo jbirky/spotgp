@@ -195,6 +195,82 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
     return -0.5 * (data_fit + log_det + N * np.log(2 * np.pi))
 
 
+def _mat_to_banded(A, b):
+    """
+    Pack the lower triangle of a symmetric matrix into scipy lower banded
+    storage: ``ab[k, i] = A[i+k, i]`` for k = 0 .. b.
+
+    Parameters
+    ----------
+    A : (n, n) ndarray
+    b : int  bandwidth
+
+    Returns
+    -------
+    ab : (b+1, n) ndarray
+    """
+    n = A.shape[0]
+    ab = np.zeros((b + 1, n))
+    for k in range(b + 1):
+        ab[k, :n - k] = np.diag(A, -k)
+    return ab
+
+
+def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
+                               n_harmonics, n_lat, lat_range,
+                               fit_sigma_n, bandwidth,
+                               quad_nodes=None, quad_weights=None):
+    """
+    GP marginal log-likelihood using scipy banded Cholesky.
+
+    Identical to ``_gp_log_likelihood`` except factorization uses
+    ``scipy.linalg.cholesky_banded`` on the lower banded form of K_noise.
+
+    Parameters
+    ----------
+    bandwidth : int
+        Number of sub-diagonals to retain.
+    All other parameters are the same as ``_gp_log_likelihood``.
+    """
+    N = x.shape[0]
+
+    n_kernel = 6
+    if fit_sigma_n:
+        theta_kernel = theta_full[:n_kernel]
+        sigma_n = theta_full[n_kernel]
+    else:
+        theta_kernel = theta_full
+        sigma_n = 0.0
+
+    row_idx, col_idx = np.triu_indices(N)
+    lag_upper = np.abs(x[row_idx] - x[col_idx])
+
+    K_upper = _kernel_eval(theta_kernel, lag_upper,
+                           n_harmonics, n_lat, lat_range,
+                           quad_nodes=quad_nodes, quad_weights=quad_weights)
+
+    K = np.zeros((N, N))
+    K[row_idx, col_idx] = K_upper
+    K = K + K.T - np.diag(np.diag(K))
+
+    noise_var = yerr ** 2 + sigma_n ** 2
+    K_noise = K + np.diag(noise_var) + 1e-8 * np.eye(N)
+
+    cb = _mat_to_banded(K_noise, bandwidth)
+    try:
+        cb_factor = sla.cholesky_banded(cb, lower=True)
+    except sla.LinAlgError:
+        return -np.inf
+
+    resid = y - mean_val
+    alpha = sla.cho_solve_banded((cb_factor, True), resid)
+
+    data_fit = resid @ alpha
+    log_det = 2.0 * np.sum(np.log(cb_factor[0, :]))   # diagonal is first row
+
+    return -0.5 * (data_fit + log_det + N * np.log(2 * np.pi))
+
+
 def _default_log_prior(theta_arr, bounds):
     """
     Default log-prior: soft uniform within bounds.
@@ -275,7 +351,8 @@ class GPSolver:
 
     def __init__(self, x, y, yerr, hparam, kernel_type="analytic",
                  mean=None, fit_sigma_n=False, bounds=None,
-                 log_prior=None, **kernel_kwargs):
+                 log_prior=None, matrix_solver="cholesky_full",
+                 **kernel_kwargs):
 
         self.x = np.asarray(x, dtype=np.float64)
         self.y = np.asarray(y, dtype=np.float64)
@@ -301,6 +378,14 @@ class GPSolver:
             self.mean_val = float(mean)
             self.mean_func = lambda t: self.mean_val
 
+        # Matrix solver
+        _valid_solvers = ("cholesky_full", "cholesky_banded")
+        if matrix_solver not in _valid_solvers:
+            raise ValueError(
+                f"matrix_solver must be one of {_valid_solvers}, "
+                f"got '{matrix_solver}'")
+        self.matrix_solver = matrix_solver
+
         # Build kernel
         self.kernel_type = kernel_type
         self.kernel_kwargs = kernel_kwargs
@@ -308,6 +393,10 @@ class GPSolver:
 
         # Update hparam with computed sigma_k (if nspot/fspot were given)
         self.hparam = dict(self.kernel.hparam)
+
+        # Bandwidth for banded solver
+        if self.matrix_solver == "cholesky_banded":
+            self.bandwidth = self._compute_bandwidth()
 
         # Build covariance and factorize
         self._build_covariance()
@@ -377,11 +466,28 @@ class GPSolver:
         tau = np.asarray(tau, dtype=float)
         return np.asarray(self.kernel.kernel(np.abs(tau)))
 
+    def _compute_bandwidth(self):
+        """
+        Bandwidth in samples for the banded Cholesky solver.
+
+        Derived from ``lspot + 2 * tau`` divided by the time sampling.
+        Assumes uniform sampling; uses ``x[1] - x[0]`` as the step size.
+        """
+        if self.N < 2:
+            return self.N
+        dt = float(self.x[1] - self.x[0])
+        lspot = float(self.hparam["lspot"])
+        tau = float(self.hparam["tau"])
+        b = int(np.ceil((lspot + 2.0 * tau) / dt))
+        return min(b, self.N - 1)
+
     def _build_covariance(self):
         """Build the N x N covariance matrix and Cholesky-factorize it.
 
         Exploits symmetry by evaluating the kernel only on the upper
         triangle (N*(N+1)/2 lags instead of N^2).
+        Uses ``self.matrix_solver`` to choose between full and banded
+        Cholesky factorization.
         """
         N = self.N
         row_idx, col_idx = np.triu_indices(N)
@@ -392,8 +498,7 @@ class GPSolver:
         K[row_idx, col_idx] = K_upper
         K = K + K.T - np.diag(np.diag(K))
         self.K = K
-        self.K_noise = self.K + np.diag(self.yerr ** 2)
-        self._L = sla.cholesky(self.K_noise, lower=True)
+        self.K_noise = K + np.diag(self.yerr ** 2) + 1e-8 * np.eye(N)
 
         mu = self.mean_func(self.x)
         if np.isscalar(mu):
@@ -401,7 +506,16 @@ class GPSolver:
         else:
             self._mu = np.asarray(mu)
         self._resid = self.y - self._mu
-        self._alpha = sla.cho_solve((self._L, True), self._resid)
+
+        if self.matrix_solver == "cholesky_banded":
+            cb = _mat_to_banded(self.K_noise, self.bandwidth)
+            self._cb = sla.cholesky_banded(cb, lower=True)
+            self._L_diag = self._cb[0, :]
+            self._alpha = sla.cho_solve_banded((self._cb, True), self._resid)
+        else:
+            self._L = sla.cholesky(self.K_noise, lower=True)
+            self._L_diag = np.diag(self._L)
+            self._alpha = sla.cho_solve((self._L, True), self._resid)
 
     def _build_logposterior(self):
         """Build log-posterior and its numerical gradient."""
@@ -412,12 +526,19 @@ class GPSolver:
         custom_prior = self._custom_log_prior
         fit_sn = self.fit_sigma_n
         qn, qw = self._quad_nodes, self._quad_weights
+        bw = getattr(self, 'bandwidth', None)
+        solver = self.matrix_solver
 
         def log_posterior(theta_arr):
             theta_arr = np.asarray(theta_arr, dtype=np.float64)
-            ll = _gp_log_likelihood(theta_arr, x, y, yerr, mean_val,
-                                    n_h, n_l, lr, fit_sn,
-                                    quad_nodes=qn, quad_weights=qw)
+            if solver == "cholesky_banded":
+                ll = _gp_log_likelihood_banded(theta_arr, x, y, yerr, mean_val,
+                                               n_h, n_l, lr, fit_sn, bw,
+                                               quad_nodes=qn, quad_weights=qw)
+            else:
+                ll = _gp_log_likelihood(theta_arr, x, y, yerr, mean_val,
+                                        n_h, n_l, lr, fit_sn,
+                                        quad_nodes=qn, quad_weights=qw)
             if not np.isfinite(ll):
                 return -np.inf
             if custom_prior is not None:
@@ -455,7 +576,7 @@ class GPSolver:
             log p(y | X, theta)
         """
         data_fit = self._resid @ self._alpha
-        log_det = 2.0 * np.sum(np.log(np.diag(self._L)))
+        log_det = 2.0 * np.sum(np.log(self._L_diag))
         return float(
             -0.5 * (data_fit + log_det + self.N * np.log(2 * np.pi)))
 
@@ -490,7 +611,10 @@ class GPSolver:
             mu_prior = np.full(M, mu_prior)
         mu_pred = mu_prior + Ks @ self._alpha
 
-        V = sla.cho_solve((self._L, True), Ks.T)
+        if self.matrix_solver == "cholesky_banded":
+            V = sla.cho_solve_banded((self._cb, True), Ks.T)
+        else:
+            V = sla.cho_solve((self._L, True), Ks.T)
 
         if return_cov:
             lag_pred = np.abs(xpred[:, None] - xpred[None, :])
@@ -935,7 +1059,16 @@ class GPSolver:
         self.hparam = dict(hparam)
         self._build_kernel()
         self.hparam = dict(self.kernel.hparam)
-        self._build_covariance()
+        if self.matrix_solver == "cholesky_banded":
+            new_bw = self._compute_bandwidth()
+            if new_bw != self.bandwidth:
+                self.bandwidth = new_bw
+                self._build_covariance()
+                self._build_logposterior()
+            else:
+                self._build_covariance()
+        else:
+            self._build_covariance()
         self.theta0 = np.array(
             [float(self.hparam.get(k, 0.0)) for k in self.param_keys],
             dtype=np.float64)
