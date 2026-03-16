@@ -52,9 +52,14 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
     """
     Pure-functional kernel evaluation: theta_arr -> kernel values.
 
-    Uses ``jax.lax.scan`` instead of ``jax.vmap`` for the latitude
-    integration so that only one (M,) buffer is live at a time,
-    reducing peak memory from O(n_lat * M) to O(M).
+    Uses ``jax.vmap`` over the latitude grid so that all latitudes are
+    processed in parallel.  cn_sq coefficients for all latitudes are
+    precomputed with a double-vmap (outer: latitudes, inner: harmonics)
+    before entering the per-latitude cosine sum, avoiding repeated vmap
+    traces inside a sequential loop.
+
+    Memory scales as O(n_lat * M) instead of O(M), which is acceptable
+    on GPU where M = N*bandwidth is small relative to device memory.
 
     Parameters
     ----------
@@ -76,19 +81,7 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
     # R_Gamma (independent of latitude, closed-form piecewise polynomial)
     R = _R_Gamma(lag_flat, lspot, tau)
 
-    # Single-latitude contribution (returns shape (M,))
-    def _lat_contribution(phi):
-        ns = jnp.arange(n_harmonics + 1)
-        cn_vals = jax.vmap(lambda n: _cn_general_jax(n, inc, phi))(ns)
-        cn_sq = cn_vals ** 2
-        w0 = 2 * jnp.pi * (1 - kappa * jnp.sin(phi) ** 2) / peq
-        harm_ns = jnp.arange(1, n_harmonics + 1)
-        cosine_terms = jnp.sum(
-            cn_sq[1:] * jnp.cos(harm_ns * w0 * lag_flat[:, None]), axis=1
-        )
-        return cn_sq[0] + 2 * cosine_terms
-
-    # Accumulate weighted contributions via scan (one latitude at a time)
+    # Quadrature grid
     if quad_nodes is not None:
         phi_grid = quad_nodes
         weights = quad_weights
@@ -100,15 +93,29 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
         weights = jnp.ones_like(phi_grid) * dphi
         norm = phi_max - phi_min
 
-    def _scan_body(K_acc, idx):
-        phi = phi_grid[idx]
-        w = weights[idx]
-        contrib = _lat_contribution(phi)
-        return K_acc + w * contrib, None
+    # Precompute cn_sq for all latitudes at once: shape (n_lat, n_harmonics+1).
+    # Outer vmap over latitudes, inner vmap over harmonics — avoids tracing
+    # the inner vmap once per latitude step as was the case inside scan.
+    ns = jnp.arange(n_harmonics + 1)
+    cn_sq_all = jax.vmap(
+        lambda phi: jax.vmap(lambda n: _cn_general_jax(n, inc, phi))(ns) ** 2
+    )(phi_grid)  # (n_lat, n_harmonics+1)
 
-    K, _ = jax.lax.scan(_scan_body, jnp.zeros_like(lag_flat),
-                         jnp.arange(len(phi_grid)))
-    K = K / norm
+    harm_ns = jnp.arange(1, n_harmonics + 1)
+
+    # Per-latitude cosine sum given pre-computed cn_sq: returns shape (M,)
+    def _lat_contribution(phi, cn_sq):
+        w0 = 2 * jnp.pi * (1 - kappa * jnp.sin(phi) ** 2) / peq
+        cosine_terms = jnp.sum(
+            cn_sq[1:] * jnp.cos(harm_ns * w0 * lag_flat[:, None]), axis=1
+        )
+        return cn_sq[0] + 2 * cosine_terms
+
+    # vmap over all latitudes simultaneously: shape (n_lat, M)
+    all_contribs = jax.vmap(_lat_contribution)(phi_grid, cn_sq_all)
+
+    # Weighted sum over latitudes: shape (M,)
+    K = jnp.sum(weights[:, None] * all_contribs, axis=0) / norm
 
     K = R * K * sigma_k ** 2
     return K
@@ -433,9 +440,26 @@ class GPSolver:
         self.n_lat = self.kernel.n_lat
         self.lat_range = self.kernel.lat_range
 
-        # Quadrature nodes (reuse from kernel)
-        self._quad_nodes = getattr(self.kernel, '_quad_nodes', None)
-        self._quad_weights = getattr(self.kernel, '_quad_weights', None)
+        # Quadrature nodes — precomputed at init so they are captured as
+        # array constants in JIT closures rather than recomputed per trace.
+        #
+        # GL weights are pre-normalized (sum = 1.0) so the /norm division
+        # inside _kernel_eval reduces to /1.0, which XLA eliminates.
+        #
+        # Trapezoid weights are left as None: lat_range and n_lat are Python
+        # scalars captured in the JIT closure, so XLA constant-folds the
+        # linspace and weight construction at compile time anyway.  Pre-
+        # normalizing trapezoid weights is non-trivial because jnp.sum(dphi*
+        # ones) = n_lat*dphi != phi_max-phi_min = (n_lat-1)*dphi, which
+        # would silently change the kernel normalization by n_lat/(n_lat-1).
+        if self.kernel.quadrature == "gauss-legendre":
+            raw_w = self.kernel._quad_weights
+            _norm = float(jnp.sum(raw_w))
+            self._quad_nodes = self.kernel._quad_nodes
+            self._quad_weights = raw_w / _norm   # sum = 1.0
+        else:  # trapezoid: keep None, XLA constant-folds the else branch
+            self._quad_nodes = None
+            self._quad_weights = None
 
         # Prior
         self._custom_log_prior = log_prior
@@ -865,24 +889,40 @@ class GPSolver:
 
         vg_fn = jax.jit(jax.value_and_grad(loss_u))
 
-        def objective(u_np):
-            u_jax = jnp.array(u_np, dtype=jnp.float64)
-            val, grad = vg_fn(u_jax)
-            v = float(val)
-            g = np.asarray(grad, dtype=np.float64)
-            if not np.isfinite(v):
-                return 1e30, np.zeros_like(g)
-            if not np.all(np.isfinite(g)):
-                return v, np.zeros_like(g)
-            return v, g
-
         n_free = len(free_idx)
-        result = minimize(
-            objective, u0, jac=True, method=method,
-            bounds=[(0.0, 1.0)] * n_free,
-            options={"maxiter": maxiter, "ftol": ftol, "gtol": gtol,
-                     "disp": disp},
-        )
+        _gradient_free = method.lower() in ("nelder-mead", "cobyla", "powell")
+
+        if _gradient_free:
+            def objective(u_np):
+                u_jax = jnp.array(u_np, dtype=jnp.float64)
+                val, _ = vg_fn(u_jax)
+                v = float(val)
+                return 1e30 if not np.isfinite(v) else v
+        else:
+            def objective(u_np):
+                u_jax = jnp.array(u_np, dtype=jnp.float64)
+                val, grad = vg_fn(u_jax)
+                v = float(val)
+                g = np.asarray(grad, dtype=np.float64)
+                if not np.isfinite(v):
+                    return 1e30, np.zeros_like(g)
+                if not np.all(np.isfinite(g)):
+                    return v, np.zeros_like(g)
+                return v, g
+        if _gradient_free:
+            _minimize_kwargs = dict(
+                method=method,
+                options={"maxiter": maxiter, "xatol": ftol, "fatol": ftol,
+                         "disp": disp},
+            )
+        else:
+            _minimize_kwargs = dict(
+                jac=True, method=method,
+                bounds=[(0.0, 1.0)] * n_free,
+                options={"maxiter": maxiter, "ftol": ftol, "gtol": gtol,
+                         "disp": disp},
+            )
+        result = minimize(objective, u0, **_minimize_kwargs)
 
         # Transform back to physical coordinates
         free_best = blo + jnp.array(result.x, dtype=jnp.float64) * brange
@@ -1230,24 +1270,40 @@ class GPSolver:
 
         vg_fn = jax.jit(jax.value_and_grad(neg_logpost_u))
 
-        def objective(u_np):
-            u_jax = jnp.array(u_np, dtype=jnp.float64)
-            val, grad = vg_fn(u_jax)
-            v = float(val)
-            g = np.asarray(grad, dtype=np.float64)
-            if not np.isfinite(v):
-                return 1e30, np.zeros_like(g)
-            if not np.all(np.isfinite(g)):
-                return v, np.zeros_like(g)
-            return v, g
-
         n_free = len(free_idx)
-        result = minimize(
-            objective, u0, jac=True, method=method,
-            bounds=[(0.0, 1.0)] * n_free,
-            options={"maxiter": maxiter, "ftol": ftol, "gtol": gtol,
-                     "disp": disp},
-        )
+        _gradient_free = method.lower() in ("nelder-mead", "cobyla", "powell")
+
+        if _gradient_free:
+            def objective(u_np):
+                u_jax = jnp.array(u_np, dtype=jnp.float64)
+                val, _ = vg_fn(u_jax)
+                v = float(val)
+                return 1e30 if not np.isfinite(v) else v
+        else:
+            def objective(u_np):
+                u_jax = jnp.array(u_np, dtype=jnp.float64)
+                val, grad = vg_fn(u_jax)
+                v = float(val)
+                g = np.asarray(grad, dtype=np.float64)
+                if not np.isfinite(v):
+                    return 1e30, np.zeros_like(g)
+                if not np.all(np.isfinite(g)):
+                    return v, np.zeros_like(g)
+                return v, g
+        if _gradient_free:
+            _minimize_kwargs = dict(
+                method=method,
+                options={"maxiter": maxiter, "xatol": ftol, "fatol": ftol,
+                         "disp": disp},
+            )
+        else:
+            _minimize_kwargs = dict(
+                jac=True, method=method,
+                bounds=[(0.0, 1.0)] * n_free,
+                options={"maxiter": maxiter, "ftol": ftol, "gtol": gtol,
+                         "disp": disp},
+            )
+        result = minimize(objective, u0, **_minimize_kwargs)
 
         # Transform back to physical coordinates
         free_best = blo + jnp.array(result.x, dtype=jnp.float64) * brange
