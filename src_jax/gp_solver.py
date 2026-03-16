@@ -1269,40 +1269,42 @@ class GPSolver:
         to_phys = self._to_physical
         qn, qw = self._quad_nodes, self._quad_weights
         n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
+        w_acf = float(acf_weight)
+        w_psd = float(psd_weight)
 
-        # --- Empirical ACF (precomputed, not differentiated through) --------
-        if tlags is None:
-            baseline = float(jnp.max(self.x) - jnp.min(self.x))
-            tlags = np.linspace(0, baseline / 2, n_bins + 1)
-
-        lag_centers, acf_data = self.compute_acf(tlags, normalize=False)
-        lag_jax  = jnp.asarray(lag_centers, dtype=jnp.float64)
-        acf_jax  = jnp.asarray(acf_data,   dtype=jnp.float64)
-        # Normalize so the ACF loss is dimensionless (relative MSE)
-        acf_rms  = jnp.sqrt(jnp.mean(acf_jax ** 2)) + 1e-30
-
-        # --- Empirical PSD via Lomb-Scargle (precomputed) -------------------
         x     = np.asarray(self.x)
         resid = np.asarray(self.y) - self.mean_val
-        dt_med    = float(np.median(np.diff(x)))
-        baseline  = float(x[-1] - x[0])
-        freq_min  = 1.0 / baseline
-        freq_max  = 1.0 / (2.0 * dt_med)
-        freqs     = np.linspace(freq_min, freq_max, n_freq)
-        pgram     = lombscargle(x, resid, 2.0 * np.pi * freqs, normalize=False)
-        df        = freqs[1] - freqs[0]
-        psd_data_norm = pgram / (np.sum(pgram) * df)   # normalize to unit integral
-        psd_jax   = jnp.asarray(psd_data_norm, dtype=jnp.float64)
-        freqs_jax = jnp.asarray(freqs,         dtype=jnp.float64)
+        dt_med   = float(np.median(np.diff(x)))
+        baseline = float(x[-1] - x[0])
 
-        # --- Lag grid for direct cosine transform ---------------------------
-        if dt_kernel is None:
-            dt_kernel = dt_med / 5.0
-        tau_grid = np.arange(0.0, baseline, dt_kernel)
-        tau_jax  = jnp.asarray(tau_grid, dtype=jnp.float64)
-        # Precompute cosine matrix: shape (n_tau, n_freq)
-        # S(f) = dt * [K(0) + 2 * sum_{k>0} K(tau_k) cos(2pi f tau_k)]
-        cos_mat  = jnp.cos(2.0 * jnp.pi * tau_jax[:, None] * freqs_jax[None, :])
+        # --- Empirical ACF (skipped when acf_weight == 0) -------------------
+        if w_acf != 0.0:
+            if tlags is None:
+                tlags = np.linspace(0, baseline / 2, n_bins + 1)
+            lag_centers, acf_data = self.compute_acf(tlags, normalize=False)
+            lag_jax = jnp.asarray(lag_centers, dtype=jnp.float64)
+            acf_jax = jnp.asarray(acf_data,    dtype=jnp.float64)
+            acf_rms = jnp.sqrt(jnp.mean(acf_jax ** 2)) + 1e-30
+        else:
+            lag_jax = acf_jax = acf_rms = None
+
+        # --- Empirical PSD via Lomb-Scargle (skipped when psd_weight == 0) --
+        if w_psd != 0.0:
+            freq_min  = 1.0 / baseline
+            freq_max  = 1.0 / (2.0 * dt_med)
+            freqs     = np.linspace(freq_min, freq_max, n_freq)
+            pgram     = lombscargle(x, resid, 2.0 * np.pi * freqs, normalize=False)
+            df        = freqs[1] - freqs[0]
+            psd_data_norm = pgram / (np.sum(pgram) * df)
+            psd_jax   = jnp.asarray(psd_data_norm, dtype=jnp.float64)
+            freqs_jax = jnp.asarray(freqs,         dtype=jnp.float64)
+            if dt_kernel is None:
+                dt_kernel = dt_med / 5.0
+            tau_grid = np.arange(0.0, baseline, dt_kernel)
+            tau_jax  = jnp.asarray(tau_grid, dtype=jnp.float64)
+            cos_mat  = jnp.cos(2.0 * jnp.pi * tau_jax[:, None] * freqs_jax[None, :])
+        else:
+            psd_jax = freqs_jax = tau_jax = cos_mat = df = None
 
         # --- Parse theta0 ---------------------------------------------------
         if theta0 is None:
@@ -1343,9 +1345,6 @@ class GPSolver:
         brange    = bhi - blo
         u0        = np.asarray((free0 - blo) / brange, dtype=np.float64)
 
-        w_acf = float(acf_weight)
-        w_psd = float(psd_weight)
-
         @jax.jit
         def loss_u(u_arr):
             free_theta  = blo + u_arr * brange
@@ -1353,22 +1352,26 @@ class GPSolver:
                 free_theta, free_idx, fixed_idx, fixed_vals)
             theta_phys  = to_phys(theta_samp)
 
-            # ACF component
-            K_acf  = _kernel_eval(theta_phys, lag_jax, n_h, n_l, lr,
-                                  quad_nodes=qn, quad_weights=qw)
-            acf_loss = jnp.mean(((acf_jax - K_acf) / acf_rms) ** 2)
+            loss = 0.0
 
-            # PSD component: direct cosine transform at LS frequencies
-            K_tau = _kernel_eval(theta_phys, tau_jax, n_h, n_l, lr,
-                                 quad_nodes=qn, quad_weights=qw)
-            psd_model = jnp.maximum(
-                dt_kernel * (K_tau[0] + 2.0 * jnp.dot(K_tau[1:], cos_mat[1:])),
-                0.0)
-            psd_norm  = jnp.sum(psd_model) * (freqs_jax[1] - freqs_jax[0])
-            psd_model_norm = psd_model / (psd_norm + 1e-30)
-            psd_loss = jnp.mean((psd_jax - psd_model_norm) ** 2)
+            if w_acf != 0.0:
+                K_acf    = _kernel_eval(theta_phys, lag_jax, n_h, n_l, lr,
+                                        quad_nodes=qn, quad_weights=qw)
+                acf_loss = jnp.mean(((acf_jax - K_acf) / acf_rms) ** 2)
+                loss = loss + w_acf * acf_loss
 
-            return w_acf * acf_loss + w_psd * psd_loss
+            if w_psd != 0.0:
+                K_tau = _kernel_eval(theta_phys, tau_jax, n_h, n_l, lr,
+                                     quad_nodes=qn, quad_weights=qw)
+                psd_model = jnp.maximum(
+                    dt_kernel * (K_tau[0] + 2.0 * jnp.dot(K_tau[1:], cos_mat[1:])),
+                    0.0)
+                psd_norm  = jnp.sum(psd_model) * df
+                psd_model_norm = psd_model / (psd_norm + 1e-30)
+                psd_loss = jnp.mean((psd_jax - psd_model_norm) ** 2)
+                loss = loss + w_psd * psd_loss
+
+            return loss
 
         vg_fn = jax.jit(jax.value_and_grad(loss_u))
 
