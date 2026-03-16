@@ -16,20 +16,24 @@ from gp_solver import GPSolver
 
 np.random.seed(64)
 
-# ===================================================================
-# Generate synthetic lightcurve data
-# ===================================================================
-
 last_run = [int(x.split("trial")[-1]) for x in os.listdir("results")]
 results_dir = "results/trial" + str(max(last_run)+1)
 if not os.path.exists(results_dir):
     os.makedirs(results_dir)
 
+# ===================================================================
+# Generate synthetic lightcurve data
+# ===================================================================
+
+tsim = 400
+nspot_per_day = 0.2
+nspot = int(tsim * nspot_per_day)
+
 # True parameters
-theta_full = dict(peq=5.0, kappa=0.3, inc=np.pi/3, nspot=40,
+theta_full = dict(peq=5.0, kappa=0.3, inc=np.pi/3, nspot=nspot,
                   lspot=10.0, tau=5.0, alpha_max=0.05, fspot=0.)
 
-lc = LightcurveModel(**theta_full, tsim=100, tsamp=0.5, lat=[-np.pi/2, np.pi/2], long=[0, 2*np.pi])
+lc = LightcurveModel(**theta_full, tsim=tsim, tsamp=0.5, lat=[-np.pi/2, np.pi/2], long=[0, 2*np.pi])
 tobs = lc.t
 flux = lc.flux
 flux_err = np.abs(np.random.normal(0, 0.2*np.std(lc.flux), lc.flux.shape))
@@ -43,36 +47,23 @@ plt.ylabel(r"$\Delta$Flux [\%]", fontsize=22)
 plt.savefig(os.path.join(results_dir, "synthetic_lightcurve.png"), dpi=300)
 plt.close()
 
-gp_true = GPSolver(tobs, flux, flux_err, theta_full, matrix_solver="cholesky_banded")
-theta_true = gp_true.get_theta()
-
 # ===================================================================
 # Estimate MAP solution
 # ===================================================================
 
-# Initial guess: {peq, kappa, inc, nspot, lspot, tau, alpha_max, sigma_k}
-theta0 = {
-    "peq":       5.0,
-    "kappa":     0.0,
-    "inc":       np.pi/4,
-    "lspot":     8.0,
-    "tau":       3.0,
-    "nspot":     20.0,
-    "alpha_max": 0.1,
-    "fspot":     0.0,
-}
-
-# Define prior bounds
 bounds = {
-    "peq":       (3.0, 7.0),
-    "kappa":     (-1.0, 1.0),
-    "inc":       (0.0, np.pi/2),
-    "lspot":     (0.1, 20.0),
-    "tau":       (0.1, 20.0),
-    "sigma_k":   (1e-3, 1e-1),
+    "peq":          (3.0, 7.0),
+    "kappa":        (-1.0, 1.0),
+    "inc":          (0.0, np.pi/2),
+    "lspot":        (0.1, 20.0),
+    "tau":          (0.1, 20.0),
+    "log_sigma_k":  (-4.0, 0.0),
 }
 
-gp = GPSolver(tobs, flux, flux_err, theta0, bounds=bounds, matrix_solver="cholesky_banded")
+gp = GPSolver(tobs, flux, flux_err, theta_full, bounds=bounds,
+              matrix_solver="cholesky_banded")
+theta_true = gp.get_theta()
+print(f"True parameters: {theta_true}\n")
 
 theta_opts = []
 fit_vals = []
@@ -81,9 +72,21 @@ for _ in tqdm.tqdm(range(10)):
     theta_opt, result = gp.find_map(keys=bounds.keys(), method="nelder-mead")
     theta_opts.append(theta_opt)
     fit_vals.append(result.fun)
-theta_map = theta_opts[np.argmin(fit_vals)] 
-print(f"MAP solution: {theta_map}\n")   
-    
+theta_map = theta_opts[np.argmin(fit_vals)]
+print(f"MAP solution: {theta_map}\n")
+
+# ===================================================================
+# Plot MAP solution: lightcurve fit, ACF, PSD
+# ===================================================================
+
+fig, axes = plt.subplots(3, 1, figsize=(12, 12))
+gp.plot_prediction(theta=theta_map, ax=axes[0])
+gp.plot_acf(theta=theta_map, ax=axes[1], tlags=np.arange(0, 50, 0.5))
+gp.plot_psd(theta=theta_map, ax=axes[2])
+fig.tight_layout()
+fig.savefig(os.path.join(results_dir, "map_fit.png"), dpi=150)
+plt.close(fig)
+
 # ===================================================================
 # Run MCMC with BlackJAX
 # ===================================================================
@@ -102,12 +105,19 @@ samples, info = sampler.run_nuts(
 # Save and visualize results
 # ===================================================================
 
-np.savez("blackjax_mcmc_results.npz", samples=np.array(samples), info=info, 
+np.savez(f"{results_dir}/blackjax_mcmc_results.npz", samples=np.array(samples), info=info, 
          theta_map=theta_map, theta_true=theta_true, theta_full=theta_full,
          tobs=tobs, flux=flux, flux_err=flux_err)
 
-fig = corner.corner(np.array(samples), labels=list(bounds.keys()), truths=[theta_true[key] for key in bounds.keys()])
-fig.savefig("blackjax_corner_plot.png")
+def _truth(key):
+    # Convert log_sigma_k truth to log10 space to match the sample parameterization
+    if key.startswith("log_"):
+        return np.log10(theta_true[key[4:]])
+    return theta_true[key]
+
+fig = corner.corner(np.array(samples), labels=list(bounds.keys()),
+                    truths=[_truth(k) for k in bounds.keys()])
+fig.savefig(f"{results_dir}/blackjax_corner_plot.png")
 
 fig, axes = sampler.plot_covariance(method="hessian_map", true_params=theta_true)
-fig.savefig("blackjax_covariance_plot.png")
+fig.savefig(f"{results_dir}/blackjax_covariance_plot.png")
