@@ -56,14 +56,24 @@ napoleon_use_rtype = True
 
 # -- Options for HTML output -------------------------------------------------
 
-html_theme = "furo"
+html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 html_title = "spotgp"
 
-highlight_language  = "python3"
-pygments_style      = "friendly"   # light mode
-pygments_dark_style = "monokai"    # dark mode (furo only)
+highlight_language = "python3"
+pygments_style     = "friendly"
+
+html_theme_options = {
+    "repository_url": "https://github.com/jbirky/spotgp",
+    "repository_branch": "main",
+    "path_to_docs": "docs",
+    "use_source_button": True,
+    "use_edit_page_button": True,
+    "use_repository_button": True,
+    "use_issues_button": True,
+    "use_download_button": True,
+}
 
 # -- nbsphinx ----------------------------------------------------------------
 
