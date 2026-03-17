@@ -93,30 +93,41 @@ plt.close(fig)
 
 sampler = BlackJAXSampler(gp)
 
+# Initial run: warmup + first batch of samples
+n_batches = 10
+batch_size = 100
+checkpoint_file = os.path.join(results_dir, "mcmc_checkpoint.npz")
+
 samples, info = sampler.run_nuts(
-      n_samples=5000,
+      n_samples=batch_size,
       n_warmup=500,
       theta_init=theta_map,
       mass_matrix_method="hessian_map",
-      progress_bar=True,
+      progress_bar=False,
+      checkpoint_file=checkpoint_file,
   )
+sampler.save_checkpoint()  # appends samples to disk, clears memory
+
+# Resume in batches — constant memory usage regardless of total samples
+for _ in range(n_batches - 1):
+    samples, info = sampler.resume_nuts(n_samples=batch_size)
+    sampler.save_checkpoint()  # appends & clears
 
 # ===================================================================
 # Save and visualize results
 # ===================================================================
 
-np.savez(f"{results_dir}/blackjax_mcmc_results.npz", samples=np.array(samples), info=info, 
+# Load all samples from disk (only when needed for analysis)
+all_samples = BlackJAXSampler.load_samples(checkpoint_file)
+print(f"Total samples: {all_samples.shape[0]}")
+
+np.savez(os.path.join(results_dir, "blackjax_mcmc_results.npz"), 
+         samples=all_samples, info=info, 
          theta_map=theta_map, theta_true=theta_true, theta_full=theta_full,
          tobs=tobs, flux=flux, flux_err=flux_err)
 
-def _truth(key):
-    # Convert log_sigma_k truth to log10 space to match the sample parameterization
-    if key.startswith("log_"):
-        return np.log10(theta_true[key[4:]])
-    return theta_true[key]
-
-fig = corner.corner(np.array(samples), labels=list(bounds.keys()),
-                    truths=[_truth(k) for k in bounds.keys()])
+fig = corner.corner(all_samples, labels=list(bounds.keys()),
+                    truths=[theta_true(k) for k in bounds.keys()])
 fig.savefig(f"{results_dir}/blackjax_corner_plot.png")
 
 fig, axes = sampler.plot_covariance(method="hessian_map", true_params=theta_true)
