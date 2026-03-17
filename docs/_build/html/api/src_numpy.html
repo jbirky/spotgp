@@ -5,7 +5,7 @@
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="API Reference (src_jax)" href="src_jax.html"><link rel="prev" title="MCMC with BlackJAX" href="../tutorials/run_blackjax.html">
 
-    <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
+    <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
         <title>API Reference (src_numpy) - spotgp</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=7bdb33bb" />
@@ -245,91 +245,12 @@
 <span id="api-reference-src-numpy"></span><h1>API Reference (<code class="docutils literal notranslate"><span class="pre">src_numpy</span></code>)<a class="headerlink" href="#module-src_numpy" title="Link to this heading">¶</a></h1>
 <section id="lightcurve-model">
 <h2>Lightcurve Model<a class="headerlink" href="#lightcurve-model" title="Link to this heading">¶</a></h2>
-<dl class="py class">
-<dt class="sig sig-object py" id="src_numpy.starspot.LightcurveModel">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">src_numpy.starspot.</span></span><span class="sig-name descname"><span class="pre">LightcurveModel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">peq</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kappa</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.5707963267948966</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nspot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tau</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tem</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tdec</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha_max</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fspot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lspot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">long</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[0,</span> <span class="pre">6.283185307179586]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lat</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[-1.5707963267948966,</span> <span class="pre">1.5707963267948966]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tsim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">28</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tsamp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.02</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">limb_darkening</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/starspot.html#LightcurveModel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.starspot.LightcurveModel" title="Link to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
-<p>NumPy star with spots and its lightcurve.</p>
-<p>Same interface as the JAX version but uses NumPy loops for spot
-computation instead of vmap.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>peq</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Equatorial period of the star.</p></li>
-<li><p><strong>kappa</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Differential rotation shear.</p></li>
-<li><p><strong>inc</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Inclination of the star.</p></li>
-<li><p><strong>nspot</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of spots.</p></li>
-<li><p><strong>tau</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Timescale for both emergence and decay of the spots. Defaults to None.</p></li>
-<li><p><strong>tem</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Emergence timescale of the spots. Defaults to 2.</p></li>
-<li><p><strong>tdec</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Decay timescale of the spots. Defaults to 2.</p></li>
-<li><p><strong>alpha_max</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Maximum angular area of the spots. Defaults to 0.1.</p></li>
-<li><p><strong>fspot</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Spot contrast fraction. Defaults to 0.</p></li>
-<li><p><strong>lspot</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Spot lifetime. Defaults to 5.</p></li>
-<li><p><strong>long</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>, </em><em>optional</em>) – Range of spot longitudes. Defaults to [0, 2*pi].</p></li>
-<li><p><strong>lat</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>, </em><em>optional</em>) – Range of spot latitudes. Defaults to [0, pi].</p></li>
-<li><p><strong>tsim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – End simulation time. Defaults to 28.</p></li>
-<li><p><strong>tsamp</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Sampling cadence. Defaults to 0.02.</p></li>
-<li><p><strong>limb_darkening</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>optional</em>) – Flag to enable limb darkening. Defaults to False.</p></li>
-</ul>
-</dd>
-</dl>
-<dl class="py method">
-<dt class="sig sig-object py" id="src_numpy.starspot.LightcurveModel.Flux">
-<span class="sig-name descname"><span class="pre">Flux</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">teval</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/starspot.html#LightcurveModel.Flux"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.starspot.LightcurveModel.Flux" title="Link to this definition">¶</a></dt>
-<dd><p>Compute the full lightcurve by looping over all spots.</p>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="src_numpy.starspot.LightcurveModel.plot_lightcurve">
-<span class="sig-name descname"><span class="pre">plot_lightcurve</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">show_spots</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_title</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/starspot.html#LightcurveModel.plot_lightcurve"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.starspot.LightcurveModel.plot_lightcurve" title="Link to this definition">¶</a></dt>
-<dd><p>Plot the lightcurve.</p>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="src_numpy.starspot.LightcurveModel.animate_lightcurve">
-<span class="sig-name descname"><span class="pre">animate_lightcurve</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">30</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">duration</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">outfile</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dpi</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">150</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_spots</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_grid</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">figsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(14,</span> <span class="pre">5.5)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_last_frame</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_dr</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">label_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">18</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/starspot.html#LightcurveModel.animate_lightcurve"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.starspot.LightcurveModel.animate_lightcurve" title="Link to this definition">¶</a></dt>
-<dd><p>Animate the starspot evolution with two panels: a 2D projection
-of the rotating star (left) and the lightcurve (right).</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>fps</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Frames per second (default 30).</p></li>
-<li><p><strong>duration</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Animation duration in seconds (default 10).</p></li>
-<li><p><strong>outfile</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em> or </em><em>None</em>) – Output file path (.mp4 or .gif). If None, returns the
-animation object without saving.</p></li>
-<li><p><strong>dpi</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Resolution (default 150).</p></li>
-<li><p><strong>show_spots</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, show individual spot contributions on the
-lightcurve panel (default True).</p></li>
-<li><p><strong>show_grid</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, draw latitude/longitude grid on the star
-(default True).</p></li>
-<li><p><strong>show_params</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, show parameter annotation on the lightcurve
-panel (default True).</p></li>
-<li><p><strong>figsize</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><em>tuple</em></a>) – Figure size (default (14, 5.5)).</p></li>
-<li><p><strong>save_last_frame</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em> or </em><em>None</em>) – If provided, save the last frame of the animation as a
-static image to this file path (e.g. “frame.png”).</p></li>
-<li><p><strong>show_dr</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, color the stellar disk by latitude-dependent
-rotation frequency and display a colorbar (default True).</p></li>
-<li><p><strong>label_size</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em> or </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Font size for all labels, tick marks, and text in the
-plot (default 18).</p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>anim</strong> – The animation object.</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>matplotlib.animation.FuncAnimation</p>
-</dd>
-</dl>
-</dd></dl>
-
-</dd></dl>
-
 </section>
 <section id="analytic-kernel">
 <h2>Analytic Kernel<a class="headerlink" href="#analytic-kernel" title="Link to this heading">¶</a></h2>
 <dl class="py class">
 <dt class="sig sig-object py" id="src_numpy.analytic_kernel.AnalyticKernel">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">src_numpy.analytic_kernel.</span></span><span class="sig-name descname"><span class="pre">AnalyticKernel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hparam</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_harmonics</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_lat</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lat_range</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(-1.5707963267948966,</span> <span class="pre">1.5707963267948966)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">quadrature</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'trapezoid'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/analytic_kernel.html#AnalyticKernel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.analytic_kernel.AnalyticKernel" title="Link to this definition">¶</a></dt>
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src_numpy.analytic_kernel.</span></span><span class="sig-name descname"><span class="pre">AnalyticKernel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hparam</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_harmonics</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_lat</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lat_range</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(-1.5707963267948966,</span> <span class="pre">1.5707963267948966)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">quadrature</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'trapezoid'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/analytic_kernel.html#AnalyticKernel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.analytic_kernel.AnalyticKernel" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
 <p>NumPy analytic GP kernel for stellar rotation variability.</p>
 <p>Same interface as the JAX version but uses NumPy loops for latitude
@@ -337,16 +258,23 @@ integration instead of jax.lax.scan / vmap.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>hparam</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a>) – <p>Hyperparameters. Required keys: peq, kappa, inc, lspot, tau.
-For the kernel amplitude, provide EITHER:</p>
+<li><p><strong>hparam</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a>) – <p>Hyperparameters. Required keys: peq, kappa, inc, lspot.
+For the envelope timescale, provide EITHER:</p>
 <blockquote>
 <div><ul>
+<li><p>tau : symmetric emergence/decay timescale, OR</p></li>
+<li><p>tau_em + tau_dec : distinct emergence and decay timescales.</p></li>
+</ul>
+</div></blockquote>
+<dl class="simple">
+<dt>For the kernel amplitude, provide EITHER:</dt><dd><ul>
 <li><p>sigma_k : overall amplitude prefactor, OR</p></li>
 <li><p>nspot + fspot + alpha_max : number of spots, spot contrast,
 and max spot radius, from which sigma_k is computed as
 sqrt(N_spot) * (1 - f_spot) * alpha_max^2 / pi.</p></li>
 </ul>
-</div></blockquote>
+</dd>
+</dl>
 </p></li>
 <li><p><strong>n_harmonics</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of harmonics to include (default 2).</p></li>
 <li><p><strong>n_lat</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of latitude grid points (default 64).</p></li>
@@ -437,7 +365,7 @@ keeping memory usage at O(M) instead of O(n_lat * M).</p>
 <h2>Numerical Kernel<a class="headerlink" href="#numerical-kernel" title="Link to this heading">¶</a></h2>
 <dl class="py class">
 <dt class="sig sig-object py" id="src_numpy.numerical_kernel.NumericalKernel">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">src_numpy.numerical_kernel.</span></span><span class="sig-name descname"><span class="pre">NumericalKernel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hparam</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tsim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tsamp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nsim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/numerical_kernel.html#NumericalKernel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.numerical_kernel.NumericalKernel" title="Link to this definition">¶</a></dt>
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src_numpy.numerical_kernel.</span></span><span class="sig-name descname"><span class="pre">NumericalKernel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hparam</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tsim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tsamp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nsim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/numerical_kernel.html#NumericalKernel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.numerical_kernel.NumericalKernel" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
 <p>Gaussian Process for Stellar Rotation</p>
 <p>Parameters:
@@ -511,7 +439,7 @@ sigma_k is computed as sqrt(N_spot) * (1 - f_spot) / pi.</p></li>
 <h2>GP Solver<a class="headerlink" href="#gp-solver" title="Link to this heading">¶</a></h2>
 <dl class="py class">
 <dt class="sig sig-object py" id="src_numpy.gp_solver.GPSolver">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">src_numpy.gp_solver.</span></span><span class="sig-name descname"><span class="pre">GPSolver</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">yerr</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">hparam</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kernel_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'analytic'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mean</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fit_sigma_n</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bounds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log_prior</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">matrix_solver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cholesky_banded'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kernel_kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/gp_solver.html#GPSolver"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.gp_solver.GPSolver" title="Link to this definition">¶</a></dt>
+<em class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">src_numpy.gp_solver.</span></span><span class="sig-name descname"><span class="pre">GPSolver</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">yerr</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">hparam</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kernel_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'analytic'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mean</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fit_sigma_n</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bounds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log_prior</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">matrix_solver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cholesky_banded'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kernel_kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/gp_solver.html#GPSolver"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.gp_solver.GPSolver" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
 <p>NumPy Gaussian Process solver for stellar lightcurves.</p>
 <p>Handles covariance matrix construction, Cholesky factorization,
@@ -539,7 +467,7 @@ If None, uses soft uniform within bounds.</p></li>
 </dl>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="src_numpy.gp_solver.GPSolver.DEFAULT_BOUNDS">
-<span class="sig-name descname"><span class="pre">DEFAULT_BOUNDS</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'inc':</span> <span class="pre">(0.01,</span> <span class="pre">3.1315926535897933),</span> <span class="pre">'kappa':</span> <span class="pre">(0.001,</span> <span class="pre">0.999),</span> <span class="pre">'lspot':</span> <span class="pre">(0.1,</span> <span class="pre">20.0),</span> <span class="pre">'peq':</span> <span class="pre">(0.5,</span> <span class="pre">50.0),</span> <span class="pre">'sigma_k':</span> <span class="pre">(1e-06,</span> <span class="pre">1.0),</span> <span class="pre">'sigma_n':</span> <span class="pre">(1e-06,</span> <span class="pre">0.1),</span> <span class="pre">'tau':</span> <span class="pre">(0.05,</span> <span class="pre">10.0)}</span></span><a class="headerlink" href="#src_numpy.gp_solver.GPSolver.DEFAULT_BOUNDS" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">DEFAULT_BOUNDS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'inc':</span> <span class="pre">(0.01,</span> <span class="pre">3.1315926535897933),</span> <span class="pre">'kappa':</span> <span class="pre">(0.001,</span> <span class="pre">0.999),</span> <span class="pre">'lspot':</span> <span class="pre">(0.1,</span> <span class="pre">20.0),</span> <span class="pre">'peq':</span> <span class="pre">(0.5,</span> <span class="pre">50.0),</span> <span class="pre">'sigma_k':</span> <span class="pre">(1e-06,</span> <span class="pre">1.0),</span> <span class="pre">'sigma_n':</span> <span class="pre">(1e-06,</span> <span class="pre">0.1),</span> <span class="pre">'tau':</span> <span class="pre">(0.05,</span> <span class="pre">10.0)}</span></em><a class="headerlink" href="#src_numpy.gp_solver.GPSolver.DEFAULT_BOUNDS" title="Link to this definition">¶</a></dt>
 <dd></dd></dl>
 
 <dl class="py method">
@@ -703,17 +631,124 @@ Extra keys not in <code class="docutils literal notranslate"><span class="pre">K
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="src_numpy.gp_solver.GPSolver.fit_acf_psd">
+<span class="sig-name descname"><span class="pre">fit_acf_psd</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta0</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">keys</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tlags</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bins</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_freq</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">200</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dt_kernel</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">acf_weight</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psd_weight</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'L-BFGS-B'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">maxiter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">500</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ftol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gtol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-08</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">disp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/gp_solver.html#GPSolver.fit_acf_psd"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.gp_solver.GPSolver.fit_acf_psd" title="Link to this definition">¶</a></dt>
+<dd><p>Fit kernel parameters jointly to the empirical ACF and PSD.</p>
+<p>Minimizes a weighted sum of two normalized mean-squared-error terms:</p>
+<blockquote>
+<div><p>loss = acf_weight * acf_loss + psd_weight * psd_loss</p>
+</div></blockquote>
+<p>where</p>
+<blockquote>
+<div><p>acf_loss = mean((ACF_data - K_model)^2) / mean(ACF_data^2)</p>
+</div></blockquote>
+<p>is the relative MSE of the kernel against the empirical ACF
+(unnormalized autocovariance), and</p>
+<blockquote>
+<div><p>psd_loss = mean((PSD_data_norm - PSD_model_norm)^2)</p>
+</div></blockquote>
+<p>is the MSE between the Lomb-Scargle periodogram and the analytic
+kernel PSD, both normalized to unit integral.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>theta0</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> or </em><em>array_like</em><em>, </em><em>optional</em>) – Starting point in <code class="docutils literal notranslate"><span class="pre">self.param_keys</span></code> space.</p></li>
+<li><p><strong>keys</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em> of </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – Parameters to vary (names from <code class="docutils literal notranslate"><span class="pre">self.param_keys</span></code>).</p></li>
+<li><p><strong>tlags</strong> (<em>array_like</em><em>, </em><em>optional</em>) – Bin edges for the empirical ACF.</p></li>
+<li><p><strong>n_bins</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of ACF lag bins when <code class="docutils literal notranslate"><span class="pre">tlags</span></code> is None (default 50).</p></li>
+<li><p><strong>n_freq</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of frequency points for the Lomb-Scargle periodogram.</p></li>
+<li><p><strong>dt_kernel</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Uniform lag spacing [days] for the direct cosine transform.
+Defaults to one-fifth of the median data spacing.</p></li>
+<li><p><strong>acf_weight</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Weight for the ACF loss term (default 1.0).</p></li>
+<li><p><strong>psd_weight</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Weight for the PSD loss term (default 1.0).</p></li>
+<li><p><strong>method</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Scipy optimizer method (default “L-BFGS-B”).</p></li>
+<li><p><strong>maxiter</strong> – Forwarded to scipy.</p></li>
+<li><p><strong>ftol</strong> – Forwarded to scipy.</p></li>
+<li><p><strong>gtol</strong> – Forwarded to scipy.</p></li>
+<li><p><strong>disp</strong> – Forwarded to scipy.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>theta_dict</strong> (<em>dict</em>) – Best-fit parameters in <code class="docutils literal notranslate"><span class="pre">self.param_keys</span></code> space.</p></li>
+<li><p><strong>result</strong> (<em>scipy.optimize.OptimizeResult</em>)</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src_numpy.gp_solver.GPSolver.plot_prediction">
+<span class="sig-name descname"><span class="pre">plot_prediction</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_points</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_sigma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(1,</span> <span class="pre">2)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ax</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'k'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'r'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_legend</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/gp_solver.html#GPSolver.plot_prediction"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.gp_solver.GPSolver.plot_prediction" title="Link to this definition">¶</a></dt>
+<dd><p>Plot the GP posterior mean and uncertainty bands over the data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>theta</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> or </em><em>array_like</em><em>, </em><em>shape</em><em> (</em><em>6</em><em>,</em><em>)</em><em>, </em><em>optional</em>) – Kernel parameters. Accepts a physical dict, a sampling-space dict
+with <code class="docutils literal notranslate"><span class="pre">log_</span></code>-prefixed keys, or a length-6 array. If None, uses
+the current internal hyperparameters.</p></li>
+<li><p><strong>n_points</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of prediction points spanning the data baseline.</p></li>
+<li><p><strong>n_sigma</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em> or </em><em>sequence</em><em> of </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Which sigma levels to shade (default (1, 2)).</p></li>
+<li><p><strong>ax</strong> (<em>matplotlib Axes</em><em>, </em><em>optional</em>)</p></li>
+<li><p><strong>data_color</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>model_color</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>show_legend</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ax</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>matplotlib Axes</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="src_numpy.gp_solver.GPSolver.plot_acf">
-<span class="sig-name descname"><span class="pre">plot_acf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tlags</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bins</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ax</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'k'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'r'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_legend</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/gp_solver.html#GPSolver.plot_acf"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.gp_solver.GPSolver.plot_acf" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">plot_acf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tlags</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bins</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ax</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'k'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'r'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_legend</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/gp_solver.html#GPSolver.plot_acf"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.gp_solver.GPSolver.plot_acf" title="Link to this definition">¶</a></dt>
 <dd><p>Plot the empirical ACF and optionally the analytic kernel.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>theta</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>6</em><em>,</em><em>)</em><em>, </em><em>optional</em>) – Kernel parameters [peq, kappa, inc, lspot, tau, sigma_k].</p></li>
+<li><p><strong>theta</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> or </em><em>array_like</em><em>, </em><em>shape</em><em> (</em><em>6</em><em>,</em><em>)</em><em>, </em><em>optional</em>) – Kernel parameters. Accepts a physical dict with keys from
+<code class="docutils literal notranslate"><span class="pre">KERNEL_HPARAM_KEYS</span></code>, a sampling-space dict with <code class="docutils literal notranslate"><span class="pre">log_</span></code>-
+prefixed keys, or a length-6 array.</p></li>
 <li><p><strong>tlags</strong> (<em>array_like</em><em>, </em><em>optional</em>) – Bin edges for compute_acf.</p></li>
 <li><p><strong>n_bins</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of lag bins.</p></li>
 <li><p><strong>ax</strong> (<em>matplotlib Axes</em><em>, </em><em>optional</em>)</p></li>
-<li><p><strong>normalize</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
+<li><p><strong>normalize</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True (default), normalize both curves by the data variance.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ax</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>matplotlib Axes</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src_numpy.gp_solver.GPSolver.plot_psd">
+<span class="sig-name descname"><span class="pre">plot_psd</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_freq</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">500</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dt_kernel</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ax</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'k'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'r'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_legend</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/gp_solver.html#GPSolver.plot_psd"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.gp_solver.GPSolver.plot_psd" title="Link to this definition">¶</a></dt>
+<dd><p>Plot the empirical PSD (Lomb-Scargle) and optionally the analytic
+kernel PSD (FFT of the autocovariance function).</p>
+<p>Both curves are normalized so their integral over positive frequencies
+equals the data variance.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>theta</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> or </em><em>array_like</em><em>, </em><em>shape</em><em> (</em><em>6</em><em>,</em><em>)</em><em>, </em><em>optional</em>) – Kernel parameters. Accepts a physical dict, a sampling-space dict
+with <code class="docutils literal notranslate"><span class="pre">log_</span></code>-prefixed keys, or a length-6 array.</p></li>
+<li><p><strong>n_freq</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of frequency points for the Lomb-Scargle periodogram.</p></li>
+<li><p><strong>dt_kernel</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Time step [days] for evaluating the analytic kernel on a uniform
+grid before FFT. Defaults to one-fifth of the median data spacing.</p></li>
+<li><p><strong>ax</strong> (<em>matplotlib Axes</em><em>, </em><em>optional</em>)</p></li>
+<li><p><strong>data_color</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>model_color</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>)</p></li>
+<li><p><strong>show_legend</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>)</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
@@ -815,7 +850,7 @@ negative log-likelihood at the MAP.</p>
 <dd class="field-even"><p><strong>inv_mass_matrix</strong></p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>ndarray, shape (<a class="reference internal" href="src_jax.html#src_jax.mcmc.MCMCSampler.n_params" title="src_jax.mcmc.MCMCSampler.n_params">n_params</a>, <a class="reference internal" href="src_jax.html#src_jax.mcmc.MCMCSampler.n_params" title="src_jax.mcmc.MCMCSampler.n_params">n_params</a>)</p>
+<dd class="field-odd"><p>ndarray, shape (n_params, n_params)</p>
 </dd>
 </dl>
 </dd></dl>
@@ -838,7 +873,7 @@ finite differences.</p>
 <dd class="field-even"><p><strong>inv_mass_matrix</strong></p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>ndarray, shape (<a class="reference internal" href="src_jax.html#src_jax.mcmc.MCMCSampler.n_params" title="src_jax.mcmc.MCMCSampler.n_params">n_params</a>, <a class="reference internal" href="src_jax.html#src_jax.mcmc.MCMCSampler.n_params" title="src_jax.mcmc.MCMCSampler.n_params">n_params</a>)</p>
+<dd class="field-odd"><p>ndarray, shape (n_params, n_params)</p>
 </dd>
 </dl>
 </dd></dl>
@@ -860,7 +895,7 @@ of the negative log-likelihood at the MAP.</p>
 <dd class="field-even"><p><strong>inv_mass_matrix</strong></p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>ndarray, shape (<a class="reference internal" href="src_jax.html#src_jax.mcmc.MCMCSampler.n_params" title="src_jax.mcmc.MCMCSampler.n_params">n_params</a>, <a class="reference internal" href="src_jax.html#src_jax.mcmc.MCMCSampler.n_params" title="src_jax.mcmc.MCMCSampler.n_params">n_params</a>)</p>
+<dd class="field-odd"><p>ndarray, shape (n_params, n_params)</p>
 </dd>
 </dl>
 </dd></dl>
@@ -881,7 +916,7 @@ to the posterior.</p>
 <dd class="field-even"><p><strong>samples</strong></p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>ndarray, shape (n_samples, <a class="reference internal" href="src_jax.html#src_jax.mcmc.MCMCSampler.n_params" title="src_jax.mcmc.MCMCSampler.n_params">n_params</a>)</p>
+<dd class="field-odd"><p>ndarray, shape (n_samples, n_params)</p>
 </dd>
 </dl>
 </dd></dl>
@@ -923,141 +958,6 @@ astropy.timeseries.LombScargle.</p>
 </section>
 <section id="mcmc-sampler">
 <h2>MCMC Sampler<a class="headerlink" href="#mcmc-sampler" title="Link to this heading">¶</a></h2>
-<dl class="py class">
-<dt class="sig sig-object py" id="src_numpy.mcmc.MCMCSampler">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">src_numpy.mcmc.</span></span><span class="sig-name descname"><span class="pre">MCMCSampler</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gp</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/mcmc.html#MCMCSampler"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.mcmc.MCMCSampler" title="Link to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
-<p>Base MCMC sampler for GP hyperparameters.</p>
-<p>Wraps a GPSolver object and provides shared storage, diagnostics,
-summary statistics, corner plots, and dict conversion.  Subclasses
-implement specific sampling algorithms.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>gp</strong> (<a class="reference internal" href="src_jax.html#src_jax.gp_solver.GPSolver" title="src_jax.gp_solver.GPSolver"><em>GPSolver</em></a>) – A configured GPSolver instance.</p>
-</dd>
-</dl>
-<dl class="py property">
-<dt class="sig sig-object py" id="src_numpy.mcmc.MCMCSampler.param_keys">
-<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">param_keys</span></span><a class="headerlink" href="#src_numpy.mcmc.MCMCSampler.param_keys" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py property">
-<dt class="sig sig-object py" id="src_numpy.mcmc.MCMCSampler.n_params">
-<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">n_params</span></span><a class="headerlink" href="#src_numpy.mcmc.MCMCSampler.n_params" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="src_numpy.mcmc.MCMCSampler.summary">
-<span class="sig-name descname"><span class="pre">summary</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/mcmc.html#MCMCSampler.summary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.mcmc.MCMCSampler.summary" title="Link to this definition">¶</a></dt>
-<dd><p>Print summary statistics of the posterior samples.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>stats</strong> – Parameter names mapped to (mean, std, 16%, 50%, 84%).</p>
-</dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)">dict</a></p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="src_numpy.mcmc.MCMCSampler.plot_covariance">
-<span class="sig-name descname"><span class="pre">plot_covariance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'fisher'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta_map</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_sigma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_grid</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">200</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">samples</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">figsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'C0'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">true_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">savefig</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">corner_kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/mcmc.html#MCMCSampler.plot_covariance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.mcmc.MCMCSampler.plot_covariance" title="Link to this definition">¶</a></dt>
-<dd><p>Corner plot of 2D covariance ellipses from the Hessian or Fisher
-matrix, with 1D marginal Gaussians on the diagonal.</p>
-<p>Uses <code class="docutils literal notranslate"><span class="pre">corner.corner</span></code> to lay out the figure when MCMC samples
-are provided, and overlays the Laplace/Fisher Gaussian
-approximation (ellipses + 1D marginals).</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>method</strong> (<em>{&quot;fisher&quot;</em><em>, </em><em>&quot;hessian_map&quot;</em><em>, </em><em>&quot;laplace&quot;}</em>) – Which matrix to use for the Gaussian approximation.</p></li>
-<li><p><strong>theta_map</strong> (<em>array_like</em><em>, </em><em>optional</em>) – Center of the ellipses. If None, uses MAP estimate.</p></li>
-<li><p><strong>n_sigma</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Number of sigma for the ellipse contours (default 2).</p></li>
-<li><p><strong>n_grid</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Grid resolution for the ellipse curves (default 200).</p></li>
-<li><p><strong>samples</strong> (<em>array_like</em><em>, </em><em>optional</em>) – If provided, plotted as the corner histogram/contours.</p></li>
-<li><p><strong>figsize</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><em>tuple</em></a><em>, </em><em>optional</em>) – Figure size.</p></li>
-<li><p><strong>color</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Color for Gaussian ellipses and marginals (default “C0”).</p></li>
-<li><p><strong>alpha</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Fill alpha for the ellipse interiors (default 0.3).</p></li>
-<li><p><strong>true_params</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> or </em><em>array_like</em><em>, </em><em>optional</em>) – True parameter values to mark with crosshairs.</p></li>
-<li><p><strong>savefig</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – If provided, save figure to this path.</p></li>
-<li><p><strong>**corner_kwargs</strong> – Extra keyword arguments forwarded to <code class="docutils literal notranslate"><span class="pre">corner.corner</span></code>.</p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>fig, axes</strong></p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>matplotlib Figure and 2D array of Axes.</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="src_numpy.mcmc.MCMCSampler.to_dict">
-<span class="sig-name descname"><span class="pre">to_dict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">samples</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/mcmc.html#MCMCSampler.to_dict"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.mcmc.MCMCSampler.to_dict" title="Link to this definition">¶</a></dt>
-<dd><p>Convert samples array to a dict keyed by parameter name.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>samples</strong> (<em>ndarray</em><em>, </em><em>optional</em>) – Shape (n_samples, n_params). If None, uses self.samples.</p>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p><strong>d</strong> – {param_name: array of shape (n_samples,)}</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)">dict</a></p>
-</dd>
-</dl>
-</dd></dl>
-
-</dd></dl>
-
-<dl class="py class">
-<dt class="sig sig-object py" id="src_numpy.mcmc.BlackJAXSampler">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">src_numpy.mcmc.</span></span><span class="sig-name descname"><span class="pre">BlackJAXSampler</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gp</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/mcmc.html#BlackJAXSampler"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.mcmc.BlackJAXSampler" title="Link to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference internal" href="#src_numpy.mcmc.MCMCSampler" title="src_numpy.mcmc.MCMCSampler"><code class="xref py py-class docutils literal notranslate"><span class="pre">MCMCSampler</span></code></a></p>
-<p>Metropolis-Hastings sampler (NumPy equivalent of the JAX NUTS sampler).</p>
-<p>Inherits diagnostics, summary, plotting, and dict conversion from
-MCMCSampler.  Implements <code class="docutils literal notranslate"><span class="pre">run_nuts</span></code> as an adaptive
-Metropolis-Hastings sampler with diagonal Gaussian proposal,
-since NUTS requires automatic differentiation unavailable in NumPy.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>gp</strong> (<a class="reference internal" href="src_jax.html#src_jax.gp_solver.GPSolver" title="src_jax.gp_solver.GPSolver"><em>GPSolver</em></a>) – A configured GPSolver instance.</p>
-</dd>
-</dl>
-<dl class="py method">
-<dt class="sig sig-object py" id="src_numpy.mcmc.BlackJAXSampler.run_nuts">
-<span class="sig-name descname"><span class="pre">run_nuts</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_samples</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_warmup</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">500</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta_init</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mass_matrix_method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'hessian_map'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">step_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_accept</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.8</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">progress_bar</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/mcmc.html#BlackJAXSampler.run_nuts"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.mcmc.BlackJAXSampler.run_nuts" title="Link to this definition">¶</a></dt>
-<dd><p>Run Metropolis-Hastings sampler with adaptive step size.</p>
-<p>Uses a Gaussian proposal with covariance proportional to the
-inverse mass matrix.  Step size is adapted during warmup to
-achieve <code class="docutils literal notranslate"><span class="pre">target_accept</span></code>.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>n_samples</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of post-warmup samples (default 1000).</p></li>
-<li><p><strong>n_warmup</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of warmup steps for step-size adaptation (default 500).</p></li>
-<li><p><strong>theta_init</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> or </em><em>array_like</em><em>, </em><em>optional</em>) – Initial position. If None, uses GPSolver’s MAP estimate.</p></li>
-<li><p><strong>mass_matrix_method</strong> (<em>{&quot;hessian_map&quot;</em><em>, </em><em>&quot;fisher&quot;</em><em>, </em><em>&quot;laplace&quot;</em><em>, </em><em>&quot;diagonal&quot;</em><em>, </em><em>None}</em>) – Method to estimate the mass matrix (delegated to GPSolver).</p></li>
-<li><p><strong>step_size</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Initial proposal step size. If None, estimated from mass matrix.</p></li>
-<li><p><strong>rng_key</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em> or </em><em>None</em>) – Random seed (used as numpy integer seed).</p></li>
-<li><p><strong>target_accept</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Target acceptance rate for step-size adaptation (default 0.8).</p></li>
-<li><p><strong>progress_bar</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, display tqdm progress bars (default False).</p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p><ul class="simple">
-<li><p><strong>samples</strong> (<em>ndarray, shape (n_samples, n_params)</em>) – Posterior samples.</p></li>
-<li><p><strong>info</strong> (<em>dict</em>) – Sampling diagnostics.</p></li>
-</ul>
-</p>
-</dd>
-</dl>
-</dd></dl>
-
-</dd></dl>
-
 </section>
 </section>
 
@@ -1117,15 +1017,7 @@ achieve <code class="docutils literal notranslate"><span class="pre">target_acce
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">API Reference (<code class="docutils literal notranslate"><span class="pre">src_numpy</span></code>)</a><ul>
-<li><a class="reference internal" href="#lightcurve-model">Lightcurve Model</a><ul>
-<li><a class="reference internal" href="#src_numpy.starspot.LightcurveModel"><code class="docutils literal notranslate"><span class="pre">LightcurveModel</span></code></a><ul>
-<li><a class="reference internal" href="#src_numpy.starspot.LightcurveModel.Flux"><code class="docutils literal notranslate"><span class="pre">LightcurveModel.Flux()</span></code></a></li>
-<li><a class="reference internal" href="#src_numpy.starspot.LightcurveModel.plot_lightcurve"><code class="docutils literal notranslate"><span class="pre">LightcurveModel.plot_lightcurve()</span></code></a></li>
-<li><a class="reference internal" href="#src_numpy.starspot.LightcurveModel.animate_lightcurve"><code class="docutils literal notranslate"><span class="pre">LightcurveModel.animate_lightcurve()</span></code></a></li>
-</ul>
-</li>
-</ul>
-</li>
+<li><a class="reference internal" href="#lightcurve-model">Lightcurve Model</a></li>
 <li><a class="reference internal" href="#analytic-kernel">Analytic Kernel</a><ul>
 <li><a class="reference internal" href="#src_numpy.analytic_kernel.AnalyticKernel"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code></a><ul>
 <li><a class="reference internal" href="#src_numpy.analytic_kernel.AnalyticKernel.omega0"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.omega0()</span></code></a></li>
@@ -1161,7 +1053,10 @@ achieve <code class="docutils literal notranslate"><span class="pre">target_acce
 <li><a class="reference internal" href="#src_numpy.gp_solver.GPSolver.compute_kernel"><code class="docutils literal notranslate"><span class="pre">GPSolver.compute_kernel()</span></code></a></li>
 <li><a class="reference internal" href="#src_numpy.gp_solver.GPSolver.fit_acf"><code class="docutils literal notranslate"><span class="pre">GPSolver.fit_acf()</span></code></a></li>
 <li><a class="reference internal" href="#src_numpy.gp_solver.GPSolver.fit_acf_parallel"><code class="docutils literal notranslate"><span class="pre">GPSolver.fit_acf_parallel()</span></code></a></li>
+<li><a class="reference internal" href="#src_numpy.gp_solver.GPSolver.fit_acf_psd"><code class="docutils literal notranslate"><span class="pre">GPSolver.fit_acf_psd()</span></code></a></li>
+<li><a class="reference internal" href="#src_numpy.gp_solver.GPSolver.plot_prediction"><code class="docutils literal notranslate"><span class="pre">GPSolver.plot_prediction()</span></code></a></li>
 <li><a class="reference internal" href="#src_numpy.gp_solver.GPSolver.plot_acf"><code class="docutils literal notranslate"><span class="pre">GPSolver.plot_acf()</span></code></a></li>
+<li><a class="reference internal" href="#src_numpy.gp_solver.GPSolver.plot_psd"><code class="docutils literal notranslate"><span class="pre">GPSolver.plot_psd()</span></code></a></li>
 <li><a class="reference internal" href="#src_numpy.gp_solver.GPSolver.get_theta"><code class="docutils literal notranslate"><span class="pre">GPSolver.get_theta()</span></code></a></li>
 <li><a class="reference internal" href="#src_numpy.gp_solver.GPSolver.update_hparam"><code class="docutils literal notranslate"><span class="pre">GPSolver.update_hparam()</span></code></a></li>
 <li><a class="reference internal" href="#src_numpy.gp_solver.GPSolver.find_map"><code class="docutils literal notranslate"><span class="pre">GPSolver.find_map()</span></code></a></li>
@@ -1178,21 +1073,7 @@ achieve <code class="docutils literal notranslate"><span class="pre">target_acce
 <li><a class="reference internal" href="#src_numpy.psd.compute_psd"><code class="docutils literal notranslate"><span class="pre">compute_psd()</span></code></a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#mcmc-sampler">MCMC Sampler</a><ul>
-<li><a class="reference internal" href="#src_numpy.mcmc.MCMCSampler"><code class="docutils literal notranslate"><span class="pre">MCMCSampler</span></code></a><ul>
-<li><a class="reference internal" href="#src_numpy.mcmc.MCMCSampler.param_keys"><code class="docutils literal notranslate"><span class="pre">MCMCSampler.param_keys</span></code></a></li>
-<li><a class="reference internal" href="#src_numpy.mcmc.MCMCSampler.n_params"><code class="docutils literal notranslate"><span class="pre">MCMCSampler.n_params</span></code></a></li>
-<li><a class="reference internal" href="#src_numpy.mcmc.MCMCSampler.summary"><code class="docutils literal notranslate"><span class="pre">MCMCSampler.summary()</span></code></a></li>
-<li><a class="reference internal" href="#src_numpy.mcmc.MCMCSampler.plot_covariance"><code class="docutils literal notranslate"><span class="pre">MCMCSampler.plot_covariance()</span></code></a></li>
-<li><a class="reference internal" href="#src_numpy.mcmc.MCMCSampler.to_dict"><code class="docutils literal notranslate"><span class="pre">MCMCSampler.to_dict()</span></code></a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#src_numpy.mcmc.BlackJAXSampler"><code class="docutils literal notranslate"><span class="pre">BlackJAXSampler</span></code></a><ul>
-<li><a class="reference internal" href="#src_numpy.mcmc.BlackJAXSampler.run_nuts"><code class="docutils literal notranslate"><span class="pre">BlackJAXSampler.run_nuts()</span></code></a></li>
-</ul>
-</li>
-</ul>
-</li>
+<li><a class="reference internal" href="#mcmc-sampler">MCMC Sampler</a></li>
 </ul>
 </li>
 </ul>
@@ -1205,8 +1086,8 @@ achieve <code class="docutils literal notranslate"><span class="pre">target_acce
     </aside>
   </div>
 </div><script src="../_static/documentation_options.js?v=01f34227"></script>
-    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
-    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/scripts/furo.js?v=46bd48cc"></script>
     <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
     <script src="../_static/notebook_download.js?v=2428894a"></script>

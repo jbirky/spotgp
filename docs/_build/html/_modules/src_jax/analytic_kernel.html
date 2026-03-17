@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html">
 
-    <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
+    <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
         <title>src_jax.analytic_kernel - spotgp</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
@@ -242,8 +242,15 @@
 
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;AnalyticKernel&quot;</span><span class="p">]</span>
 
-<span class="c1"># Required keys for all modes (alpha_max only needed for physical-param amplitude)</span>
-<span class="n">_REQUIRED_KEYS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;peq&quot;</span><span class="p">,</span> <span class="s2">&quot;kappa&quot;</span><span class="p">,</span> <span class="s2">&quot;inc&quot;</span><span class="p">,</span> <span class="s2">&quot;lspot&quot;</span><span class="p">,</span> <span class="s2">&quot;tau&quot;</span><span class="p">}</span>
+<span class="c1"># Required keys common to all modes</span>
+<span class="n">_REQUIRED_KEYS_BASE</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;peq&quot;</span><span class="p">,</span> <span class="s2">&quot;kappa&quot;</span><span class="p">,</span> <span class="s2">&quot;inc&quot;</span><span class="p">,</span> <span class="s2">&quot;lspot&quot;</span><span class="p">}</span>
+
+<span class="c1"># Envelope timescale: provide EITHER tau (symmetric) OR tau_em + tau_dec (asymmetric)</span>
+<span class="n">_TAU_KEYS_SYMMETRIC</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;tau&quot;</span><span class="p">}</span>
+<span class="n">_TAU_KEYS_ASYMMETRIC</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;tau_em&quot;</span><span class="p">,</span> <span class="s2">&quot;tau_dec&quot;</span><span class="p">}</span>
+
+<span class="c1"># Backward compatibility: gp_solver and other modules import _REQUIRED_KEYS</span>
+<span class="n">_REQUIRED_KEYS</span> <span class="o">=</span> <span class="n">_REQUIRED_KEYS_BASE</span> <span class="o">|</span> <span class="p">{</span><span class="s2">&quot;tau&quot;</span><span class="p">}</span>
 
 <span class="c1"># Two valid modes for specifying amplitude:</span>
 <span class="c1">#   Mode 1: provide sigma_k directly</span>
@@ -280,7 +287,7 @@
 
 
 <span class="nd">@jax</span><span class="o">.</span><span class="n">jit</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">_R_Gamma</span><span class="p">(</span><span class="n">lag</span><span class="p">,</span> <span class="n">ell</span><span class="p">,</span> <span class="n">tau_s</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_R_Gamma_symmetric</span><span class="p">(</span><span class="n">lag</span><span class="p">,</span> <span class="n">ell</span><span class="p">,</span> <span class="n">tau_s</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Normalized closed-form autocorrelation of Gamma(t) = alpha^2(t)/alpha_max^2.</span>
 
@@ -330,6 +337,85 @@
         <span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">t</span> <span class="o">&lt;=</span> <span class="n">ell</span> <span class="o">+</span> <span class="n">tau_s</span><span class="p">,</span> <span class="n">R3</span><span class="p">,</span>
         <span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">t</span> <span class="o">&lt;=</span> <span class="n">ell</span> <span class="o">+</span> <span class="mi">2</span><span class="o">*</span><span class="n">tau_s</span><span class="p">,</span> <span class="n">R4</span><span class="p">,</span>
                   <span class="mf">0.0</span><span class="p">))))</span>
+
+    <span class="k">return</span> <span class="n">R</span>
+
+
+<span class="nd">@jax</span><span class="o">.</span><span class="n">jit</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_R_Gamma_asymmetric</span><span class="p">(</span><span class="n">lag</span><span class="p">,</span> <span class="n">ell</span><span class="p">,</span> <span class="n">te</span><span class="p">,</span> <span class="n">td</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Closed-form autocorrelation of Gamma(t) for asymmetric trapezoidal envelope.</span>
+
+<span class="sd">    Generalizes _R_Gamma_symmetric to distinct emergence (te) and decay (td) timescales.</span>
+<span class="sd">    Assumes te &lt;= td (enforced by the caller via min/max swap).</span>
+
+<span class="sd">    Six intervals on [0, ell + te + td], zero beyond.</span>
+<span class="sd">    Assumes ell/2 &gt; td (plateau longer than either ramp).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    lag : array_like</span>
+<span class="sd">        Time lags (non-negative) [days].</span>
+<span class="sd">    ell : float</span>
+<span class="sd">        Spot plateau duration [days].</span>
+<span class="sd">    te : float</span>
+<span class="sd">        Emergence timescale [days] (must be &lt;= td).</span>
+<span class="sd">    td : float</span>
+<span class="sd">        Decay timescale [days].</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">t</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">lag</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">ravel</span><span class="p">())</span>
+
+    <span class="n">td2</span> <span class="o">=</span> <span class="n">td</span><span class="o">**</span><span class="mi">2</span>
+    <span class="n">te2</span> <span class="o">=</span> <span class="n">te</span><span class="o">**</span><span class="mi">2</span>
+    <span class="n">td2te2</span> <span class="o">=</span> <span class="n">td2</span> <span class="o">*</span> <span class="n">te2</span>
+    <span class="n">ell2</span> <span class="o">=</span> <span class="n">ell</span><span class="o">**</span><span class="mi">2</span>
+    <span class="n">ell3</span> <span class="o">=</span> <span class="n">ell</span><span class="o">**</span><span class="mi">3</span>
+
+    <span class="c1"># Interval 1: 0 &lt;= t &lt;= te</span>
+    <span class="n">R1</span> <span class="o">=</span> <span class="p">(</span><span class="n">ell</span> <span class="o">+</span> <span class="p">(</span><span class="n">te</span> <span class="o">+</span> <span class="n">td</span><span class="p">)</span> <span class="o">/</span> <span class="mi">5</span>
+          <span class="o">-</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span><span class="o">/</span><span class="n">te</span> <span class="o">+</span> <span class="mi">1</span><span class="o">/</span><span class="n">td</span><span class="p">)</span> <span class="o">/</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">t</span><span class="o">**</span><span class="mi">2</span>
+          <span class="o">+</span> <span class="p">(</span><span class="mi">1</span><span class="o">/</span><span class="n">te2</span> <span class="o">+</span> <span class="mi">1</span><span class="o">/</span><span class="n">td2</span><span class="p">)</span> <span class="o">/</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">t</span><span class="o">**</span><span class="mi">3</span>
+          <span class="o">-</span> <span class="p">(</span><span class="mi">1</span><span class="o">/</span><span class="n">te</span><span class="o">**</span><span class="mi">4</span> <span class="o">+</span> <span class="mi">1</span><span class="o">/</span><span class="n">td</span><span class="o">**</span><span class="mi">4</span><span class="p">)</span> <span class="o">/</span> <span class="mi">30</span> <span class="o">*</span> <span class="n">t</span><span class="o">**</span><span class="mi">5</span><span class="p">)</span>
+
+    <span class="c1"># Interval 2: te &lt;= t &lt;= td</span>
+    <span class="n">R2</span> <span class="o">=</span> <span class="p">(</span><span class="n">ell</span> <span class="o">+</span> <span class="n">te</span><span class="o">/</span><span class="mi">3</span> <span class="o">+</span> <span class="n">td</span><span class="o">/</span><span class="mi">5</span>
+          <span class="o">-</span> <span class="n">t</span> <span class="o">/</span> <span class="mi">2</span>
+          <span class="o">-</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">t</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="p">(</span><span class="mi">3</span> <span class="o">*</span> <span class="n">td</span><span class="p">)</span>
+          <span class="o">+</span> <span class="n">t</span><span class="o">**</span><span class="mi">3</span> <span class="o">/</span> <span class="p">(</span><span class="mi">3</span> <span class="o">*</span> <span class="n">td2</span><span class="p">)</span>
+          <span class="o">-</span> <span class="n">t</span><span class="o">**</span><span class="mi">5</span> <span class="o">/</span> <span class="p">(</span><span class="mi">30</span> <span class="o">*</span> <span class="n">td</span><span class="o">**</span><span class="mi">4</span><span class="p">))</span>
+
+    <span class="c1"># Interval 3: td &lt;= t &lt;= ell  (linear)</span>
+    <span class="n">R3</span> <span class="o">=</span> <span class="n">ell</span> <span class="o">+</span> <span class="p">(</span><span class="n">te</span> <span class="o">+</span> <span class="n">td</span><span class="p">)</span> <span class="o">/</span> <span class="mi">3</span> <span class="o">-</span> <span class="n">t</span>
+
+    <span class="c1"># Interval 4: ell &lt;= t &lt;= ell + te  (degree-5 polynomial P4)</span>
+    <span class="n">R4</span> <span class="o">=</span> <span class="p">(</span><span class="n">t</span><span class="o">**</span><span class="mi">5</span> <span class="o">/</span> <span class="p">(</span><span class="mi">30</span> <span class="o">*</span> <span class="n">td2te2</span><span class="p">)</span>
+          <span class="o">-</span> <span class="p">(</span><span class="n">ell</span> <span class="o">+</span> <span class="n">td</span> <span class="o">+</span> <span class="n">te</span><span class="p">)</span> <span class="o">*</span> <span class="n">t</span><span class="o">**</span><span class="mi">4</span> <span class="o">/</span> <span class="p">(</span><span class="mi">6</span> <span class="o">*</span> <span class="n">td2te2</span><span class="p">)</span>
+          <span class="o">+</span> <span class="p">(</span><span class="n">ell2</span> <span class="o">+</span> <span class="mi">2</span><span class="o">*</span><span class="n">ell</span><span class="o">*</span><span class="n">td</span> <span class="o">+</span> <span class="mi">2</span><span class="o">*</span><span class="n">ell</span><span class="o">*</span><span class="n">te</span> <span class="o">+</span> <span class="mi">2</span><span class="o">*</span><span class="n">td</span><span class="o">*</span><span class="n">te</span><span class="p">)</span> <span class="o">*</span> <span class="n">t</span><span class="o">**</span><span class="mi">3</span> <span class="o">/</span> <span class="p">(</span><span class="mi">3</span> <span class="o">*</span> <span class="n">td2te2</span><span class="p">)</span>
+          <span class="o">-</span> <span class="n">ell</span> <span class="o">*</span> <span class="p">(</span><span class="n">ell2</span> <span class="o">+</span> <span class="mi">3</span><span class="o">*</span><span class="n">ell</span><span class="o">*</span><span class="n">td</span> <span class="o">+</span> <span class="mi">3</span><span class="o">*</span><span class="n">ell</span><span class="o">*</span><span class="n">te</span> <span class="o">+</span> <span class="mi">6</span><span class="o">*</span><span class="n">td</span><span class="o">*</span><span class="n">te</span><span class="p">)</span> <span class="o">*</span> <span class="n">t</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="p">(</span><span class="mi">3</span> <span class="o">*</span> <span class="n">td2te2</span><span class="p">)</span>
+          <span class="o">+</span> <span class="p">(</span><span class="n">ell</span><span class="o">**</span><span class="mi">4</span> <span class="o">+</span> <span class="mi">4</span><span class="o">*</span><span class="n">ell3</span><span class="o">*</span><span class="n">td</span> <span class="o">+</span> <span class="mi">4</span><span class="o">*</span><span class="n">ell3</span><span class="o">*</span><span class="n">te</span> <span class="o">+</span> <span class="mi">12</span><span class="o">*</span><span class="n">ell2</span><span class="o">*</span><span class="n">td</span><span class="o">*</span><span class="n">te</span>
+             <span class="o">-</span> <span class="mi">6</span><span class="o">*</span><span class="n">td2te2</span><span class="p">)</span> <span class="o">*</span> <span class="n">t</span> <span class="o">/</span> <span class="p">(</span><span class="mi">6</span> <span class="o">*</span> <span class="n">td2te2</span><span class="p">)</span>
+          <span class="o">+</span> <span class="p">(</span><span class="o">-</span><span class="n">ell</span><span class="o">**</span><span class="mi">5</span> <span class="o">-</span> <span class="mi">5</span><span class="o">*</span><span class="n">ell</span><span class="o">**</span><span class="mi">4</span><span class="o">*</span><span class="n">td</span> <span class="o">-</span> <span class="mi">5</span><span class="o">*</span><span class="n">ell</span><span class="o">**</span><span class="mi">4</span><span class="o">*</span><span class="n">te</span> <span class="o">-</span> <span class="mi">20</span><span class="o">*</span><span class="n">ell3</span><span class="o">*</span><span class="n">td</span><span class="o">*</span><span class="n">te</span>
+             <span class="o">+</span> <span class="mi">30</span><span class="o">*</span><span class="n">ell</span><span class="o">*</span><span class="n">td2te2</span> <span class="o">+</span> <span class="mi">10</span><span class="o">*</span><span class="n">td</span><span class="o">**</span><span class="mi">3</span><span class="o">*</span><span class="n">te2</span> <span class="o">+</span> <span class="mi">10</span><span class="o">*</span><span class="n">td2</span><span class="o">*</span><span class="n">te</span><span class="o">**</span><span class="mi">3</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">30</span> <span class="o">*</span> <span class="n">td2te2</span><span class="p">))</span>
+
+    <span class="c1"># Interval 5: ell + te &lt;= t &lt;= ell + td  (degree-3 polynomial P5)</span>
+    <span class="n">R5</span> <span class="o">=</span> <span class="p">(</span><span class="o">-</span><span class="n">t</span><span class="o">**</span><span class="mi">3</span> <span class="o">/</span> <span class="p">(</span><span class="mi">3</span> <span class="o">*</span> <span class="n">td2</span><span class="p">)</span>
+          <span class="o">+</span> <span class="p">(</span><span class="n">ell</span> <span class="o">+</span> <span class="n">td</span> <span class="o">+</span> <span class="n">te</span><span class="o">/</span><span class="mi">3</span><span class="p">)</span> <span class="o">*</span> <span class="n">t</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="n">td2</span>
+          <span class="o">-</span> <span class="p">(</span><span class="mi">6</span><span class="o">*</span><span class="n">ell2</span> <span class="o">+</span> <span class="mi">12</span><span class="o">*</span><span class="n">ell</span><span class="o">*</span><span class="n">td</span> <span class="o">+</span> <span class="mi">4</span><span class="o">*</span><span class="n">ell</span><span class="o">*</span><span class="n">te</span> <span class="o">+</span> <span class="mi">6</span><span class="o">*</span><span class="n">td2</span> <span class="o">+</span> <span class="mi">4</span><span class="o">*</span><span class="n">td</span><span class="o">*</span><span class="n">te</span> <span class="o">+</span> <span class="n">te2</span><span class="p">)</span> <span class="o">*</span> <span class="n">t</span> <span class="o">/</span> <span class="p">(</span><span class="mi">6</span> <span class="o">*</span> <span class="n">td2</span><span class="p">)</span>
+          <span class="o">+</span> <span class="p">(</span><span class="n">ell3</span><span class="o">/</span><span class="mi">3</span> <span class="o">+</span> <span class="n">ell2</span><span class="o">*</span><span class="n">td</span> <span class="o">+</span> <span class="n">ell2</span><span class="o">*</span><span class="n">te</span><span class="o">/</span><span class="mi">3</span> <span class="o">+</span> <span class="n">ell</span><span class="o">*</span><span class="n">td2</span> <span class="o">+</span> <span class="mi">2</span><span class="o">*</span><span class="n">ell</span><span class="o">*</span><span class="n">td</span><span class="o">*</span><span class="n">te</span><span class="o">/</span><span class="mi">3</span>
+             <span class="o">+</span> <span class="n">ell</span><span class="o">*</span><span class="n">te2</span><span class="o">/</span><span class="mi">6</span> <span class="o">+</span> <span class="n">td</span><span class="o">**</span><span class="mi">3</span><span class="o">/</span><span class="mi">3</span> <span class="o">+</span> <span class="n">td2</span><span class="o">*</span><span class="n">te</span><span class="o">/</span><span class="mi">3</span> <span class="o">+</span> <span class="n">td</span><span class="o">*</span><span class="n">te2</span><span class="o">/</span><span class="mi">6</span> <span class="o">+</span> <span class="n">te</span><span class="o">**</span><span class="mi">3</span><span class="o">/</span><span class="mi">30</span><span class="p">)</span> <span class="o">/</span> <span class="n">td2</span><span class="p">)</span>
+
+    <span class="c1"># Interval 6: ell + td &lt;= t &lt;= ell + te + td</span>
+    <span class="n">D</span> <span class="o">=</span> <span class="n">ell</span> <span class="o">+</span> <span class="n">te</span> <span class="o">+</span> <span class="n">td</span> <span class="o">-</span> <span class="n">t</span>
+    <span class="n">R6</span> <span class="o">=</span> <span class="n">D</span><span class="o">**</span><span class="mi">5</span> <span class="o">/</span> <span class="p">(</span><span class="mi">30</span> <span class="o">*</span> <span class="n">td2te2</span><span class="p">)</span>
+
+    <span class="c1"># Select the correct interval for each lag value</span>
+    <span class="n">R</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">t</span> <span class="o">&lt;=</span> <span class="n">te</span><span class="p">,</span> <span class="n">R1</span><span class="p">,</span>
+        <span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">t</span> <span class="o">&lt;=</span> <span class="n">td</span><span class="p">,</span> <span class="n">R2</span><span class="p">,</span>
+        <span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">t</span> <span class="o">&lt;=</span> <span class="n">ell</span><span class="p">,</span> <span class="n">R3</span><span class="p">,</span>
+        <span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">t</span> <span class="o">&lt;=</span> <span class="n">ell</span> <span class="o">+</span> <span class="n">te</span><span class="p">,</span> <span class="n">R4</span><span class="p">,</span>
+        <span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">t</span> <span class="o">&lt;=</span> <span class="n">ell</span> <span class="o">+</span> <span class="n">td</span><span class="p">,</span> <span class="n">R5</span><span class="p">,</span>
+        <span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">t</span> <span class="o">&lt;=</span> <span class="n">ell</span> <span class="o">+</span> <span class="n">te</span> <span class="o">+</span> <span class="n">td</span><span class="p">,</span> <span class="n">R6</span><span class="p">,</span>
+                  <span class="mf">0.0</span><span class="p">))))))</span>
 
     <span class="k">return</span> <span class="n">R</span>
 
@@ -448,7 +534,10 @@
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
 <span class="sd">    hparam : dict</span>
-<span class="sd">        Hyperparameters. Required keys: peq, kappa, inc, lspot, tau.</span>
+<span class="sd">        Hyperparameters. Required keys: peq, kappa, inc, lspot.</span>
+<span class="sd">        For the envelope timescale, provide EITHER:</span>
+<span class="sd">          - tau : symmetric emergence/decay timescale, OR</span>
+<span class="sd">          - tau_em + tau_dec : distinct emergence and decay timescales.</span>
 <span class="sd">        For the kernel amplitude, provide EITHER:</span>
 <span class="sd">          - sigma_k : overall amplitude prefactor, OR</span>
 <span class="sd">          - nspot + fspot + alpha_max : number of spots, spot contrast,</span>
@@ -471,9 +560,17 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">hparam</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;hparam must be a dict&quot;</span><span class="p">)</span>
 
-        <span class="n">missing</span> <span class="o">=</span> <span class="n">_REQUIRED_KEYS</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">hparam</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+        <span class="n">missing</span> <span class="o">=</span> <span class="n">_REQUIRED_KEYS_BASE</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">hparam</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
         <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;hparam dict is missing required keys: </span><span class="si">{</span><span class="n">missing</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="n">has_tau_sym</span> <span class="o">=</span> <span class="s2">&quot;tau&quot;</span> <span class="ow">in</span> <span class="n">hparam</span>
+        <span class="n">has_tau_asym</span> <span class="o">=</span> <span class="s2">&quot;tau_em&quot;</span> <span class="ow">in</span> <span class="n">hparam</span> <span class="ow">and</span> <span class="s2">&quot;tau_dec&quot;</span> <span class="ow">in</span> <span class="n">hparam</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">has_tau_sym</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">has_tau_asym</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;hparam must contain either &#39;tau&#39; (symmetric) or both &quot;</span>
+                <span class="s2">&quot;&#39;tau_em&#39; and &#39;tau_dec&#39; (asymmetric)&quot;</span><span class="p">)</span>
 
         <span class="n">has_sigma</span> <span class="o">=</span> <span class="s2">&quot;sigma_k&quot;</span> <span class="ow">in</span> <span class="n">hparam</span>
         <span class="n">has_physical</span> <span class="o">=</span> <span class="s2">&quot;nspot&quot;</span> <span class="ow">in</span> <span class="n">hparam</span> <span class="ow">and</span> <span class="s2">&quot;fspot&quot;</span> <span class="ow">in</span> <span class="n">hparam</span> <span class="ow">and</span> <span class="s2">&quot;alpha_max&quot;</span> <span class="ow">in</span> <span class="n">hparam</span>
@@ -489,7 +586,21 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">kappa</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;kappa&quot;</span><span class="p">]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">inc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;inc&quot;</span><span class="p">]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">lspot</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;lspot&quot;</span><span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">tau</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;tau&quot;</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">has_tau_asym</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">asymmetric</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tau_em</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;tau_em&quot;</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tau_dec</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;tau_dec&quot;</span><span class="p">]</span>
+            <span class="c1"># _R_Gamma_asymmetric assumes te &lt;= td; enforce via min/max</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_te</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tau_em</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau_dec</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_td</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tau_em</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau_dec</span><span class="p">)</span>
+            <span class="c1"># For methods that need a single tau (e.g., PSD), use the mean</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tau</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tau_em</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau_dec</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">asymmetric</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tau</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;tau&quot;</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tau_em</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tau_dec</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau</span>
 
         <span class="k">if</span> <span class="n">has_sigma</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">sigma_k</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;sigma_k&quot;</span><span class="p">]</span>
@@ -529,7 +640,10 @@
 <a class="viewcode-back" href="../../api/src_jax.html#src_jax.analytic_kernel.AnalyticKernel.R_Gamma">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">R_Gamma</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lag</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Autocorrelation of the squared envelope (closed-form piecewise polynomial).&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="n">_R_Gamma</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">lag</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">lspot</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau</span><span class="p">)</span></div>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">asymmetric</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_R_Gamma_asymmetric</span><span class="p">(</span>
+                <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">lag</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">lspot</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_te</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_td</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_R_Gamma_symmetric</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">lag</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">lspot</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="AnalyticKernel.cn_squared">
@@ -792,8 +906,8 @@
     </aside>
   </div>
 </div><script src="../../_static/documentation_options.js?v=01f34227"></script>
-    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
-    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
     <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
     <script src="../../_static/notebook_download.js?v=2428894a"></script>

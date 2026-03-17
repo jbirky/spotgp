@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html">
 
-    <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
+    <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
         <title>src_jax.gp_solver - spotgp</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
@@ -254,7 +254,7 @@
 <span class="k">try</span><span class="p">:</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">.analytic_kernel</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
         <span class="n">AnalyticKernel</span><span class="p">,</span> <span class="n">_REQUIRED_KEYS</span><span class="p">,</span> <span class="n">_AMPLITUDE_KEYS_SIGMA</span><span class="p">,</span>
-        <span class="n">_AMPLITUDE_KEYS_PHYSICAL</span><span class="p">,</span> <span class="n">_R_Gamma</span><span class="p">,</span> <span class="n">_cn_general_jax</span><span class="p">,</span>
+        <span class="n">_AMPLITUDE_KEYS_PHYSICAL</span><span class="p">,</span> <span class="n">_R_Gamma_symmetric</span><span class="p">,</span> <span class="n">_cn_general_jax</span><span class="p">,</span>
         <span class="n">_gauss_legendre_grid</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">.banded_cholesky</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span><span class="n">banded_cholesky</span><span class="p">,</span> <span class="n">banded_solve</span><span class="p">,</span>
@@ -262,7 +262,7 @@
 <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">analytic_kernel</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
         <span class="n">AnalyticKernel</span><span class="p">,</span> <span class="n">_REQUIRED_KEYS</span><span class="p">,</span> <span class="n">_AMPLITUDE_KEYS_SIGMA</span><span class="p">,</span>
-        <span class="n">_AMPLITUDE_KEYS_PHYSICAL</span><span class="p">,</span> <span class="n">_R_Gamma</span><span class="p">,</span> <span class="n">_cn_general_jax</span><span class="p">,</span>
+        <span class="n">_AMPLITUDE_KEYS_PHYSICAL</span><span class="p">,</span> <span class="n">_R_Gamma_symmetric</span><span class="p">,</span> <span class="n">_cn_general_jax</span><span class="p">,</span>
         <span class="n">_gauss_legendre_grid</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">banded_cholesky</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span><span class="n">banded_cholesky</span><span class="p">,</span> <span class="n">banded_solve</span><span class="p">,</span>
@@ -289,9 +289,14 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Pure-functional kernel evaluation: theta_arr -&gt; kernel values.</span>
 
-<span class="sd">    Uses ``jax.lax.scan`` instead of ``jax.vmap`` for the latitude</span>
-<span class="sd">    integration so that only one (M,) buffer is live at a time,</span>
-<span class="sd">    reducing peak memory from O(n_lat * M) to O(M).</span>
+<span class="sd">    Uses ``jax.vmap`` over the latitude grid so that all latitudes are</span>
+<span class="sd">    processed in parallel.  cn_sq coefficients for all latitudes are</span>
+<span class="sd">    precomputed with a double-vmap (outer: latitudes, inner: harmonics)</span>
+<span class="sd">    before entering the per-latitude cosine sum, avoiding repeated vmap</span>
+<span class="sd">    traces inside a sequential loop.</span>
+
+<span class="sd">    Memory scales as O(n_lat * M) instead of O(M), which is acceptable</span>
+<span class="sd">    on GPU where M = N*bandwidth is small relative to device memory.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
@@ -311,21 +316,9 @@
     <span class="n">peq</span><span class="p">,</span> <span class="n">kappa</span><span class="p">,</span> <span class="n">inc</span><span class="p">,</span> <span class="n">lspot</span><span class="p">,</span> <span class="n">tau</span><span class="p">,</span> <span class="n">sigma_k</span> <span class="o">=</span> <span class="n">theta_arr</span>
 
     <span class="c1"># R_Gamma (independent of latitude, closed-form piecewise polynomial)</span>
-    <span class="n">R</span> <span class="o">=</span> <span class="n">_R_Gamma</span><span class="p">(</span><span class="n">lag_flat</span><span class="p">,</span> <span class="n">lspot</span><span class="p">,</span> <span class="n">tau</span><span class="p">)</span>
+    <span class="n">R</span> <span class="o">=</span> <span class="n">_R_Gamma_symmetric</span><span class="p">(</span><span class="n">lag_flat</span><span class="p">,</span> <span class="n">lspot</span><span class="p">,</span> <span class="n">tau</span><span class="p">)</span>
 
-    <span class="c1"># Single-latitude contribution (returns shape (M,))</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">_lat_contribution</span><span class="p">(</span><span class="n">phi</span><span class="p">):</span>
-        <span class="n">ns</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n_harmonics</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">cn_vals</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">vmap</span><span class="p">(</span><span class="k">lambda</span> <span class="n">n</span><span class="p">:</span> <span class="n">_cn_general_jax</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">inc</span><span class="p">,</span> <span class="n">phi</span><span class="p">))(</span><span class="n">ns</span><span class="p">)</span>
-        <span class="n">cn_sq</span> <span class="o">=</span> <span class="n">cn_vals</span> <span class="o">**</span> <span class="mi">2</span>
-        <span class="n">w0</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">kappa</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">phi</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="n">peq</span>
-        <span class="n">harm_ns</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_harmonics</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">cosine_terms</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span>
-            <span class="n">cn_sq</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">harm_ns</span> <span class="o">*</span> <span class="n">w0</span> <span class="o">*</span> <span class="n">lag_flat</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span>
-        <span class="p">)</span>
-        <span class="k">return</span> <span class="n">cn_sq</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">cosine_terms</span>
-
-    <span class="c1"># Accumulate weighted contributions via scan (one latitude at a time)</span>
+    <span class="c1"># Quadrature grid</span>
     <span class="k">if</span> <span class="n">quad_nodes</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">phi_grid</span> <span class="o">=</span> <span class="n">quad_nodes</span>
         <span class="n">weights</span> <span class="o">=</span> <span class="n">quad_weights</span>
@@ -337,15 +330,29 @@
         <span class="n">weights</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">phi_grid</span><span class="p">)</span> <span class="o">*</span> <span class="n">dphi</span>
         <span class="n">norm</span> <span class="o">=</span> <span class="n">phi_max</span> <span class="o">-</span> <span class="n">phi_min</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_scan_body</span><span class="p">(</span><span class="n">K_acc</span><span class="p">,</span> <span class="n">idx</span><span class="p">):</span>
-        <span class="n">phi</span> <span class="o">=</span> <span class="n">phi_grid</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
-        <span class="n">w</span> <span class="o">=</span> <span class="n">weights</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
-        <span class="n">contrib</span> <span class="o">=</span> <span class="n">_lat_contribution</span><span class="p">(</span><span class="n">phi</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">K_acc</span> <span class="o">+</span> <span class="n">w</span> <span class="o">*</span> <span class="n">contrib</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="c1"># Precompute cn_sq for all latitudes at once: shape (n_lat, n_harmonics+1).</span>
+    <span class="c1"># Outer vmap over latitudes, inner vmap over harmonics — avoids tracing</span>
+    <span class="c1"># the inner vmap once per latitude step as was the case inside scan.</span>
+    <span class="n">ns</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n_harmonics</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">cn_sq_all</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">vmap</span><span class="p">(</span>
+        <span class="k">lambda</span> <span class="n">phi</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">vmap</span><span class="p">(</span><span class="k">lambda</span> <span class="n">n</span><span class="p">:</span> <span class="n">_cn_general_jax</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">inc</span><span class="p">,</span> <span class="n">phi</span><span class="p">))(</span><span class="n">ns</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+    <span class="p">)(</span><span class="n">phi_grid</span><span class="p">)</span>  <span class="c1"># (n_lat, n_harmonics+1)</span>
 
-    <span class="n">K</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">lax</span><span class="o">.</span><span class="n">scan</span><span class="p">(</span><span class="n">_scan_body</span><span class="p">,</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">lag_flat</span><span class="p">),</span>
-                         <span class="n">jnp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">phi_grid</span><span class="p">)))</span>
-    <span class="n">K</span> <span class="o">=</span> <span class="n">K</span> <span class="o">/</span> <span class="n">norm</span>
+    <span class="n">harm_ns</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_harmonics</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="c1"># Per-latitude cosine sum given pre-computed cn_sq: returns shape (M,)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_lat_contribution</span><span class="p">(</span><span class="n">phi</span><span class="p">,</span> <span class="n">cn_sq</span><span class="p">):</span>
+        <span class="n">w0</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">kappa</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">phi</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="n">peq</span>
+        <span class="n">cosine_terms</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span>
+            <span class="n">cn_sq</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">harm_ns</span> <span class="o">*</span> <span class="n">w0</span> <span class="o">*</span> <span class="n">lag_flat</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">cn_sq</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">cosine_terms</span>
+
+    <span class="c1"># vmap over all latitudes simultaneously: shape (n_lat, M)</span>
+    <span class="n">all_contribs</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">vmap</span><span class="p">(</span><span class="n">_lat_contribution</span><span class="p">)(</span><span class="n">phi_grid</span><span class="p">,</span> <span class="n">cn_sq_all</span><span class="p">)</span>
+
+    <span class="c1"># Weighted sum over latitudes: shape (M,)</span>
+    <span class="n">K</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">weights</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="n">all_contribs</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="o">/</span> <span class="n">norm</span>
 
     <span class="n">K</span> <span class="o">=</span> <span class="n">R</span> <span class="o">*</span> <span class="n">K</span> <span class="o">*</span> <span class="n">sigma_k</span> <span class="o">**</span> <span class="mi">2</span>
     <span class="k">return</span> <span class="n">K</span>
@@ -636,51 +643,101 @@
         <span class="c1"># Update hparam with computed sigma_k (if nspot/fspot were given)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">kernel</span><span class="o">.</span><span class="n">hparam</span><span class="p">)</span>
 
-        <span class="c1"># Bandwidth for banded solver (compile-time constant derived from hparam)</span>
+        <span class="c1"># Optimization/sampling config — must be set before bounds parsing</span>
+        <span class="c1"># so that the log-param remapping can identify which physical keys</span>
+        <span class="c1"># to replace with their log-space counterparts.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fit_sigma_n</span> <span class="o">=</span> <span class="n">fit_sigma_n</span>
+        <span class="n">_base_keys</span> <span class="o">=</span> <span class="n">HPARAM_KEYS_WITH_NOISE</span> <span class="k">if</span> <span class="n">fit_sigma_n</span> <span class="k">else</span> <span class="n">KERNEL_HPARAM_KEYS</span>
+
+        <span class="c1"># Detect log-space parameters: keys prefixed with &quot;log_&quot; in the</span>
+        <span class="c1"># bounds dict indicate sampling in log10 space.  The physical key</span>
+        <span class="c1"># is the suffix (e.g. &quot;log_sigma_k&quot; → physical key &quot;sigma_k&quot;).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_log_param_map</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c1"># {log_key: phys_key}</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">bounds</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">bounds</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;log_&quot;</span><span class="p">):</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_log_param_map</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">k</span><span class="p">[</span><span class="mi">4</span><span class="p">:]</span>
+
+        <span class="c1"># Remap param_keys: replace physical keys with their log-space names</span>
+        <span class="c1"># where applicable.  All other code uses self.param_keys, so this</span>
+        <span class="c1"># single remap propagates everywhere (MAP dict keys, corner labels, etc.)</span>
+        <span class="n">_phys_to_log</span> <span class="o">=</span> <span class="p">{</span><span class="n">v</span><span class="p">:</span> <span class="n">k</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_log_param_map</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">_phys_to_log</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">_base_keys</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_params</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span><span class="p">)</span>
+
+        <span class="c1"># Parse bounds — must precede _compute_bandwidth so that the upper</span>
+        <span class="c1"># bounds of lspot and tau are available for the bandwidth calculation.</span>
+        <span class="c1"># For log-space keys the supplied bounds are already in log10 units;</span>
+        <span class="c1"># for physical keys without explicit bounds, fall back to DEFAULT_BOUNDS.</span>
+        <span class="k">if</span> <span class="n">bounds</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">bounds</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+                <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">DEFAULT_BOUNDS</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">_base_keys</span><span class="p">],</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">bounds</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">bounds</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+                <span class="p">[</span><span class="n">bounds</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">_pk</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">DEFAULT_BOUNDS</span><span class="p">[</span><span class="n">_bk</span><span class="p">])</span>
+                 <span class="k">for</span> <span class="n">_pk</span><span class="p">,</span> <span class="n">_bk</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span><span class="p">,</span> <span class="n">_base_keys</span><span class="p">)],</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">bounds</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">bounds</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+
+        <span class="c1"># Bandwidth for banded solver (compile-time constant derived from</span>
+        <span class="c1"># prior upper bounds so it is sufficient for any sampled parameters).</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">matrix_solver</span> <span class="o">==</span> <span class="s2">&quot;cholesky_banded&quot;</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">bandwidth</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_bandwidth</span><span class="p">()</span>
+            <span class="n">_n_banded</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bandwidth</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">N</span>
+            <span class="n">_n_full</span>   <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">N</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">N</span>
+            <span class="n">_sparsity</span> <span class="o">=</span> <span class="mf">100.0</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">_n_banded</span> <span class="o">/</span> <span class="n">_n_full</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Banded Cholesky: bandwidth=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">bandwidth</span><span class="si">}</span><span class="s2">, &quot;</span>
+                  <span class="sa">f</span><span class="s2">&quot;N=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">N</span><span class="si">}</span><span class="s2">, sparsity=</span><span class="si">{</span><span class="n">_sparsity</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">%&quot;</span><span class="p">)</span>
 
         <span class="c1"># Build covariance and factorize</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_build_covariance</span><span class="p">()</span>
 
-        <span class="c1"># Optimization/sampling config</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">fit_sigma_n</span> <span class="o">=</span> <span class="n">fit_sigma_n</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span> <span class="o">=</span> <span class="p">(</span><span class="n">HPARAM_KEYS_WITH_NOISE</span> <span class="k">if</span> <span class="n">fit_sigma_n</span>
-                           <span class="k">else</span> <span class="n">KERNEL_HPARAM_KEYS</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">n_params</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span><span class="p">)</span>
-
-        <span class="c1"># Initial theta from current hparam</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">theta0</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
-            <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span><span class="p">],</span>
-            <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
-
-        <span class="c1"># Parse bounds</span>
-        <span class="k">if</span> <span class="n">bounds</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">bounds</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
-                <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">DEFAULT_BOUNDS</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span><span class="p">],</span>
-                <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">bounds</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">bounds</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
-                <span class="p">[</span><span class="n">bounds</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">DEFAULT_BOUNDS</span><span class="p">[</span><span class="n">k</span><span class="p">])</span>
-                 <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span><span class="p">],</span>
-                <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">bounds</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">bounds</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="c1"># Initial theta: physical hparam values, converted to log10 for any</span>
+        <span class="c1"># log-parameterized keys.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">theta0</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_log_param_map</span><span class="p">[</span><span class="n">k</span><span class="p">],</span> <span class="mf">0.0</span><span class="p">)))</span>
+            <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_log_param_map</span>
+            <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span>
+        <span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
 
         <span class="c1"># Kernel config (extract from kernel object)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">n_harmonics</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">kernel</span><span class="o">.</span><span class="n">n_harmonics</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">n_lat</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">kernel</span><span class="o">.</span><span class="n">n_lat</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">lat_range</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">kernel</span><span class="o">.</span><span class="n">lat_range</span>
 
-        <span class="c1"># Quadrature nodes (reuse from kernel)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_quad_nodes</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">kernel</span><span class="p">,</span> <span class="s1">&#39;_quad_nodes&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_quad_weights</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">kernel</span><span class="p">,</span> <span class="s1">&#39;_quad_weights&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="c1"># Quadrature nodes — precomputed at init so they are captured as</span>
+        <span class="c1"># array constants in JIT closures rather than recomputed per trace.</span>
+        <span class="c1">#</span>
+        <span class="c1"># GL weights are pre-normalized (sum = 1.0) so the /norm division</span>
+        <span class="c1"># inside _kernel_eval reduces to /1.0, which XLA eliminates.</span>
+        <span class="c1">#</span>
+        <span class="c1"># Trapezoid weights are left as None: lat_range and n_lat are Python</span>
+        <span class="c1"># scalars captured in the JIT closure, so XLA constant-folds the</span>
+        <span class="c1"># linspace and weight construction at compile time anyway.  Pre-</span>
+        <span class="c1"># normalizing trapezoid weights is non-trivial because jnp.sum(dphi*</span>
+        <span class="c1"># ones) = n_lat*dphi != phi_max-phi_min = (n_lat-1)*dphi, which</span>
+        <span class="c1"># would silently change the kernel normalization by n_lat/(n_lat-1).</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">kernel</span><span class="o">.</span><span class="n">quadrature</span> <span class="o">==</span> <span class="s2">&quot;gauss-legendre&quot;</span><span class="p">:</span>
+            <span class="n">raw_w</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">kernel</span><span class="o">.</span><span class="n">_quad_weights</span>
+            <span class="n">_norm</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">raw_w</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_quad_nodes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">kernel</span><span class="o">.</span><span class="n">_quad_nodes</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_quad_weights</span> <span class="o">=</span> <span class="n">raw_w</span> <span class="o">/</span> <span class="n">_norm</span>   <span class="c1"># sum = 1.0</span>
+        <span class="k">else</span><span class="p">:</span>  <span class="c1"># trapezoid: keep None, XLA constant-folds the else branch</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_quad_nodes</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_quad_weights</span> <span class="o">=</span> <span class="kc">None</span>
 
         <span class="c1"># Prior</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_custom_log_prior</span> <span class="o">=</span> <span class="n">log_prior</span>
 
         <span class="c1"># Lag matrix is computed lazily (only needed for Fisher info)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_lag_flat</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Build JAX function that maps sampling theta → physical theta</span>
+        <span class="c1"># (applies 10^x for any log-parameterized indices).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_build_transform</span><span class="p">()</span>
 
         <span class="c1"># Build JIT-compiled log-posterior</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_build_logposterior</span><span class="p">()</span>
@@ -702,6 +759,31 @@
                 <span class="sa">f</span><span class="s2">&quot;GPSolver only supports &#39;analytic&#39; kernel, &quot;</span>
                 <span class="sa">f</span><span class="s2">&quot;got &#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">kernel_type</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_transform</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build _to_physical: sampling theta → physical theta.</span>
+
+<span class="sd">        For each log-parameterized key (e.g. ``log_sigma_k``), the</span>
+<span class="sd">        corresponding element of the theta array is stored in log10 space</span>
+<span class="sd">        during sampling/optimization.  This function raises 10 to the power</span>
+<span class="sd">        of those elements so that the kernel always receives physical values.</span>
+
+<span class="sd">        If no log-space parameters are present, ``_to_physical`` is the</span>
+<span class="sd">        identity function (zero overhead).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_log_param_map</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_to_physical</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span>
+            <span class="k">return</span>
+
+        <span class="n">keys</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span><span class="p">)</span>
+        <span class="n">log_indices</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">keys</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">k</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_log_param_map</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+
+        <span class="nd">@jax</span><span class="o">.</span><span class="n">jit</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">to_physical</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">theta_arr</span><span class="o">.</span><span class="n">at</span><span class="p">[</span><span class="n">log_indices</span><span class="p">]</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="mf">10.0</span> <span class="o">**</span> <span class="n">theta_arr</span><span class="p">[</span><span class="n">log_indices</span><span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_to_physical</span> <span class="o">=</span> <span class="n">to_physical</span>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">_eval_kernel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tau</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Evaluate the kernel at time lags tau.&quot;&quot;&quot;</span>
         <span class="n">tau</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">tau</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
@@ -711,15 +793,37 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Bandwidth in samples for the banded Cholesky solver.</span>
 
-<span class="sd">        Derived from ``lspot + 2 * tau`` divided by the time sampling.</span>
+<span class="sd">        Derived from the **upper bounds** of ``lspot`` and ``tau`` so that</span>
+<span class="sd">        the banded approximation is valid for any parameters within the</span>
+<span class="sd">        prior, regardless of the current ``hparam`` values.  This is</span>
+<span class="sd">        required for JIT-compiled sampling: the bandwidth is a compile-time</span>
+<span class="sd">        constant (it determines array shapes), so it must cover the entire</span>
+<span class="sd">        prior support rather than just the initial hyperparameters.</span>
+
 <span class="sd">        Assumes uniform sampling; uses ``x[1] - x[0]`` as the step size.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">N</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">N</span>
         <span class="n">dt</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
-        <span class="n">lspot</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;lspot&quot;</span><span class="p">])</span>
-        <span class="n">tau</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;tau&quot;</span><span class="p">])</span>
-        <span class="n">b</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ceil</span><span class="p">((</span><span class="n">lspot</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">tau</span><span class="p">)</span> <span class="o">/</span> <span class="n">dt</span><span class="p">))</span>
+        <span class="n">keys</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span><span class="p">)</span>
+
+        <span class="c1"># Resolve upper bound for lspot and tau, accounting for the</span>
+        <span class="c1"># possibility that either is sampled in log10 space.</span>
+        <span class="k">if</span> <span class="s2">&quot;lspot&quot;</span> <span class="ow">in</span> <span class="n">keys</span><span class="p">:</span>
+            <span class="n">lspot_max</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bounds</span><span class="p">[</span><span class="n">keys</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;lspot&quot;</span><span class="p">),</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="k">elif</span> <span class="s2">&quot;log_lspot&quot;</span> <span class="ow">in</span> <span class="n">keys</span><span class="p">:</span>
+            <span class="n">lspot_max</span> <span class="o">=</span> <span class="mf">10.0</span> <span class="o">**</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bounds</span><span class="p">[</span><span class="n">keys</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;log_lspot&quot;</span><span class="p">),</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">lspot_max</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">DEFAULT_BOUNDS</span><span class="p">[</span><span class="s2">&quot;lspot&quot;</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
+
+        <span class="k">if</span> <span class="s2">&quot;tau&quot;</span> <span class="ow">in</span> <span class="n">keys</span><span class="p">:</span>
+            <span class="n">tau_max</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bounds</span><span class="p">[</span><span class="n">keys</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;tau&quot;</span><span class="p">),</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="k">elif</span> <span class="s2">&quot;log_tau&quot;</span> <span class="ow">in</span> <span class="n">keys</span><span class="p">:</span>
+            <span class="n">tau_max</span> <span class="o">=</span> <span class="mf">10.0</span> <span class="o">**</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bounds</span><span class="p">[</span><span class="n">keys</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;log_tau&quot;</span><span class="p">),</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">tau_max</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">DEFAULT_BOUNDS</span><span class="p">[</span><span class="s2">&quot;tau&quot;</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
+
+        <span class="n">b</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ceil</span><span class="p">((</span><span class="n">lspot_max</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">tau_max</span><span class="p">)</span> <span class="o">/</span> <span class="n">dt</span><span class="p">))</span>
         <span class="k">return</span> <span class="nb">min</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">N</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_build_covariance</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -789,6 +893,7 @@
         <span class="n">custom_prior</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_log_prior</span>
         <span class="n">fit_sn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fit_sigma_n</span>
         <span class="n">qn</span><span class="p">,</span> <span class="n">qw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quad_nodes</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quad_weights</span>
+        <span class="n">to_phys</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_to_physical</span>  <span class="c1"># sampling theta → physical theta</span>
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">matrix_solver</span> <span class="o">==</span> <span class="s2">&quot;cholesky_banded&quot;</span><span class="p">:</span>
             <span class="c1"># Capture bandwidth as a Python int in the closure so that</span>
@@ -798,7 +903,7 @@
             <span class="nd">@jax</span><span class="o">.</span><span class="n">jit</span>
             <span class="k">def</span><span class="w"> </span><span class="nf">log_posterior</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">):</span>
                 <span class="n">ll</span> <span class="o">=</span> <span class="n">_gp_log_likelihood_banded</span><span class="p">(</span>
-                    <span class="n">theta_arr</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span><span class="p">,</span> <span class="n">mean_val</span><span class="p">,</span>
+                    <span class="n">to_phys</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">),</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span><span class="p">,</span> <span class="n">mean_val</span><span class="p">,</span>
                     <span class="n">n_h</span><span class="p">,</span> <span class="n">n_l</span><span class="p">,</span> <span class="n">lr</span><span class="p">,</span> <span class="n">fit_sn</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span>
                     <span class="n">quad_nodes</span><span class="o">=</span><span class="n">qn</span><span class="p">,</span> <span class="n">quad_weights</span><span class="o">=</span><span class="n">qw</span><span class="p">)</span>
                 <span class="n">lp</span> <span class="o">=</span> <span class="p">(</span><span class="n">custom_prior</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">)</span> <span class="k">if</span> <span class="n">custom_prior</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
@@ -807,7 +912,7 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="nd">@jax</span><span class="o">.</span><span class="n">jit</span>
             <span class="k">def</span><span class="w"> </span><span class="nf">log_posterior</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">):</span>
-                <span class="n">ll</span> <span class="o">=</span> <span class="n">_gp_log_likelihood</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span><span class="p">,</span> <span class="n">mean_val</span><span class="p">,</span>
+                <span class="n">ll</span> <span class="o">=</span> <span class="n">_gp_log_likelihood</span><span class="p">(</span><span class="n">to_phys</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">),</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span><span class="p">,</span> <span class="n">mean_val</span><span class="p">,</span>
                                         <span class="n">n_h</span><span class="p">,</span> <span class="n">n_l</span><span class="p">,</span> <span class="n">lr</span><span class="p">,</span> <span class="n">fit_sn</span><span class="p">,</span>
                                         <span class="n">quad_nodes</span><span class="o">=</span><span class="n">qn</span><span class="p">,</span> <span class="n">quad_weights</span><span class="o">=</span><span class="n">qw</span><span class="p">)</span>
                 <span class="n">lp</span> <span class="o">=</span> <span class="p">(</span><span class="n">custom_prior</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">)</span> <span class="k">if</span> <span class="n">custom_prior</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
@@ -895,6 +1000,91 @@
             <span class="n">k0</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_eval_kernel</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">1</span><span class="p">))[</span><span class="mi">0</span><span class="p">]</span>
             <span class="n">var_pred</span> <span class="o">=</span> <span class="n">k0</span> <span class="o">-</span> <span class="n">jnp</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span><span class="s1">&#39;ij,ji-&gt;i&#39;</span><span class="p">,</span> <span class="n">Ks</span><span class="p">,</span> <span class="n">V</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">mu_pred</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">var_pred</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GPSolver.plot_prediction">
+<a class="viewcode-back" href="../../api/src_jax.html#src_jax.gp_solver.GPSolver.plot_prediction">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">plot_prediction</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">n_points</span><span class="o">=</span><span class="mi">2000</span><span class="p">,</span> <span class="n">n_sigma</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+                        <span class="n">ax</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">data_color</span><span class="o">=</span><span class="s2">&quot;k&quot;</span><span class="p">,</span> <span class="n">model_color</span><span class="o">=</span><span class="s2">&quot;r&quot;</span><span class="p">,</span>
+                        <span class="n">show_legend</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">xlim</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">ylim</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Plot the GP posterior mean and uncertainty bands over the data.</span>
+
+<span class="sd">        If ``theta`` is provided the GP is temporarily updated to those</span>
+<span class="sd">        hyperparameters before predicting, so the prediction reflects the</span>
+<span class="sd">        given parameter values rather than whatever was last set internally.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        theta : dict or array_like, shape (6,), optional</span>
+<span class="sd">            Kernel parameters.  Accepts a physical dict with keys from</span>
+<span class="sd">            ``KERNEL_HPARAM_KEYS``, a sampling-space dict with ``log_``-</span>
+<span class="sd">            prefixed keys (e.g. ``log_sigma_k``), or a length-6 array.</span>
+<span class="sd">            If None, uses the current internal hyperparameters.</span>
+<span class="sd">        n_points : int</span>
+<span class="sd">            Number of prediction points spanning the data baseline.</span>
+<span class="sd">        n_sigma : int or sequence of int</span>
+<span class="sd">            Which sigma levels to shade.  E.g. ``(1, 2)`` draws both</span>
+<span class="sd">            ±1σ and ±2σ bands (default).  Pass a single int for one band.</span>
+<span class="sd">        ax : matplotlib Axes, optional</span>
+<span class="sd">            Axes to plot on. If None, creates a new figure.</span>
+<span class="sd">        data_color, model_color : str</span>
+<span class="sd">            Colors for data points and model curve/bands.</span>
+<span class="sd">        show_legend : bool</span>
+<span class="sd">            Whether to draw a legend.</span>
+<span class="sd">        xlim : tuple, optional</span>
+<span class="sd">            Limits for the x-axis. If None, defaults to the data range.</span>
+<span class="sd">        ylim : tuple, optional</span>
+<span class="sd">            Limits for the y-axis. If None, defaults to the data range.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        ax : matplotlib Axes</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+
+        <span class="k">if</span> <span class="n">theta</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">phys</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="p">(</span><span class="n">theta</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">theta</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span>
+                         <span class="k">else</span> <span class="nb">zip</span><span class="p">(</span><span class="n">KERNEL_HPARAM_KEYS</span><span class="p">,</span> <span class="n">theta</span><span class="p">)):</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;log_&quot;</span><span class="p">):</span>
+                    <span class="n">phys</span><span class="p">[</span><span class="n">k</span><span class="p">[</span><span class="mi">4</span><span class="p">:]]</span> <span class="o">=</span> <span class="mf">10.0</span> <span class="o">**</span> <span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">phys</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">update_hparam</span><span class="p">(</span><span class="n">phys</span><span class="p">)</span>
+
+        <span class="n">xpred</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span> <span class="n">n_points</span><span class="p">)</span>
+        <span class="n">mu</span><span class="p">,</span> <span class="n">var</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">xpred</span><span class="p">)</span>
+        <span class="n">sigma</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">var</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="n">ax</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
+
+        <span class="n">ax</span><span class="o">.</span><span class="n">errorbar</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">y</span><span class="p">),</span>
+                    <span class="n">yerr</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">yerr</span><span class="p">),</span>
+                    <span class="n">fmt</span><span class="o">=</span><span class="s2">&quot;.&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">data_color</span><span class="p">,</span> <span class="n">capsize</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+                    <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Data&quot;</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">xpred</span><span class="p">,</span> <span class="n">mu</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">model_color</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">1.5</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;MAP mean&quot;</span><span class="p">)</span>
+
+        <span class="n">alphas</span> <span class="o">=</span> <span class="p">{</span><span class="mi">1</span><span class="p">:</span> <span class="mf">0.35</span><span class="p">,</span> <span class="mi">2</span><span class="p">:</span> <span class="mf">0.18</span><span class="p">,</span> <span class="mi">3</span><span class="p">:</span> <span class="mf">0.10</span><span class="p">}</span>
+        <span class="k">for</span> <span class="n">ns</span> <span class="ow">in</span> <span class="p">(</span><span class="n">n_sigma</span> <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">n_sigma</span><span class="p">,</span> <span class="s2">&quot;__iter__&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="p">(</span><span class="n">n_sigma</span><span class="p">,)):</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">fill_between</span><span class="p">(</span><span class="n">xpred</span><span class="p">,</span> <span class="n">mu</span> <span class="o">-</span> <span class="n">ns</span> <span class="o">*</span> <span class="n">sigma</span><span class="p">,</span> <span class="n">mu</span> <span class="o">+</span> <span class="n">ns</span> <span class="o">*</span> <span class="n">sigma</span><span class="p">,</span>
+                            <span class="n">color</span><span class="o">=</span><span class="n">model_color</span><span class="p">,</span>
+                            <span class="n">alpha</span><span class="o">=</span><span class="n">alphas</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ns</span><span class="p">,</span> <span class="mf">0.15</span><span class="p">),</span>
+                            <span class="n">label</span><span class="o">=</span><span class="sa">rf</span><span class="s2">&quot;$\pm</span><span class="si">{</span><span class="n">ns</span><span class="si">}</span><span class="s2">\sigma$&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">xlim</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="n">xlim</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span>
+        <span class="k">if</span> <span class="n">ylim</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="n">ylim</span><span class="p">)</span>
+
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Time [days]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">22</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s2">&quot;Flux&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">22</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">show_legend</span><span class="p">:</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">ax</span></div>
 
 
 <div class="viewcode-block" id="GPSolver.sample_prior">
@@ -1124,24 +1314,40 @@
 
         <span class="n">vg_fn</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">value_and_grad</span><span class="p">(</span><span class="n">loss_u</span><span class="p">))</span>
 
-        <span class="k">def</span><span class="w"> </span><span class="nf">objective</span><span class="p">(</span><span class="n">u_np</span><span class="p">):</span>
-            <span class="n">u_jax</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">u_np</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
-            <span class="n">val</span><span class="p">,</span> <span class="n">grad</span> <span class="o">=</span> <span class="n">vg_fn</span><span class="p">(</span><span class="n">u_jax</span><span class="p">)</span>
-            <span class="n">v</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
-            <span class="n">g</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">grad</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">v</span><span class="p">):</span>
-                <span class="k">return</span> <span class="mf">1e30</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">g</span><span class="p">)):</span>
-                <span class="k">return</span> <span class="n">v</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">v</span><span class="p">,</span> <span class="n">g</span>
-
         <span class="n">n_free</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">free_idx</span><span class="p">)</span>
-        <span class="n">result</span> <span class="o">=</span> <span class="n">minimize</span><span class="p">(</span>
-            <span class="n">objective</span><span class="p">,</span> <span class="n">u0</span><span class="p">,</span> <span class="n">jac</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span>
-            <span class="n">bounds</span><span class="o">=</span><span class="p">[(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)]</span> <span class="o">*</span> <span class="n">n_free</span><span class="p">,</span>
-            <span class="n">options</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;maxiter&quot;</span><span class="p">:</span> <span class="n">maxiter</span><span class="p">,</span> <span class="s2">&quot;ftol&quot;</span><span class="p">:</span> <span class="n">ftol</span><span class="p">,</span> <span class="s2">&quot;gtol&quot;</span><span class="p">:</span> <span class="n">gtol</span><span class="p">,</span>
-                     <span class="s2">&quot;disp&quot;</span><span class="p">:</span> <span class="n">disp</span><span class="p">},</span>
-        <span class="p">)</span>
+        <span class="n">_gradient_free</span> <span class="o">=</span> <span class="n">method</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;nelder-mead&quot;</span><span class="p">,</span> <span class="s2">&quot;cobyla&quot;</span><span class="p">,</span> <span class="s2">&quot;powell&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">_gradient_free</span><span class="p">:</span>
+            <span class="k">def</span><span class="w"> </span><span class="nf">objective</span><span class="p">(</span><span class="n">u_np</span><span class="p">):</span>
+                <span class="n">u_jax</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">u_np</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+                <span class="n">val</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">vg_fn</span><span class="p">(</span><span class="n">u_jax</span><span class="p">)</span>
+                <span class="n">v</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+                <span class="k">return</span> <span class="mf">1e30</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">else</span> <span class="n">v</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">def</span><span class="w"> </span><span class="nf">objective</span><span class="p">(</span><span class="n">u_np</span><span class="p">):</span>
+                <span class="n">u_jax</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">u_np</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+                <span class="n">val</span><span class="p">,</span> <span class="n">grad</span> <span class="o">=</span> <span class="n">vg_fn</span><span class="p">(</span><span class="n">u_jax</span><span class="p">)</span>
+                <span class="n">v</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+                <span class="n">g</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">grad</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">v</span><span class="p">):</span>
+                    <span class="k">return</span> <span class="mf">1e30</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">g</span><span class="p">)):</span>
+                    <span class="k">return</span> <span class="n">v</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">v</span><span class="p">,</span> <span class="n">g</span>
+        <span class="k">if</span> <span class="n">_gradient_free</span><span class="p">:</span>
+            <span class="n">_minimize_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+                <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span>
+                <span class="n">options</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;maxiter&quot;</span><span class="p">:</span> <span class="n">maxiter</span><span class="p">,</span> <span class="s2">&quot;xatol&quot;</span><span class="p">:</span> <span class="n">ftol</span><span class="p">,</span> <span class="s2">&quot;fatol&quot;</span><span class="p">:</span> <span class="n">ftol</span><span class="p">,</span>
+                         <span class="s2">&quot;disp&quot;</span><span class="p">:</span> <span class="n">disp</span><span class="p">},</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">_minimize_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+                <span class="n">jac</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span>
+                <span class="n">bounds</span><span class="o">=</span><span class="p">[(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)]</span> <span class="o">*</span> <span class="n">n_free</span><span class="p">,</span>
+                <span class="n">options</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;maxiter&quot;</span><span class="p">:</span> <span class="n">maxiter</span><span class="p">,</span> <span class="s2">&quot;ftol&quot;</span><span class="p">:</span> <span class="n">ftol</span><span class="p">,</span> <span class="s2">&quot;gtol&quot;</span><span class="p">:</span> <span class="n">gtol</span><span class="p">,</span>
+                         <span class="s2">&quot;disp&quot;</span><span class="p">:</span> <span class="n">disp</span><span class="p">},</span>
+            <span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">minimize</span><span class="p">(</span><span class="n">objective</span><span class="p">,</span> <span class="n">u0</span><span class="p">,</span> <span class="o">**</span><span class="n">_minimize_kwargs</span><span class="p">)</span>
 
         <span class="c1"># Transform back to physical coordinates</span>
         <span class="n">free_best</span> <span class="o">=</span> <span class="n">blo</span> <span class="o">+</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span> <span class="o">*</span> <span class="n">brange</span>
@@ -1258,18 +1464,282 @@
         <span class="k">return</span> <span class="n">best_theta</span><span class="p">,</span> <span class="n">best_result</span></div>
 
 
+<div class="viewcode-block" id="GPSolver.fit_acf_psd">
+<a class="viewcode-back" href="../../api/src_jax.html#src_jax.gp_solver.GPSolver.fit_acf_psd">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fit_acf_psd</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">theta0</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">keys</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="n">tlags</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">n_bins</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span>
+                    <span class="n">n_freq</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">dt_kernel</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="n">acf_weight</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">psd_weight</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+                    <span class="n">method</span><span class="o">=</span><span class="s2">&quot;L-BFGS-B&quot;</span><span class="p">,</span> <span class="n">maxiter</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">ftol</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">gtol</span><span class="o">=</span><span class="mf">1e-8</span><span class="p">,</span>
+                    <span class="n">disp</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Fit kernel parameters jointly to the empirical ACF and PSD.</span>
+
+<span class="sd">        Minimizes a weighted sum of two normalized mean-squared-error terms:</span>
+
+<span class="sd">            loss = acf_weight * acf_loss + psd_weight * psd_loss</span>
+
+<span class="sd">        where</span>
+
+<span class="sd">            acf_loss = mean((ACF_data - K_model)^2) / mean(ACF_data^2)</span>
+
+<span class="sd">        is the relative MSE of the kernel against the empirical ACF</span>
+<span class="sd">        (unnormalized autocovariance), and</span>
+
+<span class="sd">            psd_loss = mean((PSD_data_norm - PSD_model_norm)^2)</span>
+
+<span class="sd">        is the MSE between the Lomb-Scargle periodogram and the analytic</span>
+<span class="sd">        kernel PSD, both normalized to unit integral so the comparison is</span>
+<span class="sd">        independent of overall amplitude.</span>
+
+<span class="sd">        The model PSD is computed via a direct cosine transform of the kernel</span>
+<span class="sd">        evaluated on a uniform lag grid, making it fully differentiable with</span>
+<span class="sd">        respect to the kernel parameters.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        theta0 : dict or array_like, optional</span>
+<span class="sd">            Starting point in ``self.param_keys`` space (sampling space,</span>
+<span class="sd">            with ``log_``-prefixed keys where applicable).  Follows the same</span>
+<span class="sd">            convention as ``find_map``: None uses ``self.theta0``, a dict</span>
+<span class="sd">            overrides named entries and infers free keys, an array is used</span>
+<span class="sd">            directly.</span>
+<span class="sd">        keys : list of str, optional</span>
+<span class="sd">            Parameters to vary during optimization (names from</span>
+<span class="sd">            ``self.param_keys``).  Defaults to all kernel parameters</span>
+<span class="sd">            (first 6 entries of ``self.param_keys``, i.e. excluding</span>
+<span class="sd">            ``sigma_n`` if present).</span>
+<span class="sd">        tlags : array_like, optional</span>
+<span class="sd">            Bin edges for the empirical ACF. If None, ``n_bins+1`` edges</span>
+<span class="sd">            linearly spaced from 0 to half the baseline.</span>
+<span class="sd">        n_bins : int</span>
+<span class="sd">            Number of ACF lag bins when ``tlags`` is None (default 50).</span>
+<span class="sd">        n_freq : int</span>
+<span class="sd">            Number of frequency points for the Lomb-Scargle periodogram</span>
+<span class="sd">            (default 200).</span>
+<span class="sd">        dt_kernel : float, optional</span>
+<span class="sd">            Uniform lag spacing [days] for evaluating the analytic kernel</span>
+<span class="sd">            before the direct cosine transform.  Defaults to one-fifth of</span>
+<span class="sd">            the median data spacing.</span>
+<span class="sd">        acf_weight : float</span>
+<span class="sd">            Weight for the ACF loss term (default 1.0).</span>
+<span class="sd">        psd_weight : float</span>
+<span class="sd">            Weight for the PSD loss term (default 1.0).</span>
+<span class="sd">        method : str</span>
+<span class="sd">            Scipy optimizer method (default ``&quot;L-BFGS-B&quot;``).</span>
+<span class="sd">        maxiter : int</span>
+<span class="sd">            Maximum optimizer iterations (default 500).</span>
+<span class="sd">        ftol, gtol : float</span>
+<span class="sd">            Convergence tolerances forwarded to scipy.</span>
+<span class="sd">        disp : bool</span>
+<span class="sd">            Print optimizer messages if True.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        theta_dict : dict</span>
+<span class="sd">            Best-fit parameters in ``self.param_keys`` space.</span>
+<span class="sd">        result : scipy.optimize.OptimizeResult</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">scipy.optimize</span><span class="w"> </span><span class="kn">import</span> <span class="n">minimize</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">scipy.signal</span><span class="w"> </span><span class="kn">import</span> <span class="n">lombscargle</span>
+
+        <span class="n">n_kernel</span> <span class="o">=</span> <span class="mi">6</span>  <span class="c1"># always the first 6 param_keys are kernel params</span>
+        <span class="n">to_phys</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_to_physical</span>
+        <span class="n">qn</span><span class="p">,</span> <span class="n">qw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quad_nodes</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quad_weights</span>
+        <span class="n">n_h</span><span class="p">,</span> <span class="n">n_l</span><span class="p">,</span> <span class="n">lr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_harmonics</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_lat</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">lat_range</span>
+        <span class="n">w_acf</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">acf_weight</span><span class="p">)</span>
+        <span class="n">w_psd</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">psd_weight</span><span class="p">)</span>
+
+        <span class="n">x</span>     <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">resid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">y</span><span class="p">)</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">mean_val</span>
+        <span class="n">dt_med</span>   <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">x</span><span class="p">)))</span>
+        <span class="n">baseline</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+        <span class="c1"># --- Empirical ACF (skipped when acf_weight == 0) -------------------</span>
+        <span class="k">if</span> <span class="n">w_acf</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">tlags</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">tlags</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">baseline</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="n">n_bins</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">lag_centers</span><span class="p">,</span> <span class="n">acf_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">compute_acf</span><span class="p">(</span><span class="n">tlags</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="n">lag_jax</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">lag_centers</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+            <span class="n">acf_jax</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">acf_data</span><span class="p">,</span>    <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+            <span class="n">acf_rms</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">acf_jax</span> <span class="o">**</span> <span class="mi">2</span><span class="p">))</span> <span class="o">+</span> <span class="mf">1e-30</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">lag_jax</span> <span class="o">=</span> <span class="n">acf_jax</span> <span class="o">=</span> <span class="n">acf_rms</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># --- Empirical PSD via Lomb-Scargle (skipped when psd_weight == 0) --</span>
+        <span class="k">if</span> <span class="n">w_psd</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="n">freq_min</span>  <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">baseline</span>
+            <span class="n">freq_max</span>  <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">dt_med</span><span class="p">)</span>
+            <span class="n">freqs</span>     <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="n">freq_min</span><span class="p">,</span> <span class="n">freq_max</span><span class="p">,</span> <span class="n">n_freq</span><span class="p">)</span>
+            <span class="n">pgram</span>     <span class="o">=</span> <span class="n">lombscargle</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">resid</span><span class="p">,</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">freqs</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="n">df</span>        <span class="o">=</span> <span class="n">freqs</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">freqs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">psd_data_norm</span> <span class="o">=</span> <span class="n">pgram</span> <span class="o">/</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">pgram</span><span class="p">)</span> <span class="o">*</span> <span class="n">df</span><span class="p">)</span>
+            <span class="n">psd_jax</span>   <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">psd_data_norm</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+            <span class="n">freqs_jax</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">freqs</span><span class="p">,</span>         <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">dt_kernel</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">dt_kernel</span> <span class="o">=</span> <span class="n">dt_med</span> <span class="o">/</span> <span class="mf">5.0</span>
+            <span class="n">tau_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">baseline</span><span class="p">,</span> <span class="n">dt_kernel</span><span class="p">)</span>
+            <span class="n">tau_jax</span>  <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">tau_grid</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+            <span class="n">cos_mat</span>  <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">tau_jax</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="n">freqs_jax</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">psd_jax</span> <span class="o">=</span> <span class="n">freqs_jax</span> <span class="o">=</span> <span class="n">tau_jax</span> <span class="o">=</span> <span class="n">cos_mat</span> <span class="o">=</span> <span class="n">df</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># --- Parse theta0 ---------------------------------------------------</span>
+        <span class="k">if</span> <span class="n">theta0</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">theta0_arr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">theta0</span><span class="p">[:</span><span class="n">n_kernel</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">theta0</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">theta0_arr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">theta0</span><span class="p">[:</span><span class="n">n_kernel</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="n">dict_keys_in_params</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">theta0</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span><span class="p">[:</span><span class="n">n_kernel</span><span class="p">]:</span>
+                    <span class="n">idx</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span><span class="p">)</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
+                    <span class="n">theta0_arr</span> <span class="o">=</span> <span class="n">theta0_arr</span><span class="o">.</span><span class="n">at</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">))</span>
+                    <span class="n">dict_keys_in_params</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">keys</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">dict_keys_in_params</span><span class="p">:</span>
+                <span class="n">keys</span> <span class="o">=</span> <span class="n">dict_keys_in_params</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">theta0_arr</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">theta0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+
+        <span class="c1"># --- Resolve free vs fixed parameters -------------------------------</span>
+        <span class="n">kernel_param_keys</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span><span class="p">[:</span><span class="n">n_kernel</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">keys</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">free_idx</span>  <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">n_kernel</span><span class="p">))</span>
+            <span class="n">fixed_idx</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">fixed_vals</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">keys</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">k</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">kernel_param_keys</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;Unknown key &#39;</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">&#39;. Valid keys: </span><span class="si">{</span><span class="n">kernel_param_keys</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">free_idx</span>  <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">kernel_param_keys</span><span class="p">)</span> <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">keys</span><span class="p">]</span>
+            <span class="n">fixed_idx</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">kernel_param_keys</span><span class="p">)</span> <span class="k">if</span> <span class="n">k</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">keys</span><span class="p">]</span>
+            <span class="n">fixed_vals</span> <span class="o">=</span> <span class="p">(</span><span class="n">theta0_arr</span><span class="p">[</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">fixed_idx</span><span class="p">)]</span>
+                          <span class="k">if</span> <span class="n">fixed_idx</span> <span class="k">else</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([]))</span>
+
+        <span class="n">free0</span>     <span class="o">=</span> <span class="n">theta0_arr</span><span class="p">[</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">free_idx</span><span class="p">)]</span>
+        <span class="n">bds</span>       <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bounds</span><span class="p">[:</span><span class="n">n_kernel</span><span class="p">]</span>
+        <span class="n">free_bds</span>  <span class="o">=</span> <span class="n">bds</span><span class="p">[</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">free_idx</span><span class="p">)]</span>
+        <span class="n">blo</span><span class="p">,</span> <span class="n">bhi</span>  <span class="o">=</span> <span class="n">free_bds</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">free_bds</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="n">brange</span>    <span class="o">=</span> <span class="n">bhi</span> <span class="o">-</span> <span class="n">blo</span>
+        <span class="n">u0</span>        <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">((</span><span class="n">free0</span> <span class="o">-</span> <span class="n">blo</span><span class="p">)</span> <span class="o">/</span> <span class="n">brange</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+
+        <span class="nd">@jax</span><span class="o">.</span><span class="n">jit</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">loss_u</span><span class="p">(</span><span class="n">u_arr</span><span class="p">):</span>
+            <span class="n">free_theta</span>  <span class="o">=</span> <span class="n">blo</span> <span class="o">+</span> <span class="n">u_arr</span> <span class="o">*</span> <span class="n">brange</span>
+            <span class="n">theta_samp</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_theta_from_free</span><span class="p">(</span>
+                <span class="n">free_theta</span><span class="p">,</span> <span class="n">free_idx</span><span class="p">,</span> <span class="n">fixed_idx</span><span class="p">,</span> <span class="n">fixed_vals</span><span class="p">)</span>
+            <span class="n">theta_phys</span>  <span class="o">=</span> <span class="n">to_phys</span><span class="p">(</span><span class="n">theta_samp</span><span class="p">)</span>
+
+            <span class="n">loss</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+            <span class="k">if</span> <span class="n">w_acf</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
+                <span class="n">K_acf</span>    <span class="o">=</span> <span class="n">_kernel_eval</span><span class="p">(</span><span class="n">theta_phys</span><span class="p">,</span> <span class="n">lag_jax</span><span class="p">,</span> <span class="n">n_h</span><span class="p">,</span> <span class="n">n_l</span><span class="p">,</span> <span class="n">lr</span><span class="p">,</span>
+                                        <span class="n">quad_nodes</span><span class="o">=</span><span class="n">qn</span><span class="p">,</span> <span class="n">quad_weights</span><span class="o">=</span><span class="n">qw</span><span class="p">)</span>
+                <span class="n">acf_loss</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">mean</span><span class="p">(((</span><span class="n">acf_jax</span> <span class="o">-</span> <span class="n">K_acf</span><span class="p">)</span> <span class="o">/</span> <span class="n">acf_rms</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+                <span class="n">loss</span> <span class="o">=</span> <span class="n">loss</span> <span class="o">+</span> <span class="n">w_acf</span> <span class="o">*</span> <span class="n">acf_loss</span>
+
+            <span class="k">if</span> <span class="n">w_psd</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
+                <span class="n">K_tau</span> <span class="o">=</span> <span class="n">_kernel_eval</span><span class="p">(</span><span class="n">theta_phys</span><span class="p">,</span> <span class="n">tau_jax</span><span class="p">,</span> <span class="n">n_h</span><span class="p">,</span> <span class="n">n_l</span><span class="p">,</span> <span class="n">lr</span><span class="p">,</span>
+                                     <span class="n">quad_nodes</span><span class="o">=</span><span class="n">qn</span><span class="p">,</span> <span class="n">quad_weights</span><span class="o">=</span><span class="n">qw</span><span class="p">)</span>
+                <span class="n">psd_model</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span>
+                    <span class="n">dt_kernel</span> <span class="o">*</span> <span class="p">(</span><span class="n">K_tau</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">K_tau</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">cos_mat</span><span class="p">[</span><span class="mi">1</span><span class="p">:])),</span>
+                    <span class="mf">0.0</span><span class="p">)</span>
+                <span class="n">psd_norm</span>  <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">psd_model</span><span class="p">)</span> <span class="o">*</span> <span class="n">df</span>
+                <span class="n">psd_model_norm</span> <span class="o">=</span> <span class="n">psd_model</span> <span class="o">/</span> <span class="p">(</span><span class="n">psd_norm</span> <span class="o">+</span> <span class="mf">1e-30</span><span class="p">)</span>
+                <span class="n">psd_loss</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">mean</span><span class="p">((</span><span class="n">psd_jax</span> <span class="o">-</span> <span class="n">psd_model_norm</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+                <span class="n">loss</span> <span class="o">=</span> <span class="n">loss</span> <span class="o">+</span> <span class="n">w_psd</span> <span class="o">*</span> <span class="n">psd_loss</span>
+
+            <span class="k">return</span> <span class="n">loss</span>
+
+        <span class="n">vg_fn</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">value_and_grad</span><span class="p">(</span><span class="n">loss_u</span><span class="p">))</span>
+
+        <span class="n">n_free</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">free_idx</span><span class="p">)</span>
+        <span class="n">_gradient_free</span> <span class="o">=</span> <span class="n">method</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;nelder-mead&quot;</span><span class="p">,</span> <span class="s2">&quot;cobyla&quot;</span><span class="p">,</span> <span class="s2">&quot;powell&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">_gradient_free</span><span class="p">:</span>
+            <span class="k">def</span><span class="w"> </span><span class="nf">objective</span><span class="p">(</span><span class="n">u_np</span><span class="p">):</span>
+                <span class="n">val</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">vg_fn</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">u_np</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">))</span>
+                <span class="n">v</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+                <span class="k">return</span> <span class="mf">1e30</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">else</span> <span class="n">v</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">def</span><span class="w"> </span><span class="nf">objective</span><span class="p">(</span><span class="n">u_np</span><span class="p">):</span>
+                <span class="n">val</span><span class="p">,</span> <span class="n">grad</span> <span class="o">=</span> <span class="n">vg_fn</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">u_np</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">))</span>
+                <span class="n">v</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+                <span class="n">g</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">grad</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">v</span><span class="p">):</span>
+                    <span class="k">return</span> <span class="mf">1e30</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">g</span><span class="p">)):</span>
+                    <span class="k">return</span> <span class="n">v</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">v</span><span class="p">,</span> <span class="n">g</span>
+
+        <span class="k">if</span> <span class="n">_gradient_free</span><span class="p">:</span>
+            <span class="n">_minimize_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+                <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span>
+                <span class="n">options</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;maxiter&quot;</span><span class="p">:</span> <span class="n">maxiter</span><span class="p">,</span> <span class="s2">&quot;xatol&quot;</span><span class="p">:</span> <span class="n">ftol</span><span class="p">,</span> <span class="s2">&quot;fatol&quot;</span><span class="p">:</span> <span class="n">ftol</span><span class="p">,</span>
+                         <span class="s2">&quot;disp&quot;</span><span class="p">:</span> <span class="n">disp</span><span class="p">},</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">_minimize_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+                <span class="n">jac</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span>
+                <span class="n">bounds</span><span class="o">=</span><span class="p">[(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)]</span> <span class="o">*</span> <span class="n">n_free</span><span class="p">,</span>
+                <span class="n">options</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;maxiter&quot;</span><span class="p">:</span> <span class="n">maxiter</span><span class="p">,</span> <span class="s2">&quot;ftol&quot;</span><span class="p">:</span> <span class="n">ftol</span><span class="p">,</span> <span class="s2">&quot;gtol&quot;</span><span class="p">:</span> <span class="n">gtol</span><span class="p">,</span>
+                         <span class="s2">&quot;disp&quot;</span><span class="p">:</span> <span class="n">disp</span><span class="p">},</span>
+            <span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">minimize</span><span class="p">(</span><span class="n">objective</span><span class="p">,</span> <span class="n">u0</span><span class="p">,</span> <span class="o">**</span><span class="n">_minimize_kwargs</span><span class="p">)</span>
+
+        <span class="n">free_best</span>  <span class="o">=</span> <span class="n">blo</span> <span class="o">+</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span> <span class="o">*</span> <span class="n">brange</span>
+        <span class="n">theta_full</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_theta_from_free</span><span class="p">(</span>
+            <span class="n">free_best</span><span class="p">,</span> <span class="n">free_idx</span><span class="p">,</span> <span class="n">fixed_idx</span><span class="p">,</span> <span class="n">fixed_vals</span><span class="p">)</span>
+
+        <span class="n">theta_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">theta_full</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+                      <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">kernel_param_keys</span><span class="p">)}</span>
+        <span class="k">return</span> <span class="n">theta_dict</span><span class="p">,</span> <span class="n">result</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_theta_dict_to_phys_array</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">theta</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Convert a theta dict or array to a physical KERNEL_HPARAM_KEYS array.</span>
+
+<span class="sd">        Handles sampling-space dicts that may contain ``log_``-prefixed keys</span>
+<span class="sd">        (e.g. ``log_sigma_k``), converting them to physical values via</span>
+<span class="sd">        ``10 ** value`` before building the array.  Plain arrays are returned</span>
+<span class="sd">        as-is (assumed already physical).</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        theta : dict or array_like</span>
+<span class="sd">            Kernel parameters, either as a dict (physical or log-space keys)</span>
+<span class="sd">            or a length-6 array in KERNEL_HPARAM_KEYS order.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        theta_arr : jnp.ndarray, shape (6,)</span>
+<span class="sd">            Physical kernel parameters in KERNEL_HPARAM_KEYS order.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">theta</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">phys</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">theta</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">k</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;log_&quot;</span><span class="p">):</span>
+                    <span class="n">phys</span><span class="p">[</span><span class="n">k</span><span class="p">[</span><span class="mi">4</span><span class="p">:]]</span> <span class="o">=</span> <span class="mf">10.0</span> <span class="o">**</span> <span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">phys</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="nb">float</span><span class="p">(</span><span class="n">phys</span><span class="p">[</span><span class="n">k</span><span class="p">])</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">KERNEL_HPARAM_KEYS</span><span class="p">],</span>
+                             <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">theta</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+
 <div class="viewcode-block" id="GPSolver.plot_acf">
 <a class="viewcode-back" href="../../api/src_jax.html#src_jax.gp_solver.GPSolver.plot_acf">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">plot_acf</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tlags</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">n_bins</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                 <span class="n">normalize</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">data_color</span><span class="o">=</span><span class="s2">&quot;k&quot;</span><span class="p">,</span> <span class="n">model_color</span><span class="o">=</span><span class="s2">&quot;r&quot;</span><span class="p">,</span>
-                 <span class="n">show_legend</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+                 <span class="n">normalize</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">data_color</span><span class="o">=</span><span class="s2">&quot;k&quot;</span><span class="p">,</span> <span class="n">model_color</span><span class="o">=</span><span class="s2">&quot;r&quot;</span><span class="p">,</span>
+                 <span class="n">show_legend</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">xlim</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">ylim</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Plot the empirical ACF and optionally the analytic kernel.</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        theta : array_like, shape (6,), optional</span>
-<span class="sd">            Kernel parameters [peq, kappa, inc, lspot, tau, sigma_k].</span>
+<span class="sd">        theta : dict or array_like, shape (6,), optional</span>
+<span class="sd">            Kernel parameters.  Accepts a physical dict with keys from</span>
+<span class="sd">            ``KERNEL_HPARAM_KEYS``, a sampling-space dict with ``log_``-</span>
+<span class="sd">            prefixed keys (e.g. ``log_sigma_k``), or a length-6 array.</span>
 <span class="sd">            If provided, the analytic kernel is overplotted.</span>
 <span class="sd">        tlags : array_like, optional</span>
 <span class="sd">            Bin edges for compute_acf. If None, linearly spaced from 0 to</span>
@@ -1279,7 +1749,12 @@
 <span class="sd">        ax : matplotlib Axes, optional</span>
 <span class="sd">            Axes to plot on. If None, creates a new figure.</span>
 <span class="sd">        normalize : bool</span>
-<span class="sd">            If True, normalize the ACF by the variance.</span>
+<span class="sd">            If True (default), normalize both curves by the data variance</span>
+<span class="sd">            so ACF(0) ≈ 1.</span>
+<span class="sd">        xlim : tuple, optional</span>
+<span class="sd">            Limits for the x-axis. If None, defaults to the data range.</span>
+<span class="sd">        ylim : tuple, optional</span>
+<span class="sd">            Limits for the y-axis. If None, defaults to the data range.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
@@ -1296,28 +1771,129 @@
         <span class="k">if</span> <span class="n">ax</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
 
-        <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">lag_centers</span><span class="p">,</span> <span class="n">acf_data</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">data_color</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;Data ACF&#39;</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">lag_centers</span><span class="p">,</span> <span class="n">acf_data</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">data_color</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Data ACF&quot;</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="n">theta</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">theta</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-                <span class="n">theta</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="nb">float</span><span class="p">(</span><span class="n">theta</span><span class="p">[</span><span class="n">k</span><span class="p">])</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">KERNEL_HPARAM_KEYS</span><span class="p">],</span>
-                                  <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="n">theta</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">theta</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
-            <span class="n">lag_fine</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">lag_centers</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
-                                   <span class="nb">float</span><span class="p">(</span><span class="n">lag_centers</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span> <span class="mi">300</span><span class="p">)</span>
+            <span class="n">theta_arr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_theta_dict_to_phys_array</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+            <span class="n">lag_fine</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">tlags</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]),</span> <span class="mi">300</span><span class="p">)</span>
             <span class="n">K_model</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">_kernel_eval</span><span class="p">(</span>
-                <span class="n">theta</span><span class="p">,</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">lag_fine</span><span class="p">),</span>
+                <span class="n">theta_arr</span><span class="p">,</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">lag_fine</span><span class="p">),</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">n_harmonics</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_lat</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">lat_range</span><span class="p">,</span>
                 <span class="n">quad_nodes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_quad_nodes</span><span class="p">,</span> <span class="n">quad_weights</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_quad_weights</span><span class="p">))</span>
             <span class="k">if</span> <span class="n">normalize</span><span class="p">:</span>
                 <span class="n">var</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">((</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">y</span><span class="p">)</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">mean_val</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
                 <span class="k">if</span> <span class="n">var</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
                     <span class="n">K_model</span> <span class="o">=</span> <span class="n">K_model</span> <span class="o">/</span> <span class="n">var</span>
-            <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">lag_fine</span><span class="p">,</span> <span class="n">K_model</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">model_color</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;Analytic kernel&#39;</span><span class="p">)</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">lag_fine</span><span class="p">,</span> <span class="n">K_model</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">model_color</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Analytic kernel&quot;</span><span class="p">)</span>
 
-        <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Time lag [days]&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">22</span><span class="p">)</span>
-        <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;ACF&#39;</span> <span class="k">if</span> <span class="n">normalize</span> <span class="k">else</span> <span class="s1">&#39;Autocovariance&#39;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">22</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">xlim</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="n">xlim</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">tlags</span><span class="p">),</span> <span class="nb">max</span><span class="p">(</span><span class="n">tlags</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">ylim</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="n">ylim</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Time lag [days]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">22</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s2">&quot;ACF&quot;</span> <span class="k">if</span> <span class="n">normalize</span> <span class="k">else</span> <span class="s2">&quot;Autocovariance&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">22</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">show_legend</span><span class="p">:</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">ax</span></div>
+
+
+<div class="viewcode-block" id="GPSolver.plot_psd">
+<a class="viewcode-back" href="../../api/src_jax.html#src_jax.gp_solver.GPSolver.plot_psd">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">plot_psd</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">n_freq</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">dt_kernel</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                 <span class="n">data_color</span><span class="o">=</span><span class="s2">&quot;k&quot;</span><span class="p">,</span> <span class="n">model_color</span><span class="o">=</span><span class="s2">&quot;r&quot;</span><span class="p">,</span> <span class="n">show_legend</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                 <span class="n">xlim</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">ylim</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Plot the empirical PSD (Lomb-Scargle) and optionally the analytic</span>
+<span class="sd">        kernel PSD (FFT of the autocovariance function).</span>
+
+<span class="sd">        Both curves are normalized so their integral over positive frequencies</span>
+<span class="sd">        equals the data variance, making them directly comparable.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        theta : dict or array_like, shape (6,), optional</span>
+<span class="sd">            Kernel parameters.  Accepts a physical dict with keys from</span>
+<span class="sd">            ``KERNEL_HPARAM_KEYS``, a sampling-space dict with ``log_``-</span>
+<span class="sd">            prefixed keys (e.g. ``log_sigma_k``), or a length-6 array.</span>
+<span class="sd">            If provided, the analytic kernel PSD is overplotted.</span>
+<span class="sd">        n_freq : int</span>
+<span class="sd">            Number of frequency points for the Lomb-Scargle periodogram.</span>
+<span class="sd">        dt_kernel : float, optional</span>
+<span class="sd">            Time step [days] for evaluating the analytic kernel on a uniform</span>
+<span class="sd">            grid before FFT.  Defaults to one-fifth of the median data spacing.</span>
+<span class="sd">        ax : matplotlib Axes, optional</span>
+<span class="sd">            Axes to plot on. If None, creates a new figure.</span>
+<span class="sd">        data_color, model_color : str</span>
+<span class="sd">            Colors for the data and model curves.</span>
+<span class="sd">        show_legend : bool</span>
+<span class="sd">            Whether to draw a legend.</span>
+<span class="sd">        xlim : tuple, optional</span>
+<span class="sd">            Limits for the x-axis. If None, defaults to the data range.</span>
+<span class="sd">        ylim : tuple, optional</span>
+<span class="sd">            Limits for the y-axis. If None, defaults to the data range.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        ax : matplotlib Axes</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">scipy.signal</span><span class="w"> </span><span class="kn">import</span> <span class="n">lombscargle</span>
+
+        <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">resid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">y</span><span class="p">)</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">mean_val</span>
+        <span class="n">var</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">resid</span> <span class="o">**</span> <span class="mi">2</span><span class="p">))</span>
+
+        <span class="n">baseline</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">dt_med</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">x</span><span class="p">)))</span>
+        <span class="n">freq_min</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">baseline</span>
+        <span class="n">freq_max</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">dt_med</span><span class="p">)</span>
+        <span class="n">freqs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="n">freq_min</span><span class="p">,</span> <span class="n">freq_max</span><span class="p">,</span> <span class="n">n_freq</span><span class="p">)</span>
+
+        <span class="c1"># Lomb-Scargle uses angular frequencies internally</span>
+        <span class="n">pgram</span> <span class="o">=</span> <span class="n">lombscargle</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">resid</span><span class="p">,</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">freqs</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="c1"># Normalize so ∫PSD df = var(data)</span>
+        <span class="n">psd_data</span> <span class="o">=</span> <span class="n">pgram</span> <span class="o">*</span> <span class="n">var</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">trapezoid</span><span class="p">(</span><span class="n">pgram</span><span class="p">,</span> <span class="n">freqs</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">ax</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+
+        <span class="n">ax</span><span class="o">.</span><span class="n">semilogy</span><span class="p">(</span><span class="n">freqs</span><span class="p">,</span> <span class="n">psd_data</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">data_color</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span>
+                    <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Lomb-Scargle&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">theta</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">theta_arr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_theta_dict_to_phys_array</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">dt_kernel</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">dt_kernel</span> <span class="o">=</span> <span class="n">dt_med</span> <span class="o">/</span> <span class="mf">5.0</span>
+            <span class="n">tau_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">baseline</span><span class="p">,</span> <span class="n">dt_kernel</span><span class="p">)</span>
+            <span class="n">K</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">_kernel_eval</span><span class="p">(</span>
+                <span class="n">theta_arr</span><span class="p">,</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">tau_grid</span><span class="p">),</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">n_harmonics</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_lat</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">lat_range</span><span class="p">,</span>
+                <span class="n">quad_nodes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_quad_nodes</span><span class="p">,</span> <span class="n">quad_weights</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_quad_weights</span><span class="p">))</span>
+            <span class="c1"># Extend to two-sided symmetric sequence, then rfft → one-sided PSD</span>
+            <span class="n">K_twosided</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">K</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">K</span><span class="p">[</span><span class="mi">1</span><span class="p">:]])</span>
+            <span class="n">psd_model</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">rfft</span><span class="p">(</span><span class="n">K_twosided</span><span class="p">))</span> <span class="o">*</span> <span class="n">dt_kernel</span>
+            <span class="n">freqs_model</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">rfftfreq</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">K_twosided</span><span class="p">),</span> <span class="n">d</span><span class="o">=</span><span class="n">dt_kernel</span><span class="p">)</span>
+            <span class="c1"># Restrict to the data frequency range and skip DC</span>
+            <span class="n">mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">freqs_model</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">freqs_model</span> <span class="o">&lt;=</span> <span class="n">freq_max</span><span class="p">)</span>
+            <span class="n">fm</span><span class="p">,</span> <span class="n">pm</span> <span class="o">=</span> <span class="n">freqs_model</span><span class="p">[</span><span class="n">mask</span><span class="p">],</span> <span class="n">psd_model</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span>
+            <span class="c1"># Normalize so ∫PSD df = var(data)</span>
+            <span class="n">pm</span> <span class="o">=</span> <span class="n">pm</span> <span class="o">*</span> <span class="n">var</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">trapezoid</span><span class="p">(</span><span class="n">pm</span><span class="p">,</span> <span class="n">fm</span><span class="p">)</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">semilogy</span><span class="p">(</span><span class="n">fm</span><span class="p">,</span> <span class="n">pm</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">model_color</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">1.5</span><span class="p">,</span>
+                        <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Analytic kernel&quot;</span><span class="p">)</span>
+            
+        <span class="k">if</span> <span class="n">xlim</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="n">xlim</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="n">freq_min</span><span class="p">,</span> <span class="n">freq_max</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">ylim</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="n">ylim</span><span class="p">)</span>
+
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Frequency [1/day]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">22</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s2">&quot;PSD&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">22</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">show_legend</span><span class="p">:</span>
             <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
 
@@ -1393,9 +1969,12 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">_build_covariance</span><span class="p">()</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_build_covariance</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">theta0</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
-            <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span><span class="p">],</span>
-            <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span></div>
+        <span class="bp">self</span><span class="o">.</span><span class="n">theta0</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_log_param_map</span><span class="p">[</span><span class="n">k</span><span class="p">],</span> <span class="mf">0.0</span><span class="p">)))</span>
+            <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_log_param_map</span>
+            <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span>
+        <span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span></div>
 
 
     <span class="c1"># =================================================================</span>
@@ -1487,13 +2066,14 @@
         <span class="n">qn</span><span class="p">,</span> <span class="n">qw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quad_nodes</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quad_weights</span>
         <span class="n">all_bounds</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bounds</span>
         <span class="n">custom_prior</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_custom_log_prior</span>
+        <span class="n">to_phys</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_to_physical</span>
 
         <span class="nd">@jax</span><span class="o">.</span><span class="n">jit</span>
         <span class="k">def</span><span class="w"> </span><span class="nf">neg_logpost_u</span><span class="p">(</span><span class="n">u_arr</span><span class="p">):</span>
             <span class="n">free_theta</span> <span class="o">=</span> <span class="n">blo</span> <span class="o">+</span> <span class="n">u_arr</span> <span class="o">*</span> <span class="n">brange</span>
             <span class="n">theta_full</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_theta_from_free</span><span class="p">(</span>
                 <span class="n">free_theta</span><span class="p">,</span> <span class="n">free_idx</span><span class="p">,</span> <span class="n">fixed_idx</span><span class="p">,</span> <span class="n">fixed_vals</span><span class="p">)</span>
-            <span class="n">ll</span> <span class="o">=</span> <span class="n">_gp_log_likelihood</span><span class="p">(</span><span class="n">theta_full</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span><span class="p">,</span> <span class="n">mean_val</span><span class="p">,</span>
+            <span class="n">ll</span> <span class="o">=</span> <span class="n">_gp_log_likelihood</span><span class="p">(</span><span class="n">to_phys</span><span class="p">(</span><span class="n">theta_full</span><span class="p">),</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span><span class="p">,</span> <span class="n">mean_val</span><span class="p">,</span>
                                     <span class="n">n_h</span><span class="p">,</span> <span class="n">n_l</span><span class="p">,</span> <span class="n">lr</span><span class="p">,</span> <span class="n">fit_sn</span><span class="p">,</span>
                                     <span class="n">quad_nodes</span><span class="o">=</span><span class="n">qn</span><span class="p">,</span> <span class="n">quad_weights</span><span class="o">=</span><span class="n">qw</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">custom_prior</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -1504,24 +2084,40 @@
 
         <span class="n">vg_fn</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">value_and_grad</span><span class="p">(</span><span class="n">neg_logpost_u</span><span class="p">))</span>
 
-        <span class="k">def</span><span class="w"> </span><span class="nf">objective</span><span class="p">(</span><span class="n">u_np</span><span class="p">):</span>
-            <span class="n">u_jax</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">u_np</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
-            <span class="n">val</span><span class="p">,</span> <span class="n">grad</span> <span class="o">=</span> <span class="n">vg_fn</span><span class="p">(</span><span class="n">u_jax</span><span class="p">)</span>
-            <span class="n">v</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
-            <span class="n">g</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">grad</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">v</span><span class="p">):</span>
-                <span class="k">return</span> <span class="mf">1e30</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">g</span><span class="p">)):</span>
-                <span class="k">return</span> <span class="n">v</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">v</span><span class="p">,</span> <span class="n">g</span>
-
         <span class="n">n_free</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">free_idx</span><span class="p">)</span>
-        <span class="n">result</span> <span class="o">=</span> <span class="n">minimize</span><span class="p">(</span>
-            <span class="n">objective</span><span class="p">,</span> <span class="n">u0</span><span class="p">,</span> <span class="n">jac</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span>
-            <span class="n">bounds</span><span class="o">=</span><span class="p">[(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)]</span> <span class="o">*</span> <span class="n">n_free</span><span class="p">,</span>
-            <span class="n">options</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;maxiter&quot;</span><span class="p">:</span> <span class="n">maxiter</span><span class="p">,</span> <span class="s2">&quot;ftol&quot;</span><span class="p">:</span> <span class="n">ftol</span><span class="p">,</span> <span class="s2">&quot;gtol&quot;</span><span class="p">:</span> <span class="n">gtol</span><span class="p">,</span>
-                     <span class="s2">&quot;disp&quot;</span><span class="p">:</span> <span class="n">disp</span><span class="p">},</span>
-        <span class="p">)</span>
+        <span class="n">_gradient_free</span> <span class="o">=</span> <span class="n">method</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;nelder-mead&quot;</span><span class="p">,</span> <span class="s2">&quot;cobyla&quot;</span><span class="p">,</span> <span class="s2">&quot;powell&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">_gradient_free</span><span class="p">:</span>
+            <span class="k">def</span><span class="w"> </span><span class="nf">objective</span><span class="p">(</span><span class="n">u_np</span><span class="p">):</span>
+                <span class="n">u_jax</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">u_np</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+                <span class="n">val</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">vg_fn</span><span class="p">(</span><span class="n">u_jax</span><span class="p">)</span>
+                <span class="n">v</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+                <span class="k">return</span> <span class="mf">1e30</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">else</span> <span class="n">v</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">def</span><span class="w"> </span><span class="nf">objective</span><span class="p">(</span><span class="n">u_np</span><span class="p">):</span>
+                <span class="n">u_jax</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">u_np</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+                <span class="n">val</span><span class="p">,</span> <span class="n">grad</span> <span class="o">=</span> <span class="n">vg_fn</span><span class="p">(</span><span class="n">u_jax</span><span class="p">)</span>
+                <span class="n">v</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+                <span class="n">g</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">grad</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">v</span><span class="p">):</span>
+                    <span class="k">return</span> <span class="mf">1e30</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">g</span><span class="p">)):</span>
+                    <span class="k">return</span> <span class="n">v</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">v</span><span class="p">,</span> <span class="n">g</span>
+        <span class="k">if</span> <span class="n">_gradient_free</span><span class="p">:</span>
+            <span class="n">_minimize_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+                <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span>
+                <span class="n">options</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;maxiter&quot;</span><span class="p">:</span> <span class="n">maxiter</span><span class="p">,</span> <span class="s2">&quot;xatol&quot;</span><span class="p">:</span> <span class="n">ftol</span><span class="p">,</span> <span class="s2">&quot;fatol&quot;</span><span class="p">:</span> <span class="n">ftol</span><span class="p">,</span>
+                         <span class="s2">&quot;disp&quot;</span><span class="p">:</span> <span class="n">disp</span><span class="p">},</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">_minimize_kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
+                <span class="n">jac</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span>
+                <span class="n">bounds</span><span class="o">=</span><span class="p">[(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)]</span> <span class="o">*</span> <span class="n">n_free</span><span class="p">,</span>
+                <span class="n">options</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;maxiter&quot;</span><span class="p">:</span> <span class="n">maxiter</span><span class="p">,</span> <span class="s2">&quot;ftol&quot;</span><span class="p">:</span> <span class="n">ftol</span><span class="p">,</span> <span class="s2">&quot;gtol&quot;</span><span class="p">:</span> <span class="n">gtol</span><span class="p">,</span>
+                         <span class="s2">&quot;disp&quot;</span><span class="p">:</span> <span class="n">disp</span><span class="p">},</span>
+            <span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">minimize</span><span class="p">(</span><span class="n">objective</span><span class="p">,</span> <span class="n">u0</span><span class="p">,</span> <span class="o">**</span><span class="n">_minimize_kwargs</span><span class="p">)</span>
 
         <span class="c1"># Transform back to physical coordinates</span>
         <span class="n">free_best</span> <span class="o">=</span> <span class="n">blo</span> <span class="o">+</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span> <span class="o">*</span> <span class="n">brange</span>
@@ -1624,6 +2220,43 @@
 
 
     <span class="c1"># =================================================================</span>
+    <span class="c1"># Mass matrix helpers</span>
+    <span class="c1"># =================================================================</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_neg_log_lik</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return a JIT-compiled negative log-likelihood function.</span>
+
+<span class="sd">        Respects ``self.matrix_solver``: when ``&quot;cholesky_banded&quot;`` the</span>
+<span class="sd">        returned function uses ``_gp_log_likelihood_banded`` (O(Nb) memory),</span>
+<span class="sd">        otherwise it falls back to the dense ``_gp_log_likelihood`` (O(N^2)).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">yerr</span>
+        <span class="n">mean_val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mean_val</span>
+        <span class="n">n_h</span><span class="p">,</span> <span class="n">n_l</span><span class="p">,</span> <span class="n">lr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_harmonics</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_lat</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">lat_range</span>
+        <span class="n">fit_sn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fit_sigma_n</span>
+        <span class="n">qn</span><span class="p">,</span> <span class="n">qw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quad_nodes</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quad_weights</span>
+        <span class="n">to_phys</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_to_physical</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">matrix_solver</span> <span class="o">==</span> <span class="s2">&quot;cholesky_banded&quot;</span><span class="p">:</span>
+            <span class="n">b</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bandwidth</span>
+
+            <span class="nd">@jax</span><span class="o">.</span><span class="n">jit</span>
+            <span class="k">def</span><span class="w"> </span><span class="nf">neg_log_lik</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">):</span>
+                <span class="k">return</span> <span class="o">-</span><span class="n">_gp_log_likelihood_banded</span><span class="p">(</span>
+                    <span class="n">to_phys</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">),</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span><span class="p">,</span> <span class="n">mean_val</span><span class="p">,</span>
+                    <span class="n">n_h</span><span class="p">,</span> <span class="n">n_l</span><span class="p">,</span> <span class="n">lr</span><span class="p">,</span> <span class="n">fit_sn</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span>
+                    <span class="n">quad_nodes</span><span class="o">=</span><span class="n">qn</span><span class="p">,</span> <span class="n">quad_weights</span><span class="o">=</span><span class="n">qw</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nd">@jax</span><span class="o">.</span><span class="n">jit</span>
+            <span class="k">def</span><span class="w"> </span><span class="nf">neg_log_lik</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">):</span>
+                <span class="k">return</span> <span class="o">-</span><span class="n">_gp_log_likelihood</span><span class="p">(</span>
+                    <span class="n">to_phys</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">),</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span><span class="p">,</span> <span class="n">mean_val</span><span class="p">,</span>
+                    <span class="n">n_h</span><span class="p">,</span> <span class="n">n_l</span><span class="p">,</span> <span class="n">lr</span><span class="p">,</span> <span class="n">fit_sn</span><span class="p">,</span>
+                    <span class="n">quad_nodes</span><span class="o">=</span><span class="n">qn</span><span class="p">,</span> <span class="n">quad_weights</span><span class="o">=</span><span class="n">qw</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">neg_log_lik</span>
+
+    <span class="c1"># =================================================================</span>
     <span class="c1"># Mass matrix estimation: Method 1 -- Hessian at MAP</span>
     <span class="c1"># =================================================================</span>
 
@@ -1652,17 +2285,7 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="n">theta_map</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">theta_map</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
 
-        <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">yerr</span>
-        <span class="n">mean_val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mean_val</span>
-        <span class="n">n_h</span><span class="p">,</span> <span class="n">n_l</span><span class="p">,</span> <span class="n">lr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_harmonics</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_lat</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">lat_range</span>
-        <span class="n">fit_sn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fit_sigma_n</span>
-        <span class="n">qn</span><span class="p">,</span> <span class="n">qw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quad_nodes</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quad_weights</span>
-
-        <span class="nd">@jax</span><span class="o">.</span><span class="n">jit</span>
-        <span class="k">def</span><span class="w"> </span><span class="nf">neg_log_lik</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">):</span>
-            <span class="k">return</span> <span class="o">-</span><span class="n">_gp_log_likelihood</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span><span class="p">,</span> <span class="n">mean_val</span><span class="p">,</span>
-                                       <span class="n">n_h</span><span class="p">,</span> <span class="n">n_l</span><span class="p">,</span> <span class="n">lr</span><span class="p">,</span> <span class="n">fit_sn</span><span class="p">,</span>
-                                       <span class="n">quad_nodes</span><span class="o">=</span><span class="n">qn</span><span class="p">,</span> <span class="n">quad_weights</span><span class="o">=</span><span class="n">qw</span><span class="p">)</span>
+        <span class="n">neg_log_lik</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_neg_log_lik</span><span class="p">()</span>
 
         <span class="n">H</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">hessian</span><span class="p">(</span><span class="n">neg_log_lik</span><span class="p">)(</span><span class="n">theta_map</span><span class="p">)</span>
 
@@ -1690,8 +2313,15 @@
 
 <span class="sd">            I_{ij} = (1/2) tr(K^{-1} dK/dtheta_i  K^{-1} dK/dtheta_j)</span>
 
-<span class="sd">        The kernel derivatives dK/dtheta_i are computed via JAX</span>
-<span class="sd">        forward-mode autodiff (jacfwd).</span>
+<span class="sd">        When ``matrix_solver=&quot;cholesky_full&quot;``, the kernel derivatives</span>
+<span class="sd">        dK/dtheta_i are computed via JAX forward-mode autodiff (jacfwd)</span>
+<span class="sd">        on the full N×N covariance matrix.</span>
+
+<span class="sd">        When ``matrix_solver=&quot;cholesky_banded&quot;``, the exact Fisher requires</span>
+<span class="sd">        the dense N×N kernel and its inverse, which would defeat the purpose</span>
+<span class="sd">        of banded storage.  Instead, the Fisher is approximated by the</span>
+<span class="sd">        Hessian of the banded negative log-likelihood at the MAP</span>
+<span class="sd">        (Fisher ≈ observed information at the MLE).</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
@@ -1709,6 +2339,20 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="n">theta_map</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">theta_map</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
 
+        <span class="c1"># Banded path: approximate Fisher via Hessian of banded log-likelihood</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">matrix_solver</span> <span class="o">==</span> <span class="s2">&quot;cholesky_banded&quot;</span><span class="p">:</span>
+            <span class="n">neg_log_lik</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_neg_log_lik</span><span class="p">()</span>
+            <span class="n">H</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">hessian</span><span class="p">(</span><span class="n">neg_log_lik</span><span class="p">)(</span><span class="n">theta_map</span><span class="p">)</span>
+
+            <span class="n">eigvals</span><span class="p">,</span> <span class="n">eigvecs</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigh</span><span class="p">(</span><span class="n">H</span><span class="p">)</span>
+            <span class="n">eigvals</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">eigvals</span><span class="p">,</span> <span class="mf">1e-6</span><span class="p">)</span>
+            <span class="n">fisher_reg</span> <span class="o">=</span> <span class="n">eigvecs</span> <span class="o">@</span> <span class="n">jnp</span><span class="o">.</span><span class="n">diag</span><span class="p">(</span><span class="n">eigvals</span><span class="p">)</span> <span class="o">@</span> <span class="n">eigvecs</span><span class="o">.</span><span class="n">T</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">inverse_mass_matrix</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">fisher_reg</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_fisher_matrix</span> <span class="o">=</span> <span class="n">H</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">inverse_mass_matrix</span>
+
+        <span class="c1"># Dense path: exact Fisher via kernel Jacobian</span>
         <span class="n">N</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">N</span>
         <span class="n">n_params</span> <span class="o">=</span> <span class="n">theta_map</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lag_flat</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -1718,8 +2362,11 @@
         <span class="n">fit_sn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fit_sigma_n</span>
         <span class="n">qn</span><span class="p">,</span> <span class="n">qw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quad_nodes</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quad_weights</span>
 
+        <span class="n">to_phys</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_to_physical</span>
+
         <span class="k">def</span><span class="w"> </span><span class="nf">K_noise_flat_from_theta</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">):</span>
 <span class="w">            </span><span class="sd">&quot;&quot;&quot;Return the full K_noise matrix as a flat vector.&quot;&quot;&quot;</span>
+            <span class="n">theta_arr</span> <span class="o">=</span> <span class="n">to_phys</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">)</span>
             <span class="n">n_kernel</span> <span class="o">=</span> <span class="mi">6</span>
             <span class="k">if</span> <span class="n">fit_sn</span><span class="p">:</span>
                 <span class="n">theta_kernel</span> <span class="o">=</span> <span class="n">theta_arr</span><span class="p">[:</span><span class="n">n_kernel</span><span class="p">]</span>
@@ -1788,17 +2435,7 @@
         <span class="k">else</span><span class="p">:</span>
             <span class="n">theta_map</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">theta_map</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
 
-        <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">yerr</span>
-        <span class="n">mean_val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mean_val</span>
-        <span class="n">n_h</span><span class="p">,</span> <span class="n">n_l</span><span class="p">,</span> <span class="n">lr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_harmonics</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_lat</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">lat_range</span>
-        <span class="n">fit_sn</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fit_sigma_n</span>
-        <span class="n">qn</span><span class="p">,</span> <span class="n">qw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quad_nodes</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_quad_weights</span>
-
-        <span class="nd">@jax</span><span class="o">.</span><span class="n">jit</span>
-        <span class="k">def</span><span class="w"> </span><span class="nf">neg_log_lik</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">):</span>
-            <span class="k">return</span> <span class="o">-</span><span class="n">_gp_log_likelihood</span><span class="p">(</span><span class="n">theta_arr</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span><span class="p">,</span> <span class="n">mean_val</span><span class="p">,</span>
-                                       <span class="n">n_h</span><span class="p">,</span> <span class="n">n_l</span><span class="p">,</span> <span class="n">lr</span><span class="p">,</span> <span class="n">fit_sn</span><span class="p">,</span>
-                                       <span class="n">quad_nodes</span><span class="o">=</span><span class="n">qn</span><span class="p">,</span> <span class="n">quad_weights</span><span class="o">=</span><span class="n">qw</span><span class="p">)</span>
+        <span class="n">neg_log_lik</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_neg_log_lik</span><span class="p">()</span>
 
         <span class="n">H</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">hessian</span><span class="p">(</span><span class="n">neg_log_lik</span><span class="p">)(</span><span class="n">theta_map</span><span class="p">)</span>
 
@@ -1895,8 +2532,8 @@
     </aside>
   </div>
 </div><script src="../../_static/documentation_options.js?v=01f34227"></script>
-    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
-    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
     <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
     <script src="../../_static/notebook_download.js?v=2428894a"></script>

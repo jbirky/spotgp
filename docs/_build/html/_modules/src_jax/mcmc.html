@@ -4,7 +4,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html">
 
-    <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
+    <!-- Generated with Sphinx 8.2.3 and Furo 2025.12.19 -->
         <title>src_jax.mcmc - spotgp</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
@@ -284,6 +284,11 @@
         <span class="c1"># Storage for MCMC results</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">samples</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_info</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_state</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_adapted_step_size</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_adapted_inv_mass</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_rng_key</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_checkpoint_file</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">param_keys</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -569,17 +574,27 @@
 <a class="viewcode-back" href="../../api/src_jax.html#src_jax.mcmc.BlackJAXSampler.run_nuts">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">run_nuts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_samples</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">n_warmup</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">theta_init</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                  <span class="n">mass_matrix_method</span><span class="o">=</span><span class="s2">&quot;hessian_map&quot;</span><span class="p">,</span> <span class="n">step_size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                 <span class="n">rng_key</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">target_accept</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">progress_bar</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+                 <span class="n">rng_key</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">target_accept</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">progress_bar</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                 <span class="n">n_chains</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">checkpoint_file</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Run BlackJAX NUTS sampler.</span>
 
-<span class="sd">        Uses a manual warmup loop with dual averaging for step-size</span>
-<span class="sd">        adaptation, then a JIT-compiled sampling loop via lax.scan.</span>
+<span class="sd">        Uses ``blackjax.window_adaptation`` for JIT-compiled warmup</span>
+<span class="sd">        (step-size and mass-matrix adaptation), then ``jax.lax.scan``</span>
+<span class="sd">        for the sampling loop.  Both paths avoid Python-level loops,</span>
+<span class="sd">        minimizing retracing overhead and memory from accumulated</span>
+<span class="sd">        intermediates.</span>
+
+<span class="sd">        Warmup always runs a single chain to adapt the step size and</span>
+<span class="sd">        mass matrix.  When ``n_chains &gt; 1``, the adapted parameters</span>
+<span class="sd">        are shared across all chains, which are initialized with</span>
+<span class="sd">        jittered copies of the warmup endpoint and sampled in parallel</span>
+<span class="sd">        via ``jax.vmap``.</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        n_samples : int</span>
-<span class="sd">            Number of post-warmup samples (default 1000).</span>
+<span class="sd">            Number of post-warmup samples per chain (default 1000).</span>
 <span class="sd">        n_warmup : int</span>
 <span class="sd">            Number of warmup steps for step-size adaptation (default 500).</span>
 <span class="sd">        theta_init : dict or array_like, optional</span>
@@ -587,22 +602,32 @@
 <span class="sd">        mass_matrix_method : {&quot;hessian_map&quot;, &quot;fisher&quot;, &quot;laplace&quot;, &quot;diagonal&quot;, None}</span>
 <span class="sd">            Method to estimate the mass matrix (delegated to GPSolver).</span>
 <span class="sd">        step_size : float, optional</span>
-<span class="sd">            NUTS step size. If None, adapted via dual averaging.</span>
+<span class="sd">            Initial NUTS step size before adaptation. If None, a</span>
+<span class="sd">            heuristic based on the mass matrix scale is used.</span>
 <span class="sd">        rng_key : jax.random.PRNGKey, optional</span>
 <span class="sd">            Random key. Default: PRNGKey(0).</span>
 <span class="sd">        target_accept : float</span>
 <span class="sd">            Target acceptance rate for dual averaging (default 0.8).</span>
 <span class="sd">        progress_bar : bool</span>
-<span class="sd">            If True, display tqdm progress bars for warmup and sampling</span>
-<span class="sd">            (default False). When enabled, sampling falls back to a</span>
-<span class="sd">            Python loop instead of lax.scan.</span>
+<span class="sd">            If True, print periodic progress updates during the</span>
+<span class="sd">            lax.scan sampling loop (default False).</span>
+<span class="sd">        n_chains : int</span>
+<span class="sd">            Number of independent chains to run in parallel via</span>
+<span class="sd">            ``jax.vmap`` (default 1).  All chains share the same</span>
+<span class="sd">            adapted step size and mass matrix from a single warmup.</span>
+<span class="sd">        checkpoint_file : str, optional</span>
+<span class="sd">            Default file path for ``save_checkpoint``.  When set,</span>
+<span class="sd">            calling ``save_checkpoint()`` with no arguments will</span>
+<span class="sd">            use this path.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
-<span class="sd">        samples : jnp.ndarray, shape (n_samples, n_params)</span>
-<span class="sd">            Posterior samples.</span>
+<span class="sd">        samples : jnp.ndarray</span>
+<span class="sd">            Shape ``(n_samples, n_params)`` when ``n_chains=1``, or</span>
+<span class="sd">            ``(n_chains, n_samples, n_params)`` when ``n_chains &gt; 1``.</span>
 <span class="sd">        info : dict</span>
-<span class="sd">            Sampling diagnostics.</span>
+<span class="sd">            Sampling diagnostics (arrays have a leading chain</span>
+<span class="sd">            dimension when ``n_chains &gt; 1``).</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">blackjax</span>
 
@@ -638,126 +663,447 @@
             <span class="n">step_size</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">inv_mass_diag</span><span class="p">)))</span>
             <span class="n">step_size</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">step_size</span><span class="p">,</span> <span class="mf">1e-5</span><span class="p">)</span>
 
-        <span class="c1"># -- Warmup: dual averaging for step size --------------------</span>
-        <span class="k">if</span> <span class="n">progress_bar</span><span class="p">:</span>
-            <span class="kn">from</span><span class="w"> </span><span class="nn">tqdm.auto</span><span class="w"> </span><span class="kn">import</span> <span class="n">tqdm</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_n_chains</span> <span class="o">=</span> <span class="n">n_chains</span>
+        <span class="k">if</span> <span class="n">checkpoint_file</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_checkpoint_file</span> <span class="o">=</span> <span class="n">checkpoint_file</span>
 
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Warmup: </span><span class="si">{</span><span class="n">n_warmup</span><span class="si">}</span><span class="s2"> steps (dual averaging, &quot;</span>
+        <span class="c1"># -- Warmup (single chain) -----------------------------------</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Warmup: </span><span class="si">{</span><span class="n">n_warmup</span><span class="si">}</span><span class="s2"> steps (window adaptation, &quot;</span>
               <span class="sa">f</span><span class="s2">&quot;init step_size=</span><span class="si">{</span><span class="n">step_size</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">)...&quot;</span><span class="p">)</span>
-        <span class="n">log_step</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">step_size</span><span class="p">)</span>
-        <span class="n">log_step_bar</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">step_size</span><span class="p">)</span>
-        <span class="n">mu</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mf">10.0</span> <span class="o">*</span> <span class="n">step_size</span><span class="p">)</span>
-        <span class="n">gamma</span> <span class="o">=</span> <span class="mf">0.05</span>
-        <span class="n">t0</span> <span class="o">=</span> <span class="mi">10</span>
-        <span class="n">kappa</span> <span class="o">=</span> <span class="mf">0.75</span>
-        <span class="n">H_bar</span> <span class="o">=</span> <span class="mf">0.0</span>
-
-        <span class="n">state</span> <span class="o">=</span> <span class="n">blackjax</span><span class="o">.</span><span class="n">nuts</span><span class="p">(</span>
-            <span class="n">gp</span><span class="o">.</span><span class="n">log_posterior</span><span class="p">,</span>
-            <span class="n">step_size</span><span class="o">=</span><span class="n">step_size</span><span class="p">,</span>
-            <span class="n">inverse_mass_matrix</span><span class="o">=</span><span class="n">inv_mass_diag</span><span class="p">,</span>
-        <span class="p">)</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">theta_init</span><span class="p">)</span>
 
         <span class="n">warmup_key</span><span class="p">,</span> <span class="n">sample_key</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">rng_key</span><span class="p">)</span>
 
-        <span class="n">warmup_iter</span> <span class="o">=</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n_warmup</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">progress_bar</span><span class="p">:</span>
-            <span class="n">warmup_iter</span> <span class="o">=</span> <span class="n">tqdm</span><span class="p">(</span><span class="n">warmup_iter</span><span class="p">,</span> <span class="n">desc</span><span class="o">=</span><span class="s2">&quot;Warmup&quot;</span><span class="p">,</span> <span class="n">leave</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-
-        <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">warmup_iter</span><span class="p">:</span>
-            <span class="n">warmup_key</span><span class="p">,</span> <span class="n">step_key</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">warmup_key</span><span class="p">)</span>
-            <span class="n">current_step</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">log_step</span><span class="p">)),</span> <span class="mf">1e-10</span><span class="p">)</span>
-
-            <span class="n">kernel</span> <span class="o">=</span> <span class="n">blackjax</span><span class="o">.</span><span class="n">nuts</span><span class="p">(</span>
-                <span class="n">gp</span><span class="o">.</span><span class="n">log_posterior</span><span class="p">,</span>
-                <span class="n">step_size</span><span class="o">=</span><span class="n">current_step</span><span class="p">,</span>
-                <span class="n">inverse_mass_matrix</span><span class="o">=</span><span class="n">inv_mass_diag</span><span class="p">,</span>
-            <span class="p">)</span>
-            <span class="n">state</span><span class="p">,</span> <span class="n">step_info</span> <span class="o">=</span> <span class="n">kernel</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">step_key</span><span class="p">,</span> <span class="n">state</span><span class="p">)</span>
-
-            <span class="n">accept</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">step_info</span><span class="o">.</span><span class="n">acceptance_rate</span><span class="p">)</span>
-            <span class="c1"># Dual averaging update (Hoffman &amp; Gelman 2014, Algorithm 5)</span>
-            <span class="n">w</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">m</span> <span class="o">+</span> <span class="n">t0</span><span class="p">)</span>
-            <span class="n">H_bar</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">w</span><span class="p">)</span> <span class="o">*</span> <span class="n">H_bar</span> <span class="o">+</span> <span class="n">w</span> <span class="o">*</span> <span class="p">(</span><span class="n">target_accept</span> <span class="o">-</span> <span class="n">accept</span><span class="p">)</span>
-            <span class="n">log_step</span> <span class="o">=</span> <span class="n">mu</span> <span class="o">-</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">m</span><span class="p">)</span> <span class="o">/</span> <span class="n">gamma</span> <span class="o">*</span> <span class="n">H_bar</span>
-            <span class="n">m_w</span> <span class="o">=</span> <span class="n">m</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="n">kappa</span><span class="p">)</span>
-            <span class="n">log_step_bar</span> <span class="o">=</span> <span class="n">m_w</span> <span class="o">*</span> <span class="n">log_step</span> <span class="o">+</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">m_w</span><span class="p">)</span> <span class="o">*</span> <span class="n">log_step_bar</span>
-
-            <span class="k">if</span> <span class="n">progress_bar</span><span class="p">:</span>
-                <span class="n">warmup_iter</span><span class="o">.</span><span class="n">set_postfix</span><span class="p">(</span>
-                    <span class="n">step_size</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">current_step</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">accept</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">accept</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-        <span class="n">final_step_size</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">log_step_bar</span><span class="p">)),</span> <span class="mf">1e-8</span><span class="p">)</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Adapted step size: </span><span class="si">{</span><span class="n">final_step_size</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-        <span class="c1"># -- Sampling ------------------------------------------------</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Sampling </span><span class="si">{</span><span class="n">n_samples</span><span class="si">}</span><span class="s2"> post-warmup iterations...&quot;</span><span class="p">)</span>
-
-        <span class="n">nuts_kernel</span> <span class="o">=</span> <span class="n">blackjax</span><span class="o">.</span><span class="n">nuts</span><span class="p">(</span>
+        <span class="n">warmup</span> <span class="o">=</span> <span class="n">blackjax</span><span class="o">.</span><span class="n">window_adaptation</span><span class="p">(</span>
+            <span class="n">blackjax</span><span class="o">.</span><span class="n">nuts</span><span class="p">,</span>
             <span class="n">gp</span><span class="o">.</span><span class="n">log_posterior</span><span class="p">,</span>
-            <span class="n">step_size</span><span class="o">=</span><span class="n">final_step_size</span><span class="p">,</span>
-            <span class="n">inverse_mass_matrix</span><span class="o">=</span><span class="n">inv_mass_diag</span><span class="p">,</span>
+            <span class="n">is_mass_matrix_diagonal</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">initial_step_size</span><span class="o">=</span><span class="n">step_size</span><span class="p">,</span>
+            <span class="n">target_acceptance_rate</span><span class="o">=</span><span class="n">target_accept</span><span class="p">,</span>
+            <span class="n">progress_bar</span><span class="o">=</span><span class="n">progress_bar</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">adapt_results</span><span class="p">,</span> <span class="n">adapt_info</span> <span class="o">=</span> <span class="n">warmup</span><span class="o">.</span><span class="n">run</span><span class="p">(</span>
+            <span class="n">warmup_key</span><span class="p">,</span> <span class="n">theta_init</span><span class="p">,</span> <span class="n">num_steps</span><span class="o">=</span><span class="n">n_warmup</span><span class="p">,</span>
         <span class="p">)</span>
 
-        <span class="n">sample_keys</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">sample_key</span><span class="p">,</span> <span class="n">n_samples</span><span class="p">)</span>
+        <span class="n">adapted_step_size</span> <span class="o">=</span> <span class="n">adapt_results</span><span class="o">.</span><span class="n">parameters</span><span class="p">[</span><span class="s2">&quot;step_size&quot;</span><span class="p">]</span>
+        <span class="n">adapted_inv_mass</span> <span class="o">=</span> <span class="n">adapt_results</span><span class="o">.</span><span class="n">parameters</span><span class="p">[</span><span class="s2">&quot;inverse_mass_matrix&quot;</span><span class="p">]</span>
+        <span class="n">warmup_state</span> <span class="o">=</span> <span class="n">adapt_results</span><span class="o">.</span><span class="n">state</span>
 
-        <span class="k">if</span> <span class="n">progress_bar</span><span class="p">:</span>
-            <span class="n">all_positions</span> <span class="o">=</span> <span class="p">[]</span>
-            <span class="n">all_divergent</span> <span class="o">=</span> <span class="p">[]</span>
-            <span class="n">all_accept</span> <span class="o">=</span> <span class="p">[]</span>
-            <span class="n">all_num_steps</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  Adapted step size: </span><span class="si">{</span><span class="nb">float</span><span class="p">(</span><span class="n">adapted_step_size</span><span class="p">)</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
-            <span class="n">sample_iter</span> <span class="o">=</span> <span class="n">tqdm</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">n_samples</span><span class="p">),</span> <span class="n">desc</span><span class="o">=</span><span class="s2">&quot;Sampling&quot;</span><span class="p">,</span>
-                               <span class="n">leave</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">sample_iter</span><span class="p">:</span>
-                <span class="n">state</span><span class="p">,</span> <span class="n">step_info</span> <span class="o">=</span> <span class="n">nuts_kernel</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">sample_keys</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">state</span><span class="p">)</span>
-                <span class="n">all_positions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">position</span><span class="p">)</span>
-                <span class="n">all_divergent</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">step_info</span><span class="o">.</span><span class="n">is_divergent</span><span class="p">)</span>
-                <span class="n">all_accept</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">step_info</span><span class="o">.</span><span class="n">acceptance_rate</span><span class="p">)</span>
-                <span class="n">all_num_steps</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">step_info</span><span class="o">.</span><span class="n">num_integration_steps</span><span class="p">)</span>
+        <span class="c1"># Store adapted parameters and checkpoint between warmup and</span>
+        <span class="c1"># sampling so that warmup intermediates can be freed.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_adapted_step_size</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">adapted_step_size</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_adapted_inv_mass</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">adapted_inv_mass</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_state</span> <span class="o">=</span> <span class="n">warmup_state</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_rng_key</span> <span class="o">=</span> <span class="n">sample_key</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_info</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;step_size&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_adapted_step_size</span><span class="p">,</span>
+            <span class="s2">&quot;n_warmup&quot;</span><span class="p">:</span> <span class="n">n_warmup</span><span class="p">,</span>
+            <span class="s2">&quot;n_samples&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">&quot;n_chains&quot;</span><span class="p">:</span> <span class="n">n_chains</span><span class="p">,</span>
+            <span class="s2">&quot;n_divergent&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="p">}</span>
 
-                <span class="k">if</span> <span class="n">i</span> <span class="o">%</span> <span class="mi">10</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-                    <span class="n">sample_iter</span><span class="o">.</span><span class="n">set_postfix</span><span class="p">(</span>
-                        <span class="n">accept</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">float</span><span class="p">(</span><span class="n">step_info</span><span class="o">.</span><span class="n">acceptance_rate</span><span class="p">)</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
-                        <span class="n">div</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">all_divergent</span><span class="p">))))</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_checkpoint_file</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">save_checkpoint</span><span class="p">(</span><span class="n">append_samples</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  Warmup checkpoint saved; clearing warmup memory...&quot;</span><span class="p">)</span>
 
-            <span class="bp">self</span><span class="o">.</span><span class="n">samples</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">all_positions</span><span class="p">)</span>
+        <span class="k">del</span> <span class="n">adapt_results</span><span class="p">,</span> <span class="n">adapt_info</span><span class="p">,</span> <span class="n">warmup</span>
+        <span class="n">jax</span><span class="o">.</span><span class="n">clear_caches</span><span class="p">()</span>
+
+        <span class="c1"># -- Sampling via lax.scan -----------------------------------</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">_run_one_chain</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">chain_key</span><span class="p">):</span>
+<span class="w">            </span><span class="sd">&quot;&quot;&quot;Sample one chain via lax.scan.&quot;&quot;&quot;</span>
+            <span class="n">kernel</span> <span class="o">=</span> <span class="n">blackjax</span><span class="o">.</span><span class="n">nuts</span><span class="p">(</span>
+                <span class="n">gp</span><span class="o">.</span><span class="n">log_posterior</span><span class="p">,</span>
+                <span class="n">step_size</span><span class="o">=</span><span class="n">adapted_step_size</span><span class="p">,</span>
+                <span class="n">inverse_mass_matrix</span><span class="o">=</span><span class="n">adapted_inv_mass</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">chain_keys</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">chain_key</span><span class="p">,</span> <span class="n">n_samples</span><span class="p">)</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="nf">one_step</span><span class="p">(</span><span class="n">carry</span><span class="p">,</span> <span class="n">key_idx</span><span class="p">):</span>
+                <span class="n">st</span><span class="p">,</span> <span class="n">n_div</span> <span class="o">=</span> <span class="n">carry</span>
+                <span class="n">key</span><span class="p">,</span> <span class="n">_idx</span> <span class="o">=</span> <span class="n">key_idx</span>
+                <span class="n">st</span><span class="p">,</span> <span class="n">info</span> <span class="o">=</span> <span class="n">kernel</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">st</span><span class="p">)</span>
+                <span class="n">n_div</span> <span class="o">=</span> <span class="n">n_div</span> <span class="o">+</span> <span class="n">info</span><span class="o">.</span><span class="n">is_divergent</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+                <span class="k">return</span> <span class="p">(</span><span class="n">st</span><span class="p">,</span> <span class="n">n_div</span><span class="p">),</span> <span class="p">(</span><span class="n">st</span><span class="o">.</span><span class="n">position</span><span class="p">,</span> <span class="n">info</span><span class="p">)</span>
+
+            <span class="n">indices</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n_samples</span><span class="p">)</span>
+            <span class="p">(</span><span class="n">final_st</span><span class="p">,</span> <span class="n">total_div</span><span class="p">),</span> <span class="p">(</span><span class="n">positions</span><span class="p">,</span> <span class="n">infos</span><span class="p">)</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">lax</span><span class="o">.</span><span class="n">scan</span><span class="p">(</span>
+                <span class="n">one_step</span><span class="p">,</span> <span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">jnp</span><span class="o">.</span><span class="n">int32</span><span class="p">(</span><span class="mi">0</span><span class="p">)),</span> <span class="p">(</span><span class="n">chain_keys</span><span class="p">,</span> <span class="n">indices</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">final_st</span><span class="p">,</span> <span class="n">total_div</span><span class="p">,</span> <span class="n">positions</span><span class="p">,</span> <span class="n">infos</span><span class="p">,</span> <span class="n">chain_keys</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">n_chains</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Sampling </span><span class="si">{</span><span class="n">n_samples</span><span class="si">}</span><span class="s2"> iterations x </span><span class="si">{</span><span class="n">n_chains</span><span class="si">}</span><span class="s2"> chains...&quot;</span><span class="p">)</span>
+
+            <span class="c1"># Jitter the warmup endpoint to create independent starting</span>
+            <span class="c1"># positions for each chain</span>
+            <span class="n">jitter_key</span><span class="p">,</span> <span class="n">sample_key</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">sample_key</span><span class="p">)</span>
+            <span class="n">jitter_scale</span> <span class="o">=</span> <span class="mf">0.01</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">adapted_inv_mass</span><span class="p">)</span>
+            <span class="n">noise</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span>
+                <span class="n">jitter_key</span><span class="p">,</span> <span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">n_chains</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">theta_init</span><span class="p">)))</span>
+            <span class="n">init_positions</span> <span class="o">=</span> <span class="n">warmup_state</span><span class="o">.</span><span class="n">position</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span> \
+                <span class="o">+</span> <span class="n">jitter_scale</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span> <span class="o">*</span> <span class="n">noise</span>
+
+            <span class="c1"># Initialize NUTS states for each chain from jittered positions</span>
+            <span class="n">init_fn</span> <span class="o">=</span> <span class="n">blackjax</span><span class="o">.</span><span class="n">nuts</span><span class="p">(</span>
+                <span class="n">gp</span><span class="o">.</span><span class="n">log_posterior</span><span class="p">,</span>
+                <span class="n">step_size</span><span class="o">=</span><span class="n">adapted_step_size</span><span class="p">,</span>
+                <span class="n">inverse_mass_matrix</span><span class="o">=</span><span class="n">adapted_inv_mass</span><span class="p">,</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">init</span>
+            <span class="n">states</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">vmap</span><span class="p">(</span><span class="n">init_fn</span><span class="p">)(</span><span class="n">init_positions</span><span class="p">)</span>
+
+            <span class="n">sample_keys</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">sample_key</span><span class="p">,</span> <span class="n">n_chains</span><span class="p">)</span>
+
+            <span class="n">all_final</span><span class="p">,</span> <span class="n">all_div</span><span class="p">,</span> <span class="n">all_pos</span><span class="p">,</span> <span class="n">all_infos</span><span class="p">,</span> <span class="n">all_last_keys</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">vmap</span><span class="p">(</span>
+                <span class="n">_run_one_chain</span>
+            <span class="p">)(</span><span class="n">states</span><span class="p">,</span> <span class="n">sample_keys</span><span class="p">)</span>
+
+            <span class="c1"># Shape: (n_chains, n_samples, n_params)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">samples</span> <span class="o">=</span> <span class="n">all_pos</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_info</span> <span class="o">=</span> <span class="p">{</span>
-                <span class="s2">&quot;divergences&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">all_divergent</span><span class="p">),</span>
-                <span class="s2">&quot;acceptance_rate&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">all_accept</span><span class="p">),</span>
-                <span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">all_num_steps</span><span class="p">),</span>
-                <span class="s2">&quot;step_size&quot;</span><span class="p">:</span> <span class="n">final_step_size</span><span class="p">,</span>
+                <span class="s2">&quot;divergences&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">all_infos</span><span class="o">.</span><span class="n">is_divergent</span><span class="p">),</span>
+                <span class="s2">&quot;acceptance_rate&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">all_infos</span><span class="o">.</span><span class="n">acceptance_rate</span><span class="p">),</span>
+                <span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+                    <span class="n">all_infos</span><span class="o">.</span><span class="n">num_integration_steps</span><span class="p">),</span>
+                <span class="s2">&quot;step_size&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">adapted_step_size</span><span class="p">),</span>
                 <span class="s2">&quot;n_warmup&quot;</span><span class="p">:</span> <span class="n">n_warmup</span><span class="p">,</span>
                 <span class="s2">&quot;n_samples&quot;</span><span class="p">:</span> <span class="n">n_samples</span><span class="p">,</span>
-                <span class="s2">&quot;n_divergent&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">all_divergent</span><span class="p">))),</span>
+                <span class="s2">&quot;n_chains&quot;</span><span class="p">:</span> <span class="n">n_chains</span><span class="p">,</span>
+                <span class="s2">&quot;n_divergent&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">all_div</span><span class="p">)),</span>
             <span class="p">}</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_last_state</span> <span class="o">=</span> <span class="n">all_final</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_adapted_step_size</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">adapted_step_size</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_adapted_inv_mass</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">adapted_inv_mass</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_last_rng_key</span> <span class="o">=</span> <span class="n">all_last_keys</span>
+
+            <span class="n">total_div</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">all_div</span><span class="p">))</span>
+            <span class="n">mean_accept</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span>
+                <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_info</span><span class="p">[</span><span class="s2">&quot;acceptance_rate&quot;</span><span class="p">])))</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;NUTS complete: </span><span class="si">{</span><span class="n">n_chains</span><span class="si">}</span><span class="s2"> chains x </span><span class="si">{</span><span class="n">n_samples</span><span class="si">}</span><span class="s2"> samples, &quot;</span>
+                  <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">total_div</span><span class="si">}</span><span class="s2"> total divergences, &quot;</span>
+                  <span class="sa">f</span><span class="s2">&quot;mean acceptance rate = </span><span class="si">{</span><span class="n">mean_accept</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="c1"># JIT-compiled scan (faster, no progress bar)</span>
-            <span class="k">def</span><span class="w"> </span><span class="nf">one_step</span><span class="p">(</span><span class="n">carry</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
-                <span class="n">state</span> <span class="o">=</span> <span class="n">carry</span>
-                <span class="n">state</span><span class="p">,</span> <span class="n">info</span> <span class="o">=</span> <span class="n">nuts_kernel</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">state</span><span class="p">)</span>
-                <span class="k">return</span> <span class="n">state</span><span class="p">,</span> <span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">info</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Sampling </span><span class="si">{</span><span class="n">n_samples</span><span class="si">}</span><span class="s2"> post-warmup iterations...&quot;</span><span class="p">)</span>
 
-            <span class="n">final_state</span><span class="p">,</span> <span class="p">(</span><span class="n">states</span><span class="p">,</span> <span class="n">infos</span><span class="p">)</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">lax</span><span class="o">.</span><span class="n">scan</span><span class="p">(</span>
-                <span class="n">one_step</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="n">sample_keys</span>
-            <span class="p">)</span>
+            <span class="n">final_state</span><span class="p">,</span> <span class="n">total_div</span><span class="p">,</span> <span class="n">positions</span><span class="p">,</span> <span class="n">infos</span><span class="p">,</span> <span class="n">last_key</span> <span class="o">=</span> \
+                <span class="n">_run_one_chain</span><span class="p">(</span><span class="n">warmup_state</span><span class="p">,</span> <span class="n">sample_key</span><span class="p">)</span>
 
-            <span class="bp">self</span><span class="o">.</span><span class="n">samples</span> <span class="o">=</span> <span class="n">states</span><span class="o">.</span><span class="n">position</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">samples</span> <span class="o">=</span> <span class="n">positions</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_info</span> <span class="o">=</span> <span class="p">{</span>
                 <span class="s2">&quot;divergences&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">infos</span><span class="o">.</span><span class="n">is_divergent</span><span class="p">),</span>
                 <span class="s2">&quot;acceptance_rate&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">infos</span><span class="o">.</span><span class="n">acceptance_rate</span><span class="p">),</span>
                 <span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">infos</span><span class="o">.</span><span class="n">num_integration_steps</span><span class="p">),</span>
-                <span class="s2">&quot;step_size&quot;</span><span class="p">:</span> <span class="n">final_step_size</span><span class="p">,</span>
+                <span class="s2">&quot;step_size&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">adapted_step_size</span><span class="p">),</span>
                 <span class="s2">&quot;n_warmup&quot;</span><span class="p">:</span> <span class="n">n_warmup</span><span class="p">,</span>
                 <span class="s2">&quot;n_samples&quot;</span><span class="p">:</span> <span class="n">n_samples</span><span class="p">,</span>
-                <span class="s2">&quot;n_divergent&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">infos</span><span class="o">.</span><span class="n">is_divergent</span><span class="p">)),</span>
+                <span class="s2">&quot;n_chains&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s2">&quot;n_divergent&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">total_div</span><span class="p">),</span>
             <span class="p">}</span>
 
-        <span class="n">n_div</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_info</span><span class="p">[</span><span class="s2">&quot;n_divergent&quot;</span><span class="p">]</span>
-        <span class="n">mean_accept</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_info</span><span class="p">[</span><span class="s2">&quot;acceptance_rate&quot;</span><span class="p">]))</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;NUTS complete: </span><span class="si">{</span><span class="n">n_samples</span><span class="si">}</span><span class="s2"> samples, &quot;</span>
-              <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">n_div</span><span class="si">}</span><span class="s2"> divergences, &quot;</span>
-              <span class="sa">f</span><span class="s2">&quot;mean acceptance rate = </span><span class="si">{</span><span class="n">mean_accept</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_last_state</span> <span class="o">=</span> <span class="n">final_state</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_adapted_step_size</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">adapted_step_size</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_adapted_inv_mass</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">adapted_inv_mass</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_last_rng_key</span> <span class="o">=</span> <span class="n">last_key</span>
+
+            <span class="n">mean_accept</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_info</span><span class="p">[</span><span class="s2">&quot;acceptance_rate&quot;</span><span class="p">]))</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;NUTS complete: </span><span class="si">{</span><span class="n">n_samples</span><span class="si">}</span><span class="s2"> samples, &quot;</span>
+                  <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">int</span><span class="p">(</span><span class="n">total_div</span><span class="p">)</span><span class="si">}</span><span class="s2"> divergences, &quot;</span>
+                  <span class="sa">f</span><span class="s2">&quot;mean acceptance rate = </span><span class="si">{</span><span class="n">mean_accept</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">samples</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_info</span></div>
+
+
+<div class="viewcode-block" id="BlackJAXSampler.save_checkpoint">
+<a class="viewcode-back" href="../../api/src_jax.html#src_jax.mcmc.BlackJAXSampler.save_checkpoint">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save_checkpoint</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">append_samples</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Save sampler state to disk for later resumption.</span>
+
+<span class="sd">        When ``append_samples=True`` (the default), new samples are</span>
+<span class="sd">        appended to any existing samples already stored in ``path``,</span>
+<span class="sd">        and ``self.samples`` is cleared from memory.  This enables a</span>
+<span class="sd">        sample-checkpoint-clear loop that keeps memory usage constant.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        path : str, optional</span>
+<span class="sd">            File path (saved as ``.npz``).  If None, uses the</span>
+<span class="sd">            ``checkpoint_file`` set in ``run_nuts``.</span>
+<span class="sd">        append_samples : bool</span>
+<span class="sd">            If True, append current ``self.samples`` to any samples</span>
+<span class="sd">            already on disk, then clear ``self.samples`` from memory.</span>
+<span class="sd">            If False, overwrite with only the current in-memory samples.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_last_state</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;No sampler state to save. Run run_nuts first.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">path</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_checkpoint_file</span>
+        <span class="k">if</span> <span class="n">path</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;No path provided and no checkpoint_file set. &quot;</span>
+                <span class="s2">&quot;Pass a path or set checkpoint_file in run_nuts.&quot;</span><span class="p">)</span>
+
+        <span class="n">samples_to_save</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">samples</span><span class="p">)</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">samples</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+
+        <span class="c1"># Merge with samples already on disk</span>
+        <span class="k">if</span> <span class="n">append_samples</span> <span class="ow">and</span> <span class="n">samples_to_save</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+            <span class="n">_path</span> <span class="o">=</span> <span class="n">path</span> <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;.npz&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="n">path</span> <span class="o">+</span> <span class="s2">&quot;.npz&quot;</span>
+            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">_path</span><span class="p">):</span>
+                <span class="n">existing</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">_path</span><span class="p">)</span>
+                <span class="k">if</span> <span class="s2">&quot;samples&quot;</span> <span class="ow">in</span> <span class="n">existing</span> <span class="ow">and</span> <span class="n">existing</span><span class="p">[</span><span class="s2">&quot;samples&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">samples_to_save</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span>
+                        <span class="p">[</span><span class="n">existing</span><span class="p">[</span><span class="s2">&quot;samples&quot;</span><span class="p">],</span> <span class="n">samples_to_save</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+                <span class="n">existing</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+        <span class="n">save_kwargs</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="c1"># NUTS state (shape has leading chain dim when n_chains &gt; 1)</span>
+            <span class="s2">&quot;position&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_last_state</span><span class="o">.</span><span class="n">position</span><span class="p">),</span>
+            <span class="s2">&quot;logdensity&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_last_state</span><span class="o">.</span><span class="n">logdensity</span><span class="p">),</span>
+            <span class="s2">&quot;logdensity_grad&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_last_state</span><span class="o">.</span><span class="n">logdensity_grad</span><span class="p">),</span>
+            <span class="c1"># Adapted kernel parameters</span>
+            <span class="s2">&quot;step_size&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_adapted_step_size</span><span class="p">),</span>
+            <span class="s2">&quot;inverse_mass_matrix&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_adapted_inv_mass</span><span class="p">),</span>
+            <span class="s2">&quot;rng_key&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_last_rng_key</span><span class="p">),</span>
+            <span class="c1"># Diagnostics (scalars)</span>
+            <span class="s2">&quot;n_warmup&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_info</span><span class="p">[</span><span class="s2">&quot;n_warmup&quot;</span><span class="p">]),</span>
+            <span class="s2">&quot;n_chains&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_n_chains&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)),</span>
+        <span class="p">}</span>
+
+        <span class="k">if</span> <span class="n">samples_to_save</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">save_kwargs</span><span class="p">[</span><span class="s2">&quot;samples&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">samples_to_save</span>
+            <span class="n">n_on_disk</span> <span class="o">=</span> <span class="n">samples_to_save</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">save_kwargs</span><span class="p">[</span><span class="s2">&quot;samples&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([])</span>
+            <span class="n">n_on_disk</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="n">np</span><span class="o">.</span><span class="n">savez</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="o">**</span><span class="n">save_kwargs</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">append_samples</span><span class="p">:</span>
+            <span class="c1"># Free in-memory samples and per-sample diagnostics</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">samples</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_info</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;step_size&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_info</span><span class="p">[</span><span class="s2">&quot;step_size&quot;</span><span class="p">],</span>
+                <span class="s2">&quot;n_warmup&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_info</span><span class="p">[</span><span class="s2">&quot;n_warmup&quot;</span><span class="p">],</span>
+                <span class="s2">&quot;n_samples&quot;</span><span class="p">:</span> <span class="n">n_on_disk</span><span class="p">,</span>
+                <span class="s2">&quot;n_divergent&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;n_divergent&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+            <span class="p">}</span>
+
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Checkpoint saved to </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">n_on_disk</span><span class="si">}</span><span class="s2"> samples on disk)&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BlackJAXSampler.load_checkpoint">
+<a class="viewcode-back" href="../../api/src_jax.html#src_jax.mcmc.BlackJAXSampler.load_checkpoint">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_checkpoint</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Restore sampler state from a checkpoint file.</span>
+
+<span class="sd">        Loads only the NUTS state and adapted kernel parameters needed</span>
+<span class="sd">        to resume sampling.  Samples stored in the file are **not**</span>
+<span class="sd">        loaded into memory — use ``load_samples`` to read them later.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        path : str</span>
+<span class="sd">            Path to a ``.npz`` checkpoint file.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">blackjax</span>
+
+        <span class="n">data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+
+        <span class="c1"># Reconstruct NUTS state (works for both single and multi-chain:</span>
+        <span class="c1"># arrays have a leading chain dimension when n_chains &gt; 1)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_state</span> <span class="o">=</span> <span class="n">blackjax</span><span class="o">.</span><span class="n">mcmc</span><span class="o">.</span><span class="n">hmc</span><span class="o">.</span><span class="n">HMCState</span><span class="p">(</span>
+            <span class="n">position</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;position&quot;</span><span class="p">]),</span>
+            <span class="n">logdensity</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;logdensity&quot;</span><span class="p">]),</span>
+            <span class="n">logdensity_grad</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;logdensity_grad&quot;</span><span class="p">]),</span>
+        <span class="p">)</span>
+
+        <span class="n">n_chains</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;n_chains&quot;</span><span class="p">])</span> <span class="k">if</span> <span class="s2">&quot;n_chains&quot;</span> <span class="ow">in</span> <span class="n">data</span> <span class="k">else</span> <span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_n_chains</span> <span class="o">=</span> <span class="n">n_chains</span>
+
+        <span class="k">if</span> <span class="n">n_chains</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_adapted_step_size</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;step_size&quot;</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_adapted_step_size</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;step_size&quot;</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_adapted_inv_mass</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;inverse_mass_matrix&quot;</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_last_rng_key</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;rng_key&quot;</span><span class="p">])</span>
+
+        <span class="n">n_on_disk</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;samples&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;samples&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="mi">0</span>
+        <span class="n">n_warmup</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;n_warmup&quot;</span><span class="p">])</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+        <span class="c1"># Don&#39;t load samples into memory — keep it lightweight</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">samples</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_info</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;step_size&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_adapted_step_size</span><span class="p">,</span>
+            <span class="s2">&quot;n_warmup&quot;</span><span class="p">:</span> <span class="n">n_warmup</span><span class="p">,</span>
+            <span class="s2">&quot;n_samples&quot;</span><span class="p">:</span> <span class="n">n_on_disk</span><span class="p">,</span>
+            <span class="s2">&quot;n_chains&quot;</span><span class="p">:</span> <span class="n">n_chains</span><span class="p">,</span>
+            <span class="s2">&quot;n_divergent&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Checkpoint loaded from </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2"> &quot;</span>
+              <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="n">n_on_disk</span><span class="si">}</span><span class="s2"> samples on disk, </span><span class="si">{</span><span class="n">n_chains</span><span class="si">}</span><span class="s2"> chain(s), &quot;</span>
+              <span class="sa">f</span><span class="s2">&quot;not loaded into memory)&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BlackJAXSampler.load_samples">
+<a class="viewcode-back" href="../../api/src_jax.html#src_jax.mcmc.BlackJAXSampler.load_samples">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_samples</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Read all samples from a checkpoint file without loading</span>
+<span class="sd">        the sampler state.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        path : str</span>
+<span class="sd">            Path to a ``.npz`` checkpoint file.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        samples : np.ndarray, shape (n_total, n_params)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="n">samples</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;samples&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">samples</span></div>
+
+
+<div class="viewcode-block" id="BlackJAXSampler.resume_nuts">
+<a class="viewcode-back" href="../../api/src_jax.html#src_jax.mcmc.BlackJAXSampler.resume_nuts">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">resume_nuts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_samples</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">rng_key</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">progress_bar</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Continue NUTS sampling from a previous run or loaded checkpoint.</span>
+
+<span class="sd">        Skips warmup entirely and uses the previously adapted step size</span>
+<span class="sd">        and mass matrix (shared across all chains).  Returns only the</span>
+<span class="sd">        new batch of samples.  Call ``save_checkpoint`` afterward to</span>
+<span class="sd">        append the batch to disk and free memory.</span>
+
+<span class="sd">        Automatically resumes with the same number of chains used in</span>
+<span class="sd">        the original ``run_nuts`` call.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        n_samples : int</span>
+<span class="sd">            Number of additional samples per chain (default 1000).</span>
+<span class="sd">        rng_key : jax.random.PRNGKey, optional</span>
+<span class="sd">            Random key.  If None, advances from the last key used.</span>
+<span class="sd">        progress_bar : bool</span>
+<span class="sd">            If True, print periodic progress updates (default False).</span>
+<span class="sd">            Only supported for single-chain runs.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        samples : jnp.ndarray</span>
+<span class="sd">            Shape ``(n_samples, n_params)`` for single chain, or</span>
+<span class="sd">            ``(n_chains, n_samples, n_params)`` for multiple chains.</span>
+<span class="sd">        info : dict</span>
+<span class="sd">            Diagnostics for this batch.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">blackjax</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_last_state</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;No previous state. Run run_nuts or load_checkpoint first.&quot;</span><span class="p">)</span>
+
+        <span class="n">n_chains</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_n_chains&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">gp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gp</span>
+        <span class="n">step_size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_adapted_step_size</span>
+        <span class="n">inv_mass</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_adapted_inv_mass</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_run_one_chain</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">chain_key</span><span class="p">):</span>
+            <span class="n">kernel</span> <span class="o">=</span> <span class="n">blackjax</span><span class="o">.</span><span class="n">nuts</span><span class="p">(</span>
+                <span class="n">gp</span><span class="o">.</span><span class="n">log_posterior</span><span class="p">,</span>
+                <span class="n">step_size</span><span class="o">=</span><span class="n">step_size</span><span class="p">,</span>
+                <span class="n">inverse_mass_matrix</span><span class="o">=</span><span class="n">inv_mass</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">chain_keys</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">chain_key</span><span class="p">,</span> <span class="n">n_samples</span><span class="p">)</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="nf">one_step</span><span class="p">(</span><span class="n">carry</span><span class="p">,</span> <span class="n">key_idx</span><span class="p">):</span>
+                <span class="n">st</span><span class="p">,</span> <span class="n">n_div</span> <span class="o">=</span> <span class="n">carry</span>
+                <span class="n">key</span><span class="p">,</span> <span class="n">_idx</span> <span class="o">=</span> <span class="n">key_idx</span>
+                <span class="n">st</span><span class="p">,</span> <span class="n">info</span> <span class="o">=</span> <span class="n">kernel</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">st</span><span class="p">)</span>
+                <span class="n">n_div</span> <span class="o">=</span> <span class="n">n_div</span> <span class="o">+</span> <span class="n">info</span><span class="o">.</span><span class="n">is_divergent</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+                <span class="k">return</span> <span class="p">(</span><span class="n">st</span><span class="p">,</span> <span class="n">n_div</span><span class="p">),</span> <span class="p">(</span><span class="n">st</span><span class="o">.</span><span class="n">position</span><span class="p">,</span> <span class="n">info</span><span class="p">)</span>
+
+            <span class="n">indices</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">n_samples</span><span class="p">)</span>
+            <span class="p">(</span><span class="n">final_st</span><span class="p">,</span> <span class="n">total_div</span><span class="p">),</span> <span class="p">(</span><span class="n">positions</span><span class="p">,</span> <span class="n">infos</span><span class="p">)</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">lax</span><span class="o">.</span><span class="n">scan</span><span class="p">(</span>
+                <span class="n">one_step</span><span class="p">,</span> <span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">jnp</span><span class="o">.</span><span class="n">int32</span><span class="p">(</span><span class="mi">0</span><span class="p">)),</span> <span class="p">(</span><span class="n">chain_keys</span><span class="p">,</span> <span class="n">indices</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">final_st</span><span class="p">,</span> <span class="n">total_div</span><span class="p">,</span> <span class="n">positions</span><span class="p">,</span> <span class="n">infos</span><span class="p">,</span> <span class="n">chain_keys</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">n_chains</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">states</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_last_state</span>
+
+            <span class="k">if</span> <span class="n">rng_key</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">rng_key</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">fold_in</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_last_rng_key</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">chain_keys</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">rng_key</span><span class="p">,</span> <span class="n">n_chains</span><span class="p">)</span>
+
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Resuming: </span><span class="si">{</span><span class="n">n_chains</span><span class="si">}</span><span class="s2"> chains x </span><span class="si">{</span><span class="n">n_samples</span><span class="si">}</span><span class="s2"> samples...&quot;</span><span class="p">)</span>
+
+            <span class="n">all_final</span><span class="p">,</span> <span class="n">all_div</span><span class="p">,</span> <span class="n">all_pos</span><span class="p">,</span> <span class="n">all_infos</span><span class="p">,</span> <span class="n">all_last_keys</span> <span class="o">=</span> \
+                <span class="n">jax</span><span class="o">.</span><span class="n">vmap</span><span class="p">(</span><span class="n">_run_one_chain</span><span class="p">)(</span><span class="n">states</span><span class="p">,</span> <span class="n">chain_keys</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">samples</span> <span class="o">=</span> <span class="n">all_pos</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_info</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;divergences&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">all_infos</span><span class="o">.</span><span class="n">is_divergent</span><span class="p">),</span>
+                <span class="s2">&quot;acceptance_rate&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">all_infos</span><span class="o">.</span><span class="n">acceptance_rate</span><span class="p">),</span>
+                <span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+                    <span class="n">all_infos</span><span class="o">.</span><span class="n">num_integration_steps</span><span class="p">),</span>
+                <span class="s2">&quot;step_size&quot;</span><span class="p">:</span> <span class="n">step_size</span><span class="p">,</span>
+                <span class="s2">&quot;n_warmup&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;n_warmup&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+                <span class="s2">&quot;n_samples&quot;</span><span class="p">:</span> <span class="n">n_samples</span><span class="p">,</span>
+                <span class="s2">&quot;n_chains&quot;</span><span class="p">:</span> <span class="n">n_chains</span><span class="p">,</span>
+                <span class="s2">&quot;n_divergent&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">all_div</span><span class="p">)),</span>
+            <span class="p">}</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_last_state</span> <span class="o">=</span> <span class="n">all_final</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_last_rng_key</span> <span class="o">=</span> <span class="n">all_last_keys</span>
+
+            <span class="n">total_div</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">all_div</span><span class="p">))</span>
+            <span class="n">mean_accept</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span>
+                <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_info</span><span class="p">[</span><span class="s2">&quot;acceptance_rate&quot;</span><span class="p">])))</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Resume complete: </span><span class="si">{</span><span class="n">n_chains</span><span class="si">}</span><span class="s2"> chains x </span><span class="si">{</span><span class="n">n_samples</span><span class="si">}</span><span class="s2"> &quot;</span>
+                  <span class="sa">f</span><span class="s2">&quot;new samples, </span><span class="si">{</span><span class="n">total_div</span><span class="si">}</span><span class="s2"> divergences, &quot;</span>
+                  <span class="sa">f</span><span class="s2">&quot;mean acceptance rate = </span><span class="si">{</span><span class="n">mean_accept</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_last_state</span>
+
+            <span class="k">if</span> <span class="n">rng_key</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">rng_key</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_last_rng_key</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Resuming: </span><span class="si">{</span><span class="n">n_samples</span><span class="si">}</span><span class="s2"> additional samples &quot;</span>
+                  <span class="sa">f</span><span class="s2">&quot;(step_size=</span><span class="si">{</span><span class="n">step_size</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">)...&quot;</span><span class="p">)</span>
+
+            <span class="n">final_state</span><span class="p">,</span> <span class="n">new_div</span><span class="p">,</span> <span class="n">new_positions</span><span class="p">,</span> <span class="n">new_infos</span><span class="p">,</span> <span class="n">last_key</span> <span class="o">=</span> \
+                <span class="n">_run_one_chain</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">rng_key</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">samples</span> <span class="o">=</span> <span class="n">new_positions</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_info</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;step_size&quot;</span><span class="p">:</span> <span class="n">step_size</span><span class="p">,</span>
+                <span class="s2">&quot;n_warmup&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;n_warmup&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+                <span class="s2">&quot;n_samples&quot;</span><span class="p">:</span> <span class="n">n_samples</span><span class="p">,</span>
+                <span class="s2">&quot;n_chains&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="s2">&quot;n_divergent&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">new_div</span><span class="p">),</span>
+                <span class="s2">&quot;divergences&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">new_infos</span><span class="o">.</span><span class="n">is_divergent</span><span class="p">),</span>
+                <span class="s2">&quot;acceptance_rate&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">new_infos</span><span class="o">.</span><span class="n">acceptance_rate</span><span class="p">),</span>
+                <span class="s2">&quot;num_steps&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">new_infos</span><span class="o">.</span><span class="n">num_integration_steps</span><span class="p">),</span>
+            <span class="p">}</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_last_state</span> <span class="o">=</span> <span class="n">final_state</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_last_rng_key</span> <span class="o">=</span> <span class="n">last_key</span>
+
+            <span class="n">mean_accept</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_info</span><span class="p">[</span><span class="s2">&quot;acceptance_rate&quot;</span><span class="p">]))</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Resume complete: </span><span class="si">{</span><span class="n">n_samples</span><span class="si">}</span><span class="s2"> new samples, &quot;</span>
+                  <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">int</span><span class="p">(</span><span class="n">new_div</span><span class="p">)</span><span class="si">}</span><span class="s2"> divergences, &quot;</span>
+                  <span class="sa">f</span><span class="s2">&quot;mean acceptance rate = </span><span class="si">{</span><span class="n">mean_accept</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">samples</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_info</span></div>
 </div>
@@ -795,8 +1141,8 @@
     </aside>
   </div>
 </div><script src="../../_static/documentation_options.js?v=01f34227"></script>
-    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
-    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
     <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
     <script src="../../_static/notebook_download.js?v=2428894a"></script>
