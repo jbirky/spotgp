@@ -1933,6 +1933,43 @@ class GPSolver:
         return best_theta, best_result
 
     # =================================================================
+    # Mass matrix helpers
+    # =================================================================
+
+    def _build_neg_log_lik(self):
+        """Return a JIT-compiled negative log-likelihood function.
+
+        Respects ``self.matrix_solver``: when ``"cholesky_banded"`` the
+        returned function uses ``_gp_log_likelihood_banded`` (O(Nb) memory),
+        otherwise it falls back to the dense ``_gp_log_likelihood`` (O(N^2)).
+        """
+        x, y, yerr = self.x, self.y, self.yerr
+        mean_val = self.mean_val
+        n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
+        fit_sn = self.fit_sigma_n
+        qn, qw = self._quad_nodes, self._quad_weights
+        to_phys = self._to_physical
+
+        if self.matrix_solver == "cholesky_banded":
+            b = self.bandwidth
+
+            @jax.jit
+            def neg_log_lik(theta_arr):
+                return -_gp_log_likelihood_banded(
+                    to_phys(theta_arr), x, y, yerr, mean_val,
+                    n_h, n_l, lr, fit_sn, b,
+                    quad_nodes=qn, quad_weights=qw)
+        else:
+            @jax.jit
+            def neg_log_lik(theta_arr):
+                return -_gp_log_likelihood(
+                    to_phys(theta_arr), x, y, yerr, mean_val,
+                    n_h, n_l, lr, fit_sn,
+                    quad_nodes=qn, quad_weights=qw)
+
+        return neg_log_lik
+
+    # =================================================================
     # Mass matrix estimation: Method 1 -- Hessian at MAP
     # =================================================================
 
@@ -1959,18 +1996,7 @@ class GPSolver:
         else:
             theta_map = jnp.asarray(theta_map, dtype=jnp.float64)
 
-        x, y, yerr = self.x, self.y, self.yerr
-        mean_val = self.mean_val
-        n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
-        fit_sn = self.fit_sigma_n
-        qn, qw = self._quad_nodes, self._quad_weights
-        to_phys = self._to_physical
-
-        @jax.jit
-        def neg_log_lik(theta_arr):
-            return -_gp_log_likelihood(to_phys(theta_arr), x, y, yerr, mean_val,
-                                       n_h, n_l, lr, fit_sn,
-                                       quad_nodes=qn, quad_weights=qw)
+        neg_log_lik = self._build_neg_log_lik()
 
         H = jax.hessian(neg_log_lik)(theta_map)
 
@@ -2093,18 +2119,7 @@ class GPSolver:
         else:
             theta_map = jnp.asarray(theta_map, dtype=jnp.float64)
 
-        x, y, yerr = self.x, self.y, self.yerr
-        mean_val = self.mean_val
-        n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
-        fit_sn = self.fit_sigma_n
-        qn, qw = self._quad_nodes, self._quad_weights
-        to_phys = self._to_physical
-
-        @jax.jit
-        def neg_log_lik(theta_arr):
-            return -_gp_log_likelihood(to_phys(theta_arr), x, y, yerr, mean_val,
-                                       n_h, n_l, lr, fit_sn,
-                                       quad_nodes=qn, quad_weights=qw)
+        neg_log_lik = self._build_neg_log_lik()
 
         H = jax.hessian(neg_log_lik)(theta_map)
 
