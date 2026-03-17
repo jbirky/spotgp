@@ -2,8 +2,15 @@ import numpy as np
 
 __all__ = ["AnalyticKernel"]
 
-# Required keys for all modes (alpha_max only needed for physical-param amplitude)
-_REQUIRED_KEYS = {"peq", "kappa", "inc", "lspot", "tau"}
+# Required keys common to all modes
+_REQUIRED_KEYS_BASE = {"peq", "kappa", "inc", "lspot"}
+
+# Envelope timescale: provide EITHER tau (symmetric) OR tau_em + tau_dec (asymmetric)
+_TAU_KEYS_SYMMETRIC = {"tau"}
+_TAU_KEYS_ASYMMETRIC = {"tau_em", "tau_dec"}
+
+# Backward compatibility: gp_solver and other modules import _REQUIRED_KEYS
+_REQUIRED_KEYS = _REQUIRED_KEYS_BASE | {"tau"}
 
 # Two valid modes for specifying amplitude:
 #   Mode 1: provide sigma_k directly
@@ -34,7 +41,7 @@ def _Gamma_hat(omega, ell, tau):
     return np.where(np.abs(omega) > 1e-14, nz_result, zero_result)
 
 
-def _R_Gamma(lag, ell, tau_s):
+def _R_Gamma_symmetric(lag, ell, tau_s):
     """
     Normalized closed-form autocorrelation of Gamma(t) = alpha^2(t)/alpha_max^2.
 
@@ -84,6 +91,84 @@ def _R_Gamma(lag, ell, tau_s):
         np.where(t <= ell + tau_s, R3,
         np.where(t <= ell + 2*tau_s, R4,
                   0.0))))
+
+    return R
+
+
+def _R_Gamma_asymmetric(lag, ell, te, td):
+    """
+    Closed-form autocorrelation of Gamma(t) for asymmetric trapezoidal envelope.
+
+    Generalizes _R_Gamma_symmetric to distinct emergence (te) and decay (td)
+    timescales. Assumes te <= td (enforced by the caller via min/max swap).
+
+    Six intervals on [0, ell + te + td], zero beyond.
+    Assumes ell/2 > td (plateau longer than either ramp).
+
+    Parameters
+    ----------
+    lag : array_like
+        Time lags (non-negative) [days].
+    ell : float
+        Spot plateau duration [days].
+    te : float
+        Emergence timescale [days] (must be <= td).
+    td : float
+        Decay timescale [days].
+    """
+    t = np.abs(np.asarray(lag, dtype=float).ravel())
+
+    td2 = td**2
+    te2 = te**2
+    td2te2 = td2 * te2
+    ell2 = ell**2
+    ell3 = ell**3
+
+    # Interval 1: 0 <= t <= te
+    R1 = (ell + (te + td) / 5
+          - 2 * (1/te + 1/td) / 3 * t**2
+          + (1/te2 + 1/td2) / 3 * t**3
+          - (1/te**4 + 1/td**4) / 30 * t**5)
+
+    # Interval 2: te <= t <= td
+    R2 = (ell + te/3 + td/5
+          - t / 2
+          - 2 * t**2 / (3 * td)
+          + t**3 / (3 * td2)
+          - t**5 / (30 * td**4))
+
+    # Interval 3: td <= t <= ell  (linear)
+    R3 = ell + (te + td) / 3 - t
+
+    # Interval 4: ell <= t <= ell + te  (degree-5 polynomial P4)
+    R4 = (t**5 / (30 * td2te2)
+          - (ell + td + te) * t**4 / (6 * td2te2)
+          + (ell2 + 2*ell*td + 2*ell*te + 2*td*te) * t**3 / (3 * td2te2)
+          - ell * (ell2 + 3*ell*td + 3*ell*te + 6*td*te) * t**2 / (3 * td2te2)
+          + (ell**4 + 4*ell3*td + 4*ell3*te + 12*ell2*td*te
+             - 6*td2te2) * t / (6 * td2te2)
+          + (-ell**5 - 5*ell**4*td - 5*ell**4*te - 20*ell3*td*te
+             + 30*ell*td2te2 + 10*td**3*te2 + 10*td2*te**3) / (30 * td2te2))
+
+    # Interval 5: ell + te <= t <= ell + td  (degree-3 polynomial P5)
+    R5 = (-t**3 / (3 * td2)
+          + (ell + td + te/3) * t**2 / td2
+          - (6*ell2 + 12*ell*td + 4*ell*te + 6*td2 + 4*td*te + te2) * t / (6 * td2)
+          + (ell3/3 + ell2*td + ell2*te/3 + ell*td2 + 2*ell*td*te/3
+             + ell*te2/6 + td**3/3 + td2*te/3 + td*te2/6 + te**3/30) / td2)
+
+    # Interval 6: ell + td <= t <= ell + te + td
+    D = ell + te + td - t
+    R6 = D**5 / (30 * td2te2)
+
+    # Select the correct interval for each lag value
+    R = np.where(t <= te, R1,
+        np.where(t <= td, R2,
+        np.where(t <= ell, R3,
+        np.where(t <= ell + te, R4,
+        np.where(t <= ell + td, R5,
+        np.where(t <= ell + te + td, R6,
+                  0.0))))))
 
     return R
 
@@ -169,7 +254,10 @@ class AnalyticKernel:
     Parameters
     ----------
     hparam : dict
-        Hyperparameters. Required keys: peq, kappa, inc, lspot, tau.
+        Hyperparameters. Required keys: peq, kappa, inc, lspot.
+        For the envelope timescale, provide EITHER:
+          - tau : symmetric emergence/decay timescale, OR
+          - tau_em + tau_dec : distinct emergence and decay timescales.
         For the kernel amplitude, provide EITHER:
           - sigma_k : overall amplitude prefactor, OR
           - nspot + fspot + alpha_max : number of spots, spot contrast,
@@ -192,9 +280,17 @@ class AnalyticKernel:
         if not isinstance(hparam, dict):
             raise TypeError("hparam must be a dict")
 
-        missing = _REQUIRED_KEYS - set(hparam.keys())
+        missing = _REQUIRED_KEYS_BASE - set(hparam.keys())
         if missing:
             raise ValueError(f"hparam dict is missing required keys: {missing}")
+
+        has_tau_sym = "tau" in hparam
+        has_tau_asym = "tau_em" in hparam and "tau_dec" in hparam
+
+        if not has_tau_sym and not has_tau_asym:
+            raise ValueError(
+                "hparam must contain either 'tau' (symmetric) or both "
+                "'tau_em' and 'tau_dec' (asymmetric)")
 
         has_sigma = "sigma_k" in hparam
         has_physical = "nspot" in hparam and "fspot" in hparam and "alpha_max" in hparam
@@ -210,7 +306,21 @@ class AnalyticKernel:
         self.kappa = self.hparam["kappa"]
         self.inc = self.hparam["inc"]
         self.lspot = self.hparam["lspot"]
-        self.tau = self.hparam["tau"]
+
+        if has_tau_asym:
+            self.asymmetric = True
+            self.tau_em = self.hparam["tau_em"]
+            self.tau_dec = self.hparam["tau_dec"]
+            # _R_Gamma_asymmetric assumes te <= td; enforce via min/max
+            self._te = min(self.tau_em, self.tau_dec)
+            self._td = max(self.tau_em, self.tau_dec)
+            # For methods that need a single tau (e.g., PSD), use the mean
+            self.tau = (self.tau_em + self.tau_dec) / 2
+        else:
+            self.asymmetric = False
+            self.tau = self.hparam["tau"]
+            self.tau_em = self.tau
+            self.tau_dec = self.tau
 
         if has_sigma:
             self.sigma_k = self.hparam["sigma_k"]
@@ -244,7 +354,10 @@ class AnalyticKernel:
 
     def R_Gamma(self, lag):
         """Autocorrelation of the squared envelope (closed-form piecewise polynomial)."""
-        return _R_Gamma(np.asarray(lag), self.lspot, self.tau)
+        if self.asymmetric:
+            return _R_Gamma_asymmetric(
+                np.asarray(lag), self.lspot, self._te, self._td)
+        return _R_Gamma_symmetric(np.asarray(lag), self.lspot, self.tau)
 
     def cn_squared(self, phi):
         """Squared Fourier coefficients at latitude phi."""

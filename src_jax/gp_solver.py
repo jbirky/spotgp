@@ -17,7 +17,7 @@ import numpy as np
 try:
     from .analytic_kernel import (
         AnalyticKernel, _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
-        _AMPLITUDE_KEYS_PHYSICAL, _R_Gamma, _cn_general_jax,
+        _AMPLITUDE_KEYS_PHYSICAL, _R_Gamma_symmetric, _cn_general_jax,
         _gauss_legendre_grid,
     )
     from .banded_cholesky import (banded_cholesky, banded_solve,
@@ -25,7 +25,7 @@ try:
 except ImportError:
     from analytic_kernel import (
         AnalyticKernel, _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
-        _AMPLITUDE_KEYS_PHYSICAL, _R_Gamma, _cn_general_jax,
+        _AMPLITUDE_KEYS_PHYSICAL, _R_Gamma_symmetric, _cn_general_jax,
         _gauss_legendre_grid,
     )
     from banded_cholesky import (banded_cholesky, banded_solve,
@@ -79,7 +79,7 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
     peq, kappa, inc, lspot, tau, sigma_k = theta_arr
 
     # R_Gamma (independent of latitude, closed-form piecewise polynomial)
-    R = _R_Gamma(lag_flat, lspot, tau)
+    R = _R_Gamma_symmetric(lag_flat, lspot, tau)
 
     # Quadrature grid
     if quad_nodes is not None:
@@ -759,7 +759,7 @@ class GPSolver:
 
     def plot_prediction(self, theta=None, n_points=2000, n_sigma=(1, 2),
                         ax=None, data_color="k", model_color="r",
-                        show_legend=True):
+                        show_legend=True, xlim=None, ylim=None):
         """
         Plot the GP posterior mean and uncertainty bands over the data.
 
@@ -785,6 +785,10 @@ class GPSolver:
             Colors for data points and model curve/bands.
         show_legend : bool
             Whether to draw a legend.
+        xlim : tuple, optional
+            Limits for the x-axis. If None, defaults to the data range.
+        ylim : tuple, optional
+            Limits for the y-axis. If None, defaults to the data range.
 
         Returns
         -------
@@ -821,6 +825,12 @@ class GPSolver:
                             color=model_color,
                             alpha=alphas.get(ns, 0.15),
                             label=rf"$\pm{ns}\sigma$")
+        if xlim is not None:
+            ax.set_xlim(xlim)
+        else:
+            ax.set_xlim(float(self.x[0]), float(self.x[-1]))
+        if ylim is not None:
+            ax.set_ylim(ylim)
 
         ax.set_xlabel("Time [days]", fontsize=22)
         ax.set_ylabel("Flux", fontsize=22)
@@ -1449,7 +1459,7 @@ class GPSolver:
 
     def plot_acf(self, theta=None, tlags=None, n_bins=50, ax=None,
                  normalize=True, data_color="k", model_color="r",
-                 show_legend=True):
+                 show_legend=True, xlim=None, ylim=None):
         """
         Plot the empirical ACF and optionally the analytic kernel.
 
@@ -1470,6 +1480,10 @@ class GPSolver:
         normalize : bool
             If True (default), normalize both curves by the data variance
             so ACF(0) ≈ 1.
+        xlim : tuple, optional
+            Limits for the x-axis. If None, defaults to the data range.
+        ylim : tuple, optional
+            Limits for the y-axis. If None, defaults to the data range.
 
         Returns
         -------
@@ -1501,6 +1515,12 @@ class GPSolver:
                     K_model = K_model / var
             ax.plot(lag_fine, K_model, color=model_color, label="Analytic kernel")
 
+        if xlim is not None:
+            ax.set_xlim(xlim)
+        else:
+            ax.set_xlim(min(tlags), max(tlags))
+        if ylim is not None:
+            ax.set_ylim(ylim)
         ax.set_xlabel("Time lag [days]", fontsize=22)
         ax.set_ylabel("ACF" if normalize else "Autocovariance", fontsize=22)
         if show_legend:
@@ -1509,7 +1529,8 @@ class GPSolver:
         return ax
 
     def plot_psd(self, theta=None, n_freq=500, dt_kernel=None, ax=None,
-                 data_color="k", model_color="r", show_legend=True):
+                 data_color="k", model_color="r", show_legend=True,
+                 xlim=None, ylim=None):
         """
         Plot the empirical PSD (Lomb-Scargle) and optionally the analytic
         kernel PSD (FFT of the autocovariance function).
@@ -1535,6 +1556,10 @@ class GPSolver:
             Colors for the data and model curves.
         show_legend : bool
             Whether to draw a legend.
+        xlim : tuple, optional
+            Limits for the x-axis. If None, defaults to the data range.
+        ylim : tuple, optional
+            Limits for the y-axis. If None, defaults to the data range.
 
         Returns
         -------
@@ -1585,6 +1610,13 @@ class GPSolver:
             pm = pm * var / np.trapezoid(pm, fm)
             ax.semilogy(fm, pm, color=model_color, lw=1.5,
                         label="Analytic kernel")
+            
+        if xlim is not None:
+            ax.set_xlim(xlim)
+        else:
+            ax.set_xlim(freq_min, freq_max)
+        if ylim is not None:
+            ax.set_ylim(ylim)
 
         ax.set_xlabel("Frequency [1/day]", fontsize=22)
         ax.set_ylabel("PSD", fontsize=22)

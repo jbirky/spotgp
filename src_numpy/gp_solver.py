@@ -13,13 +13,13 @@ from scipy.special import log_expit
 try:
     from .analytic_kernel import (
         AnalyticKernel, _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
-        _AMPLITUDE_KEYS_PHYSICAL, _R_Gamma, _cn_general,
+        _AMPLITUDE_KEYS_PHYSICAL, _R_Gamma_symmetric, _cn_general,
         _cn_squared_coefficients, _gauss_legendre_grid,
     )
 except ImportError:
     from analytic_kernel import (
         AnalyticKernel, _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
-        _AMPLITUDE_KEYS_PHYSICAL, _R_Gamma, _cn_general,
+        _AMPLITUDE_KEYS_PHYSICAL, _R_Gamma_symmetric, _cn_general,
         _cn_squared_coefficients, _gauss_legendre_grid,
     )
 
@@ -95,7 +95,7 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
     peq, kappa, inc, lspot, tau, sigma_k = theta_arr
 
     # R_Gamma (independent of latitude, closed-form piecewise polynomial)
-    R = _R_Gamma(lag_flat, lspot, tau)
+    R = _R_Gamma_symmetric(lag_flat, lspot, tau)
 
     # Single-latitude contribution (returns shape (M,))
     def _lat_contribution(phi):
