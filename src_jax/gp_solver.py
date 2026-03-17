@@ -2021,8 +2021,15 @@ class GPSolver:
 
             I_{ij} = (1/2) tr(K^{-1} dK/dtheta_i  K^{-1} dK/dtheta_j)
 
-        The kernel derivatives dK/dtheta_i are computed via JAX
-        forward-mode autodiff (jacfwd).
+        When ``matrix_solver="cholesky_full"``, the kernel derivatives
+        dK/dtheta_i are computed via JAX forward-mode autodiff (jacfwd)
+        on the full N×N covariance matrix.
+
+        When ``matrix_solver="cholesky_banded"``, the exact Fisher requires
+        the dense N×N kernel and its inverse, which would defeat the purpose
+        of banded storage.  Instead, the Fisher is approximated by the
+        Hessian of the banded negative log-likelihood at the MAP
+        (Fisher ≈ observed information at the MLE).
 
         Parameters
         ----------
@@ -2040,6 +2047,20 @@ class GPSolver:
         else:
             theta_map = jnp.asarray(theta_map, dtype=jnp.float64)
 
+        # Banded path: approximate Fisher via Hessian of banded log-likelihood
+        if self.matrix_solver == "cholesky_banded":
+            neg_log_lik = self._build_neg_log_lik()
+            H = jax.hessian(neg_log_lik)(theta_map)
+
+            eigvals, eigvecs = jnp.linalg.eigh(H)
+            eigvals = jnp.maximum(eigvals, 1e-6)
+            fisher_reg = eigvecs @ jnp.diag(eigvals) @ eigvecs.T
+
+            self.inverse_mass_matrix = jnp.linalg.inv(fisher_reg)
+            self._fisher_matrix = H
+            return self.inverse_mass_matrix
+
+        # Dense path: exact Fisher via kernel Jacobian
         N = self.N
         n_params = theta_map.shape[0]
         if self._lag_flat is None:
