@@ -149,11 +149,7 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorials/gp_solver_quickstart.html">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/custom_envelope.html">Custom Envelope Functions</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/custom_latitude_distribution.html">Custom Latitude Distributions</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/run_blackjax.html">Generate synthetic lightcurve data</a></li>
-
-
-
-
+<li class="toctree-l1"><a class="reference internal" href="tutorials/gp_optimization.html">GP Hyperparameter Optimization</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul class="nav bd-sidenav">
@@ -475,11 +471,10 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 </li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/custom_envelope.html">Custom Envelope Functions</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="tutorials/custom_envelope.html#Deriving-R_\Gamma-for-a-Gaussian-envelope">Deriving <span class="math notranslate nohighlight">\(R_\Gamma\)</span> for a Gaussian envelope</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_envelope.html#Approach-1-—-Subclassing-AnalyticKernel-(src_numpy)">Approach 1 — Subclassing <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code> (<code class="docutils literal notranslate"><span class="pre">src_numpy</span></code>)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_envelope.html#Define-the-Gaussian-envelope">Define the Gaussian envelope</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tutorials/custom_envelope.html#Compare-envelope-shapes">Compare envelope shapes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tutorials/custom_envelope.html#Compare-GP-kernels">Compare GP kernels</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tutorials/custom_envelope.html#Compare-power-spectral-densities">Compare power spectral densities</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_envelope.html#Approach-2-—-register_envelope-(src_jax)">Approach 2 — <code class="docutils literal notranslate"><span class="pre">register_envelope</span></code> (<code class="docutils literal notranslate"><span class="pre">src_jax</span></code>)</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/custom_latitude_distribution.html">Custom Latitude Distributions</a><ul>
@@ -494,11 +489,13 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#Tips:">Tips:</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/run_blackjax.html">Generate synthetic lightcurve data</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/run_blackjax.html#estimate-acf-solution">Estimate ACF solution</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/run_blackjax.html#plot-acf-solution-lightcurve-fit-acf-psd">Plot ACF solution: lightcurve fit, ACF, PSD</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/run_blackjax.html#run-mcmc-with-blackjax">Run MCMC with BlackJAX</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/run_blackjax.html#save-and-visualize-results">Save and visualize results</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/gp_optimization.html">GP Hyperparameter Optimization</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_optimization.html#Generate-synthetic-lightcurve-data">Generate synthetic lightcurve data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_optimization.html#Set-up-optimization-bounds-and-initialize-GP">Set up optimization bounds and initialize GP</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_optimization.html#Example-1:-MAP-solution">Example 1: MAP solution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_optimization.html#Example-2:-ACF-fit">Example 2: ACF fit</a></li>
+</ul>
+</li>
 </ul>
 </div>
 <div class="toctree-wrapper compound">

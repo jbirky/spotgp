@@ -149,11 +149,7 @@
 <li class="toctree-l1"><a class="reference internal" href="gp_solver_quickstart.html">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a></li>
 <li class="toctree-l1 current active"><a class="current reference internal" href="#">Custom Envelope Functions</a></li>
 <li class="toctree-l1"><a class="reference internal" href="custom_latitude_distribution.html">Custom Latitude Distributions</a></li>
-<li class="toctree-l1"><a class="reference internal" href="run_blackjax.html">Generate synthetic lightcurve data</a></li>
-
-
-
-
+<li class="toctree-l1"><a class="reference internal" href="gp_optimization.html">GP Hyperparameter Optimization</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul class="nav bd-sidenav">
@@ -386,11 +382,14 @@
             <nav aria-label="Page">
                 <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Deriving-R_\Gamma-for-a-Gaussian-envelope">Deriving <span class="math notranslate nohighlight">\(R_\Gamma\)</span> for a Gaussian envelope</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Approach-1-—-Subclassing-AnalyticKernel-(src_numpy)">Approach 1 — Subclassing <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code> (<code class="docutils literal notranslate"><span class="pre">src_numpy</span></code>)</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Define-the-Gaussian-envelope">Define the Gaussian envelope</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#Step-1-—-Register-the-envelope">Step 1 — Register the envelope</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#Step-2-—-Subclass-AnalyticKernel-and-override-R_Gamma">Step 2 — Subclass <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code> and override <code class="docutils literal notranslate"><span class="pre">R_Gamma</span></code></a></li>
+</ul>
+</li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Compare-envelope-shapes">Compare envelope shapes</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Compare-GP-kernels">Compare GP kernels</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Compare-power-spectral-densities">Compare power spectral densities</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Approach-2-—-register_envelope-(src_jax)">Approach 2 — <code class="docutils literal notranslate"><span class="pre">register_envelope</span></code> (<code class="docutils literal notranslate"><span class="pre">src_jax</span></code>)</a></li>
 </ul>
             </nav>
         </div>
@@ -409,24 +408,12 @@
 <div class="math notranslate nohighlight">
 \[K(\tau) = R_\Gamma(\tau) \cdot \sigma_k^2 \sum_n |c_n|^2 \cos(n\,\omega_0\,\tau)\]</div>
 <p>where <span class="math notranslate nohighlight">\(R_\Gamma(\tau) = \langle \Gamma(t)\,\Gamma(t+\tau)\rangle\)</span> is the <strong>autocorrelation of the squared envelope</strong> <span class="math notranslate nohighlight">\(\Gamma(t) = \alpha^2(t)/\alpha_{\rm max}^2\)</span>.</p>
-<p>There are two ways to define a custom envelope:</p>
-<div class="pst-scrollable-table-container"><table class="table">
-<thead>
-<tr class="row-odd"><th class="head"><p>Approach</p></th>
-<th class="head"><p>When to use</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><strong>``params.register_envelope``</strong> (<code class="docutils literal notranslate"><span class="pre">src_jax</span></code>)</p></td>
-<td><p>Preferred. Register a new spec so that <code class="docutils literal notranslate"><span class="pre">resolve_hparam</span></code>, <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code>, and <code class="docutils literal notranslate"><span class="pre">MCMCSampler</span></code> all understand it automatically.</p></td>
-</tr>
-<tr class="row-odd"><td><p><strong>Subclass ``AnalyticKernel``</strong> (<code class="docutils literal notranslate"><span class="pre">src_numpy</span></code> or <code class="docutils literal notranslate"><span class="pre">src_jax</span></code>)</p></td>
-<td><p>For one-off usage when you need to override <code class="docutils literal notranslate"><span class="pre">R_Gamma</span></code> and <code class="docutils literal notranslate"><span class="pre">compute_psd</span></code> without touching the registry.</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<p>This notebook demonstrates both patterns with a <strong>Gaussian envelope</strong> and compares it to the default trapezoidal one.</p>
+<p>To add a new envelope shape:</p>
+<ol class="arabic simple">
+<li><p>Register it with <code class="docutils literal notranslate"><span class="pre">params.register_envelope</span></code> so that <code class="docutils literal notranslate"><span class="pre">resolve_hparam</span></code>, <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code>, and <code class="docutils literal notranslate"><span class="pre">MCMCSampler</span></code> all recognise the new keys automatically.</p></li>
+<li><p>Subclass <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code> and override <code class="docutils literal notranslate"><span class="pre">R_Gamma(lag)</span></code> to evaluate the new autocorrelation function.</p></li>
+</ol>
+<p>This notebook demonstrates the pattern with a <strong>Gaussian envelope</strong> and compares it to the default trapezoidal one.</p>
 <section id="Deriving-R_\Gamma-for-a-Gaussian-envelope">
 <h2>Deriving <span class="math notranslate nohighlight">\(R_\Gamma\)</span> for a Gaussian envelope<a class="headerlink" href="#Deriving-R_\Gamma-for-a-Gaussian-envelope" title="Link to this heading">#</a></h2>
 <p>For <span class="math notranslate nohighlight">\(\Gamma(t) = \exp(-t^2/2\sigma^2)\)</span>, the autocorrelation is the convolution of <span class="math notranslate nohighlight">\(\Gamma\)</span> with itself:</p>
@@ -527,17 +514,19 @@ $\displaystyle 2 \pi \sigma^{2} e^{- \omega^{2} \sigma^{2}}$</div></div>
 $\displaystyle \sqrt{2} \sqrt{\pi} \sigma e^{- \frac{\omega^{2} \sigma^{2}}{2}}$</div></div>
 </div>
 </section>
-<section id="Approach-1-—-Subclassing-AnalyticKernel-(src_numpy)">
-<h2>Approach 1 — Subclassing <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code> (<code class="docutils literal notranslate"><span class="pre">src_numpy</span></code>)<a class="headerlink" href="#Approach-1-—-Subclassing-AnalyticKernel-(src_numpy)" title="Link to this heading">#</a></h2>
+<section id="Define-the-Gaussian-envelope">
+<h2>Define the Gaussian envelope<a class="headerlink" href="#Define-the-Gaussian-envelope" title="Link to this heading">#</a></h2>
 <p>For a Gaussian squared envelope <span class="math notranslate nohighlight">\(\Gamma(t) = \exp(-t^2/2\sigma^2)\)</span>, the autocorrelation derived above is:</p>
 <div class="math notranslate nohighlight">
 \[R_\Gamma(\tau) = \sigma\sqrt{\pi}\,\exp\!\left(-\frac{\tau^2}{4\sigma^2}\right)\]</div>
 <p>and its Fourier transform is:</p>
 <div class="math notranslate nohighlight">
 \[\hat{\Gamma}(\omega) = \sigma\sqrt{2\pi}\,\exp\!\left(-\frac{\sigma^2\omega^2}{2}\right)\]</div>
-<p>Override <code class="docutils literal notranslate"><span class="pre">__init__</span></code> to accept <code class="docutils literal notranslate"><span class="pre">sigma</span></code> instead of <code class="docutils literal notranslate"><span class="pre">tau</span></code>, provide a dummy <code class="docutils literal notranslate"><span class="pre">lspot=0</span></code> to satisfy the parent’s validation, and override <code class="docutils literal notranslate"><span class="pre">R_Gamma</span></code> and <code class="docutils literal notranslate"><span class="pre">compute_psd</span></code>.</p>
+<section id="Step-1-—-Register-the-envelope">
+<h3>Step 1 — Register the envelope<a class="headerlink" href="#Step-1-—-Register-the-envelope" title="Link to this heading">#</a></h3>
+<p>Call <code class="docutils literal notranslate"><span class="pre">register_envelope</span></code> once (at module load time or before first use) with an <code class="docutils literal notranslate"><span class="pre">EnvelopeSpec</span></code> that declares the signature key <code class="docutils literal notranslate"><span class="pre">sigma_gauss</span></code>. <code class="docutils literal notranslate"><span class="pre">resolve_hparam</span></code> will then recognise any hparam dict that contains this key and inject <code class="docutils literal notranslate"><span class="pre">tau</span> <span class="pre">=</span> <span class="pre">sigma_gauss</span></code> for modules that need a scalar timescale.</p>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
@@ -545,116 +534,120 @@ $\displaystyle \sqrt{2} \sqrt{\pi} \sigma e^{- \frac{\omega^{2} \sigma^{2}}{2}}$
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">src_numpy.analytic_kernel</span><span class="w"> </span><span class="kn">import</span> <span class="n">AnalyticKernel</span>
-</pre></div>
-</div>
-</div>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
-</pre></div>
-</div>
-<div class="input_area highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">_GAUSSIAN_REQUIRED_KEYS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;peq&quot;</span><span class="p">,</span> <span class="s2">&quot;kappa&quot;</span><span class="p">,</span> <span class="s2">&quot;inc&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma&quot;</span><span class="p">}</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src_jax.params</span><span class="w"> </span><span class="kn">import</span> <span class="n">EnvelopeSpec</span><span class="p">,</span> <span class="n">register_envelope</span><span class="p">,</span> <span class="n">resolve_hparam</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src_jax.analytic_kernel</span><span class="w"> </span><span class="kn">import</span> <span class="n">AnalyticKernel</span>
 
-<span class="k">class</span><span class="w"> </span><span class="nc">GaussianEnvelopeKernel</span><span class="p">(</span><span class="n">AnalyticKernel</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    AnalyticKernel with a Gaussian squared-envelope autocorrelation.</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_resolve_gaussian</span><span class="p">(</span><span class="n">raw</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Inject tau = sigma_gauss for scalar-tau compatibility.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;tau&quot;</span><span class="p">:</span> <span class="n">raw</span><span class="p">[</span><span class="s2">&quot;sigma_gauss&quot;</span><span class="p">],</span> <span class="s2">&quot;sigma_gauss&quot;</span><span class="p">:</span> <span class="n">raw</span><span class="p">[</span><span class="s2">&quot;sigma_gauss&quot;</span><span class="p">]}</span>
 
-<span class="sd">    The squared envelope is Γ(t) = exp(-t²/(2σ²)), so its autocorrelation</span>
-<span class="sd">    R_Γ(τ) = sqrt(π) · σ · exp(-τ²/(4σ²)).</span>
-
-<span class="sd">    Custom hparam keys</span>
-<span class="sd">    ------------------</span>
-<span class="sd">    sigma   : float  — Gaussian envelope width [days]  (replaces tau)</span>
-<span class="sd">    lspot   : not required  (no plateau in a Gaussian envelope)</span>
-
-<span class="sd">    All other AnalyticKernel keys (peq, kappa, inc, sigma_k / nspot_rate+fspot+alpha_max)</span>
-<span class="sd">    are required as usual.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hparam</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-        <span class="n">missing</span> <span class="o">=</span> <span class="n">_GAUSSIAN_REQUIRED_KEYS</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">hparam</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;hparam missing required keys: </span><span class="si">{</span><span class="n">missing</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-        <span class="c1"># Build a parent-compatible copy: map sigma -&gt; tau, supply dummy lspot</span>
-        <span class="n">parent_hparam</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">hparam</span><span class="p">)</span>
-        <span class="n">parent_hparam</span><span class="p">[</span><span class="s2">&quot;tau&quot;</span><span class="p">]</span>   <span class="o">=</span> <span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;sigma&quot;</span><span class="p">]</span>
-        <span class="n">parent_hparam</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;lspot&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>   <span class="c1"># unused; satisfies parent validation</span>
-
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">parent_hparam</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span> <span class="o">=</span> <span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;sigma&quot;</span><span class="p">]</span>   <span class="c1"># expose under the natural name</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">R_Gamma</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lag</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Autocorrelation of a Gaussian squared envelope.&quot;&quot;&quot;</span>
-        <span class="n">t</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">lag</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">))</span>
-        <span class="n">norm</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">t</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span> <span class="o">*</span> <span class="n">norm</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_gamma_hat</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">omega</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Fourier transform of the Gaussian squared envelope.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">omega</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">compute_psd</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">omega</span><span class="p">,</span> <span class="n">lat_dist</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Analytic PSD using the Gaussian envelope Fourier transform.&quot;&quot;&quot;</span>
-        <span class="n">omega</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">omega</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">lat_dist</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">lat_dist</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">phi</span><span class="p">:</span> <span class="mf">1.0</span>
-
-        <span class="k">def</span><span class="w"> </span><span class="nf">_psd_at_lat</span><span class="p">(</span><span class="n">phi</span><span class="p">):</span>
-            <span class="n">cn_sq</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cn_squared</span><span class="p">(</span><span class="n">phi</span><span class="p">)</span>
-            <span class="n">w0</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">omega0</span><span class="p">(</span><span class="n">phi</span><span class="p">)</span>
-            <span class="n">contrib</span> <span class="o">=</span> <span class="n">cn_sq</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_gamma_hat</span><span class="p">(</span><span class="n">omega</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span>
-            <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">cn_sq</span><span class="p">)):</span>
-                <span class="n">Gh_plus</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_gamma_hat</span><span class="p">(</span><span class="n">omega</span> <span class="o">-</span> <span class="n">n</span> <span class="o">*</span> <span class="n">w0</span><span class="p">)</span>
-                <span class="n">Gh_minus</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_gamma_hat</span><span class="p">(</span><span class="n">omega</span> <span class="o">+</span> <span class="n">n</span> <span class="o">*</span> <span class="n">w0</span><span class="p">)</span>
-                <span class="n">contrib</span> <span class="o">+=</span> <span class="n">cn_sq</span><span class="p">[</span><span class="n">n</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">Gh_plus</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">Gh_minus</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
-            <span class="k">return</span> <span class="n">contrib</span>
-
-        <span class="n">phi_min</span><span class="p">,</span> <span class="n">phi_max</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lat_range</span>
-        <span class="n">phi_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="n">phi_min</span><span class="p">,</span> <span class="n">phi_max</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_lat</span><span class="p">)</span>
-        <span class="n">user_weights</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">lat_dist</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">p</span><span class="p">))</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">phi_grid</span><span class="p">])</span>
-        <span class="n">norm</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">trapezoid</span><span class="p">(</span><span class="n">user_weights</span><span class="p">,</span> <span class="n">phi_grid</span><span class="p">)</span>
-
-        <span class="n">all_contribs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">_psd_at_lat</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">phi</span><span class="p">))</span> <span class="k">for</span> <span class="n">phi</span> <span class="ow">in</span> <span class="n">phi_grid</span><span class="p">])</span>
-        <span class="n">psd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">trapezoid</span><span class="p">(</span><span class="n">user_weights</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="n">all_contribs</span><span class="p">,</span> <span class="n">phi_grid</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">omega</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">),</span> <span class="n">psd</span> <span class="o">/</span> <span class="n">norm</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma_k</span><span class="o">**</span><span class="mi">2</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="n">register_envelope</span><span class="p">(</span><span class="n">EnvelopeSpec</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;gaussian&quot;</span><span class="p">,</span>
+        <span class="n">signature_keys</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">({</span><span class="s2">&quot;sigma_gauss&quot;</span><span class="p">}),</span>
+        <span class="n">resolve</span><span class="o">=</span><span class="n">_resolve_gaussian</span><span class="p">,</span>
+        <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Gaussian decay: sigma_gauss sets the 1/e width [days]&quot;</span><span class="p">,</span>
+    <span class="p">))</span>
+<span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+    <span class="k">pass</span>  <span class="c1"># already registered if cell is re-run</span>
 </pre></div>
 </div>
 </div>
 </section>
+<section id="Step-2-—-Subclass-AnalyticKernel-and-override-R_Gamma">
+<h3>Step 2 — Subclass <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code> and override <code class="docutils literal notranslate"><span class="pre">R_Gamma</span></code><a class="headerlink" href="#Step-2-—-Subclass-AnalyticKernel-and-override-R_Gamma" title="Link to this heading">#</a></h3>
+<p>The registered envelope handles validation and key injection. The subclass only needs to override <code class="docutils literal notranslate"><span class="pre">R_Gamma</span></code> (and optionally <code class="docutils literal notranslate"><span class="pre">compute_psd</span></code> if you want the analytic PSD).</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">GaussianEnvelopeKernel</span><span class="p">(</span><span class="n">AnalyticKernel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    AnalyticKernel with a Gaussian squared-envelope autocorrelation.</span>
+
+<span class="sd">    The squared envelope is Γ(t) = exp(-t²/(2σ²)), giving</span>
+<span class="sd">    R_Γ(τ) = sqrt(π) · σ · exp(-τ²/(4σ²)).</span>
+
+<span class="sd">    Custom hparam key</span>
+<span class="sd">    -----------------</span>
+<span class="sd">    sigma_gauss : float  — Gaussian width [days]  (replaces tau)</span>
+<span class="sd">    lspot       : not physically meaningful; set to 0.0</span>
+
+<span class="sd">    All standard amplitude keys (sigma_k / nspot_rate+fspot+alpha_max)</span>
+<span class="sd">    are accepted as usual.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">R_Gamma</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lag</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;R_Γ(τ) = sqrt(π) · σ · exp(-τ² / (4·σ²))&quot;&quot;&quot;</span>
+        <span class="n">sigma</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;sigma_gauss&quot;</span><span class="p">]</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">lag</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">ravel</span><span class="p">())</span>
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">*</span> <span class="n">sigma</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">t</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute_psd</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">omega</span><span class="p">,</span> <span class="n">lat_dist</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Analytic PSD using the Gaussian envelope Fourier transform.&quot;&quot;&quot;</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">src_jax.analytic_kernel</span><span class="w"> </span><span class="kn">import</span> <span class="n">_Gamma_hat</span>  <span class="c1"># reuse for trapezoidal check</span>
+        <span class="n">sigma</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;sigma_gauss&quot;</span><span class="p">]</span>
+        <span class="n">omega</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">omega</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_gamma_hat</span><span class="p">(</span><span class="n">w</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">*</span> <span class="n">sigma</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">w</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">lat_dist</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">lat_dist</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">phi</span><span class="p">:</span> <span class="mf">1.0</span>
+
+        <span class="kn">import</span><span class="w"> </span><span class="nn">jax</span>
+        <span class="n">phi_min</span><span class="p">,</span> <span class="n">phi_max</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lat_range</span>
+        <span class="n">phi_grid</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="n">phi_min</span><span class="p">,</span> <span class="n">phi_max</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_lat</span><span class="p">)</span>
+        <span class="n">dphi</span> <span class="o">=</span> <span class="n">phi_grid</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">phi_grid</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">user_weights</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">lat_dist</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">p</span><span class="p">))</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">phi_grid</span><span class="p">])</span>
+        <span class="n">norm</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">trapezoid</span><span class="p">(</span><span class="n">user_weights</span><span class="p">,</span> <span class="n">phi_grid</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_psd_at_lat</span><span class="p">(</span><span class="n">phi</span><span class="p">):</span>
+            <span class="n">cn_sq</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cn_squared</span><span class="p">(</span><span class="n">phi</span><span class="p">)</span>
+            <span class="n">w0</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">omega0</span><span class="p">(</span><span class="n">phi</span><span class="p">)</span>
+            <span class="n">contrib</span> <span class="o">=</span> <span class="n">cn_sq</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">_gamma_hat</span><span class="p">(</span><span class="n">omega</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+            <span class="n">ns</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">cn_sq</span><span class="p">))</span>
+            <span class="n">contribs</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">vmap</span><span class="p">(</span><span class="k">lambda</span> <span class="n">n</span><span class="p">:</span> <span class="n">cn_sq</span><span class="p">[</span><span class="n">n</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">_gamma_hat</span><span class="p">(</span><span class="n">omega</span> <span class="o">-</span> <span class="n">n</span> <span class="o">*</span> <span class="n">w0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+                                                       <span class="o">+</span> <span class="n">_gamma_hat</span><span class="p">(</span><span class="n">omega</span> <span class="o">+</span> <span class="n">n</span> <span class="o">*</span> <span class="n">w0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">))(</span><span class="n">ns</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">contrib</span> <span class="o">+</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">contribs</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">all_contribs</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">vmap</span><span class="p">(</span><span class="n">_psd_at_lat</span><span class="p">)(</span><span class="n">phi_grid</span><span class="p">)</span>
+        <span class="n">psd</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">user_weights</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="n">all_contribs</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="o">*</span> <span class="n">dphi</span> <span class="o">/</span> <span class="n">norm</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">omega</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">)),</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">psd</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma_k</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</section>
+</section>
 <section id="Compare-envelope-shapes">
 <h2>Compare envelope shapes<a class="headerlink" href="#Compare-envelope-shapes" title="Link to this heading">#</a></h2>
-<p>First, look at the autocorrelation functions <span class="math notranslate nohighlight">\(R_\Gamma(\tau)\)</span> for the two envelope models.</p>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+<p>Look at the autocorrelation functions <span class="math notranslate nohighlight">\(R_\Gamma(\tau)\)</span> for the two envelope models.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">hparam_trap</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
-    <span class="n">peq</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>
-    <span class="n">kappa</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
-    <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">3</span><span class="p">,</span>
-    <span class="n">lspot</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>
-    <span class="n">tau</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span>
+    <span class="n">peq</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">kappa</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">3</span><span class="p">,</span>
+    <span class="n">lspot</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">tau</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span>
     <span class="n">sigma_k</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="c1"># Gaussian hparam: uses &#39;sigma&#39; instead of &#39;tau&#39;, no &#39;lspot&#39; required</span>
+<span class="c1"># Gaussian hparam: sigma_gauss identifies the registered envelope; lspot unused</span>
 <span class="n">hparam_gauss</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
-    <span class="n">peq</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>
-    <span class="n">kappa</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
-    <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">3</span><span class="p">,</span>
-    <span class="n">sigma</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span>
+    <span class="n">peq</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">kappa</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">3</span><span class="p">,</span>
+    <span class="n">lspot</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">sigma_gauss</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span>
     <span class="n">sigma_k</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="n">ak_trap</span>  <span class="o">=</span> <span class="n">AnalyticKernel</span><span class="p">(</span><span class="n">hparam_trap</span><span class="p">,</span> <span class="n">n_harmonics</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">n_lat</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
+<span class="n">ak_trap</span>  <span class="o">=</span> <span class="n">AnalyticKernel</span><span class="p">(</span><span class="n">hparam_trap</span><span class="p">,</span>  <span class="n">n_harmonics</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">n_lat</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
 <span class="n">ak_gauss</span> <span class="o">=</span> <span class="n">GaussianEnvelopeKernel</span><span class="p">(</span><span class="n">hparam_gauss</span><span class="p">,</span> <span class="n">n_harmonics</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">n_lat</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
 
 <span class="n">tlags</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">25</span><span class="p">,</span> <span class="mi">500</span><span class="p">)</span>
 
 <span class="n">R_trap</span>  <span class="o">=</span> <span class="n">ak_trap</span><span class="o">.</span><span class="n">R_Gamma</span><span class="p">(</span><span class="n">tlags</span><span class="p">)</span>
-<span class="n">R_gauss</span> <span class="o">=</span> <span class="n">ak_gauss</span><span class="o">.</span><span class="n">R_Gamma</span><span class="p">(</span><span class="n">tlags</span><span class="p">)</span>
+<span class="n">R_gauss</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">ak_gauss</span><span class="o">.</span><span class="n">R_Gamma</span><span class="p">(</span><span class="n">tlags</span><span class="p">))</span>
 
 <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">tlags</span><span class="p">,</span> <span class="n">R_trap</span>  <span class="o">/</span> <span class="n">R_trap</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>  <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Trapezoidal (default)&quot;</span><span class="p">)</span>
@@ -669,19 +662,12 @@ $\displaystyle \sqrt{2} \sqrt{\pi} \sigma e^{- \frac{\omega^{2} \sigma^{2}}{2}}$
 </pre></div>
 </div>
 </div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_custom_envelope_11_0.png" src="../_images/tutorials_custom_envelope_11_0.png" />
-</div>
-</div>
 </section>
 <section id="Compare-GP-kernels">
 <h2>Compare GP kernels<a class="headerlink" href="#Compare-GP-kernels" title="Link to this heading">#</a></h2>
-<p>Now evaluate the full GP kernel <span class="math notranslate nohighlight">\(K(\tau)\)</span> for both envelope models.</p>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+<p>Evaluate the full GP kernel <span class="math notranslate nohighlight">\(K(\tau)\)</span> for both envelope models.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">K_trap</span>  <span class="o">=</span> <span class="n">ak_trap</span><span class="p">(</span><span class="n">tlags</span><span class="p">)</span>
@@ -702,18 +688,11 @@ $\displaystyle \sqrt{2} \sqrt{\pi} \sigma e^{- \frac{\omega^{2} \sigma^{2}}{2}}$
 </pre></div>
 </div>
 </div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_custom_envelope_13_0.png" src="../_images/tutorials_custom_envelope_13_0.png" />
-</div>
-</div>
 </section>
 <section id="Compare-power-spectral-densities">
 <h2>Compare power spectral densities<a class="headerlink" href="#Compare-power-spectral-densities" title="Link to this heading">#</a></h2>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">omega</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">6</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="n">hparam_trap</span><span class="p">[</span><span class="s2">&quot;peq&quot;</span><span class="p">],</span> <span class="mi">1000</span><span class="p">)</span>
@@ -733,96 +712,6 @@ $\displaystyle \sqrt{2} \sqrt{\pi} \sigma e^{- \frac{\omega^{2} \sigma^{2}}{2}}$
 <span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">fontsize</span><span class="o">=</span><span class="mi">12</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
-</pre></div>
-</div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_custom_envelope_15_0.png" src="../_images/tutorials_custom_envelope_15_0.png" />
-</div>
-</div>
-</section>
-<section id="Approach-2-—-register_envelope-(src_jax)">
-<h2>Approach 2 — <code class="docutils literal notranslate"><span class="pre">register_envelope</span></code> (<code class="docutils literal notranslate"><span class="pre">src_jax</span></code>)<a class="headerlink" href="#Approach-2-—-register_envelope-(src_jax)" title="Link to this heading">#</a></h2>
-<p>For <code class="docutils literal notranslate"><span class="pre">src_jax</span></code>, the preferred way to add a new envelope is through the <code class="docutils literal notranslate"><span class="pre">params</span></code> registry. This makes the new envelope visible to <code class="docutils literal notranslate"><span class="pre">resolve_hparam</span></code>, <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code>, and <code class="docutils literal notranslate"><span class="pre">MCMCSampler</span></code> automatically — no subclassing required.</p>
-<p>Steps:</p>
-<ol class="arabic simple">
-<li><p>Write a <code class="docutils literal notranslate"><span class="pre">resolve</span></code> function <code class="docutils literal notranslate"><span class="pre">(raw:</span> <span class="pre">dict)</span> <span class="pre">-&gt;</span> <span class="pre">dict</span></code> that accepts the raw hparam dict and returns derived keys to inject (must include <code class="docutils literal notranslate"><span class="pre">'tau'</span></code> for scalar-tau compatibility with <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code> and bandwidth estimation).</p></li>
-<li><p>Call <code class="docutils literal notranslate"><span class="pre">register_envelope(EnvelopeSpec(...))</span></code> once at import time.</p></li>
-<li><p>In <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code>, override <code class="docutils literal notranslate"><span class="pre">R_Gamma</span></code> to dispatch on the new key.</p></li>
-</ol>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
-</pre></div>
-</div>
-<div class="input_area highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-<span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;../..&quot;</span><span class="p">)</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
-
-<span class="kn">from</span><span class="w"> </span><span class="nn">src_jax.params</span><span class="w"> </span><span class="kn">import</span> <span class="n">EnvelopeSpec</span><span class="p">,</span> <span class="n">register_envelope</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src_jax.analytic_kernel</span><span class="w"> </span><span class="kn">import</span> <span class="n">AnalyticKernel</span> <span class="k">as</span> <span class="n">AnalyticKernelJAX</span>
-
-<span class="c1"># ── 1. Register the envelope ─────────────────────────────────────────────</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">_resolve_gaussian</span><span class="p">(</span><span class="n">raw</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Inject tau = sigma for scalar-tau compat; expose sigma_gauss.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;tau&quot;</span><span class="p">:</span> <span class="n">raw</span><span class="p">[</span><span class="s2">&quot;sigma_gauss&quot;</span><span class="p">],</span> <span class="s2">&quot;sigma_gauss&quot;</span><span class="p">:</span> <span class="n">raw</span><span class="p">[</span><span class="s2">&quot;sigma_gauss&quot;</span><span class="p">]}</span>
-
-<span class="k">try</span><span class="p">:</span>
-    <span class="n">register_envelope</span><span class="p">(</span><span class="n">EnvelopeSpec</span><span class="p">(</span>
-        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;gaussian&quot;</span><span class="p">,</span>
-        <span class="n">signature_keys</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">({</span><span class="s2">&quot;sigma_gauss&quot;</span><span class="p">}),</span>
-        <span class="n">resolve</span><span class="o">=</span><span class="n">_resolve_gaussian</span><span class="p">,</span>
-        <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Gaussian decay: sigma_gauss sets the 1/e width [days]&quot;</span><span class="p">,</span>
-    <span class="p">))</span>
-<span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
-    <span class="k">pass</span>  <span class="c1"># already registered if cell is re-run</span>
-
-<span class="c1"># ── 2. Subclass AnalyticKernel to override R_Gamma ───────────────────────</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">GaussianEnvelopeKernelJAX</span><span class="p">(</span><span class="n">AnalyticKernelJAX</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;src_jax AnalyticKernel with a Gaussian envelope registered via params.&quot;&quot;&quot;</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">R_Gamma</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lag</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;R_Γ(τ) = sqrt(π) · sigma · exp(-τ² / (4·sigma²))&quot;&quot;&quot;</span>
-        <span class="n">sigma</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;sigma_gauss&quot;</span><span class="p">]</span>
-        <span class="n">t</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">lag</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span><span class="o">.</span><span class="n">ravel</span><span class="p">())</span>
-        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">*</span> <span class="n">sigma</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">t</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span>
-
-<span class="c1"># ── 3. Use it — same hparam dict pattern as any other kernel ─────────────</span>
-
-<span class="n">hparam_gauss_jax</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
-    <span class="n">peq</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">kappa</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">3</span><span class="p">,</span>
-    <span class="n">lspot</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>       <span class="c1"># unused by Gaussian envelope; required by base keys</span>
-    <span class="n">sigma_gauss</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span> <span class="c1"># identifies the gaussian envelope</span>
-    <span class="n">sigma_k</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
-<span class="p">)</span>
-
-<span class="n">ak_gauss_jax</span> <span class="o">=</span> <span class="n">GaussianEnvelopeKernelJAX</span><span class="p">(</span><span class="n">hparam_gauss_jax</span><span class="p">,</span> <span class="n">n_harmonics</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">n_lat</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
-
-<span class="n">tlags</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">25</span><span class="p">,</span> <span class="mi">500</span><span class="p">)</span>
-<span class="n">K_gauss_jax</span> <span class="o">=</span> <span class="n">ak_gauss_jax</span><span class="p">(</span><span class="n">tlags</span><span class="p">)</span>
-
-<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">tlags</span><span class="p">,</span> <span class="n">K_gauss_jax</span> <span class="o">/</span> <span class="n">K_gauss_jax</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Gaussian (src_jax, registered)&quot;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">axhline</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;gray&quot;</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">0.8</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;Lag [days]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">14</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;$K(\tau)\,/\,K(0)$&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">14</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;Gaussian GP kernel (src_jax)&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">14</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">fontsize</span><span class="o">=</span><span class="mi">12</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
-
-<span class="c1"># The registered envelope is also understood by resolve_hparam:</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src_jax.params</span><span class="w"> </span><span class="kn">import</span> <span class="n">resolve_hparam</span>
-<span class="n">resolved</span> <span class="o">=</span> <span class="n">resolve_hparam</span><span class="p">(</span><span class="n">hparam_gauss_jax</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Resolved sigma_k: </span><span class="si">{</span><span class="n">resolved</span><span class="p">[</span><span class="s1">&#39;sigma_k&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Resolved tau (scalar compat): </span><span class="si">{</span><span class="n">resolved</span><span class="p">[</span><span class="s1">&#39;tau&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -885,11 +774,14 @@ $\displaystyle \sqrt{2} \sqrt{\pi} \sigma e^{- \frac{\omega^{2} \sigma^{2}}{2}}$
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Deriving-R_\Gamma-for-a-Gaussian-envelope">Deriving <span class="math notranslate nohighlight">\(R_\Gamma\)</span> for a Gaussian envelope</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Approach-1-—-Subclassing-AnalyticKernel-(src_numpy)">Approach 1 — Subclassing <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code> (<code class="docutils literal notranslate"><span class="pre">src_numpy</span></code>)</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Define-the-Gaussian-envelope">Define the Gaussian envelope</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#Step-1-—-Register-the-envelope">Step 1 — Register the envelope</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#Step-2-—-Subclass-AnalyticKernel-and-override-R_Gamma">Step 2 — Subclass <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code> and override <code class="docutils literal notranslate"><span class="pre">R_Gamma</span></code></a></li>
+</ul>
+</li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Compare-envelope-shapes">Compare envelope shapes</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Compare-GP-kernels">Compare GP kernels</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Compare-power-spectral-densities">Compare power spectral densities</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Approach-2-—-register_envelope-(src_jax)">Approach 2 — <code class="docutils literal notranslate"><span class="pre">register_envelope</span></code> (<code class="docutils literal notranslate"><span class="pre">src_jax</span></code>)</a></li>
 </ul>
   </nav></div>
 

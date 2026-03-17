@@ -49,7 +49,7 @@ tutorials/lightcurve_demo
 tutorials/gp_solver_quickstart
 tutorials/custom_envelope
 tutorials/custom_latitude_distribution
-tutorials/run_blackjax
+tutorials/gp_optimization
 ```
 
 ```{toctree}
