@@ -316,16 +316,23 @@
 <span class="n">rc</span><span class="p">(</span><span class="s1">&#39;xtick&#39;</span><span class="p">,</span> <span class="n">labelsize</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
 <span class="n">rc</span><span class="p">(</span><span class="s1">&#39;ytick&#39;</span><span class="p">,</span> <span class="n">labelsize</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
 
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.params</span><span class="w"> </span><span class="kn">import</span> <span class="n">resolve_hparam</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">params</span><span class="w"> </span><span class="kn">import</span> <span class="n">resolve_hparam</span>
+
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;LightcurveModel&quot;</span><span class="p">,</span> <span class="s2">&quot;compute_sigmak&quot;</span><span class="p">]</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">compute_sigmak</span><span class="p">(</span><span class="n">nspot</span><span class="p">,</span> <span class="n">alpha_max</span><span class="p">,</span> <span class="n">fspot</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">compute_sigmak</span><span class="p">(</span><span class="n">nspot_rate</span><span class="p">,</span> <span class="n">alpha_max</span><span class="p">,</span> <span class="n">fspot</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute the kernel amplitude prefactor sigma_k.</span>
+
+<span class="sd">    Thin wrapper around params.resolve_hparam for the physical_rate mode.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
-<span class="sd">    nspot : float</span>
-<span class="sd">        Number of spots.</span>
+<span class="sd">    nspot_rate : float</span>
+<span class="sd">        Spot emergence rate [spots/day].</span>
 <span class="sd">    alpha_max : float</span>
 <span class="sd">        Peak spot angular radius [rad].</span>
 <span class="sd">    fspot : float, optional</span>
@@ -334,8 +341,9 @@
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
 <span class="sd">    sigma_k : float</span>
+<span class="sd">        sigma_k = sqrt(nspot_rate) * (1 - fspot) * alpha_max**2</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">nspot</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">fspot</span><span class="p">)</span> <span class="o">*</span> <span class="n">alpha_max</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">nspot_rate</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">fspot</span><span class="p">)</span> <span class="o">*</span> <span class="n">alpha_max</span><span class="o">**</span><span class="mi">2</span>
 
 
 <span class="c1"># =====================================================================</span>
@@ -590,6 +598,44 @@
 
         <span class="c1"># compute lightcurve using JAX</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">flux</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">Flux</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">t</span><span class="p">)</span>
+
+<div class="viewcode-block" id="LightcurveModel.from_hparam">
+<a class="viewcode-back" href="../../api/src_jax.html#src_jax.starspot.LightcurveModel.from_hparam">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_hparam</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">hparam</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">nspot</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Construct a LightcurveModel from a GPSolver-compatible hparam dict.</span>
+
+<span class="sd">        Accepts the same raw hparam dict that GPSolver/AnalyticKernel take,</span>
+<span class="sd">        including all amplitude modes (sigma_k, nspot_rate, or nspot), and</span>
+<span class="sd">        both symmetric (tau) and asymmetric (tau_em + tau_dec) envelopes.</span>
+<span class="sd">        This removes the need to manually decompose the dict in scripts.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        hparam : dict</span>
+<span class="sd">            Raw hyperparameter dict.  Must contain peq, kappa, inc, lspot,</span>
+<span class="sd">            an envelope timescale, and an amplitude specification.</span>
+<span class="sd">        nspot : int</span>
+<span class="sd">            Total number of spots to simulate (distinct from nspot_rate).</span>
+<span class="sd">        **kwargs</span>
+<span class="sd">            Forwarded to LightcurveModel.__init__ (e.g. tsim, tsamp, lat, long).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        LightcurveModel</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">resolve_hparam</span><span class="p">(</span><span class="n">hparam</span><span class="p">)</span>
+        <span class="n">tau_em</span>  <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;tau_em&quot;</span><span class="p">,</span>  <span class="n">p</span><span class="p">[</span><span class="s2">&quot;tau&quot;</span><span class="p">])</span>
+        <span class="n">tau_dec</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;tau_dec&quot;</span><span class="p">,</span> <span class="n">p</span><span class="p">[</span><span class="s2">&quot;tau&quot;</span><span class="p">])</span>
+        <span class="n">alpha_max</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;alpha_max&quot;</span><span class="p">,</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;alpha_max&quot;</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">))</span>
+        <span class="n">fspot</span>     <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;fspot&quot;</span><span class="p">,</span>     <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;fspot&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
+            <span class="n">peq</span><span class="o">=</span><span class="n">p</span><span class="p">[</span><span class="s2">&quot;peq&quot;</span><span class="p">],</span> <span class="n">kappa</span><span class="o">=</span><span class="n">p</span><span class="p">[</span><span class="s2">&quot;kappa&quot;</span><span class="p">],</span> <span class="n">inc</span><span class="o">=</span><span class="n">p</span><span class="p">[</span><span class="s2">&quot;inc&quot;</span><span class="p">],</span> <span class="n">nspot</span><span class="o">=</span><span class="n">nspot</span><span class="p">,</span>
+            <span class="n">tem</span><span class="o">=</span><span class="n">tau_em</span><span class="p">,</span> <span class="n">tdec</span><span class="o">=</span><span class="n">tau_dec</span><span class="p">,</span>
+            <span class="n">alpha_max</span><span class="o">=</span><span class="n">alpha_max</span><span class="p">,</span> <span class="n">fspot</span><span class="o">=</span><span class="n">fspot</span><span class="p">,</span> <span class="n">lspot</span><span class="o">=</span><span class="n">p</span><span class="p">[</span><span class="s2">&quot;lspot&quot;</span><span class="p">],</span>
+            <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_assign_property</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">var</span><span class="p">):</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">var</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>

@@ -1,3 +1,7 @@
+# ===================================================================
+# MCMC with BlackJAX
+# ===================================================================
+
 import jax
 jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_platforms", "cuda")
@@ -21,9 +25,9 @@ results_dir = "results/trial" + str(max(last_run)+1)
 if not os.path.exists(results_dir):
     os.makedirs(results_dir)
 
-# ===================================================================
+# -------------------------------------------------------
 # Generate synthetic lightcurve data
-# ===================================================================
+# -------------------------------------------------------
 
 tsim = 400
 nspot_per_day = 0.2
@@ -47,9 +51,9 @@ plt.ylabel(r"$\Delta$Flux [\%]", fontsize=22)
 plt.savefig(os.path.join(results_dir, "synthetic_lightcurve.png"), dpi=300)
 plt.close()
 
-# ===================================================================
+# -------------------------------------------------------
 # Estimate MAP solution
-# ===================================================================
+# -------------------------------------------------------
 
 bounds = {
     "peq":          (3.0, 7.0),
@@ -75,9 +79,9 @@ for _ in tqdm.tqdm(range(10)):
 theta_map = theta_opts[np.argmin(fit_vals)]
 print(f"MAP solution: {theta_map}\n")
 
-# ===================================================================
+# -------------------------------------------------------
 # Plot MAP solution: lightcurve fit, ACF, PSD
-# ===================================================================
+# -------------------------------------------------------
 
 fig, axes = plt.subplots(3, 1, figsize=(12, 12))
 gp.plot_prediction(theta=theta_map, ax=axes[0])
@@ -87,9 +91,9 @@ fig.tight_layout()
 fig.savefig(os.path.join(results_dir, "map_fit.png"), dpi=150)
 plt.close(fig)
 
-# ===================================================================
+# -------------------------------------------------------
 # Run MCMC with BlackJAX
-# ===================================================================
+# -------------------------------------------------------
 
 sampler = BlackJAXSampler(gp)
 
@@ -113,9 +117,9 @@ for _ in range(n_batches - 1):
     samples, info = sampler.resume_nuts(n_samples=batch_size)
     sampler.save_checkpoint()  # appends & clears
 
-# ===================================================================
+# -------------------------------------------------------
 # Save and visualize results
-# ===================================================================
+# -------------------------------------------------------
 
 # Load all samples from disk (only when needed for analysis)
 all_samples = BlackJAXSampler.load_samples(checkpoint_file)

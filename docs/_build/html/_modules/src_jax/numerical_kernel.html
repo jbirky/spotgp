@@ -320,17 +320,9 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">starspot</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.psd</span><span class="w"> </span><span class="kn">import</span> <span class="n">compute_psd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.params</span><span class="w"> </span><span class="kn">import</span> <span class="n">resolve_hparam</span>
 
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;NumericalKernel&quot;</span><span class="p">,</span> <span class="s2">&quot;generate_sims&quot;</span><span class="p">,</span> <span class="s2">&quot;avg_covariance_tlag&quot;</span><span class="p">]</span>
-
-<span class="c1"># Required keys for all modes</span>
-<span class="n">_REQUIRED_KEYS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;peq&quot;</span><span class="p">,</span> <span class="s2">&quot;kappa&quot;</span><span class="p">,</span> <span class="s2">&quot;inc&quot;</span><span class="p">,</span> <span class="s2">&quot;lspot&quot;</span><span class="p">,</span> <span class="s2">&quot;tau&quot;</span><span class="p">,</span> <span class="s2">&quot;alpha_max&quot;</span><span class="p">}</span>
-
-<span class="c1"># Two valid modes for specifying amplitude:</span>
-<span class="c1">#   Mode 1: provide sigma_k directly</span>
-<span class="c1">#   Mode 2: provide nspot and fspot (sigma_k computed from Eq. kernel_Nspot)</span>
-<span class="n">_AMPLITUDE_KEYS_SIGMA</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;sigma_k&quot;</span><span class="p">}</span>
-<span class="n">_AMPLITUDE_KEYS_PHYSICAL</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;nspot&quot;</span><span class="p">,</span> <span class="s2">&quot;fspot&quot;</span><span class="p">}</span>
 
 
 <span class="c1"># ======================================================================</span>
@@ -416,24 +408,14 @@
 
         <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
 
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">hparam</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;hparam must be a dict&quot;</span><span class="p">)</span>
+        <span class="c1"># NumericalKernel always requires nspot for the forward simulations,</span>
+        <span class="c1"># regardless of which amplitude mode is used.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">hparam</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;nspot&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">hparam</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;hparam must be a dict containing &#39;nspot&#39; &quot;</span>
+                             <span class="s2">&quot;(required for numerical simulations)&quot;</span><span class="p">)</span>
 
-        <span class="n">missing</span> <span class="o">=</span> <span class="n">_REQUIRED_KEYS</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">hparam</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
-        <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;hparam dict is missing required keys: </span><span class="si">{</span><span class="n">missing</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-        <span class="k">if</span> <span class="s2">&quot;nspot&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">hparam</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;nspot is required for numerical simulations&quot;</span><span class="p">)</span>
-
-        <span class="n">has_sigma</span> <span class="o">=</span> <span class="s2">&quot;sigma_k&quot;</span> <span class="ow">in</span> <span class="n">hparam</span>
-        <span class="n">has_physical</span> <span class="o">=</span> <span class="s2">&quot;nspot&quot;</span> <span class="ow">in</span> <span class="n">hparam</span> <span class="ow">and</span> <span class="s2">&quot;fspot&quot;</span> <span class="ow">in</span> <span class="n">hparam</span>
-
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">has_sigma</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">has_physical</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;hparam must contain either &#39;sigma_k&#39; or both &#39;nspot&#39; and &#39;fspot&#39;&quot;</span><span class="p">)</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">hparam</span><span class="p">)</span>
+        <span class="c1"># Validate, resolve envelope, and compute sigma_k</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span> <span class="o">=</span> <span class="n">resolve_hparam</span><span class="p">(</span><span class="n">hparam</span><span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">peq</span>       <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;peq&quot;</span><span class="p">]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">kappa</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;kappa&quot;</span><span class="p">]</span>
@@ -441,15 +423,8 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">nspot</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;nspot&quot;</span><span class="p">]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">lspot</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;lspot&quot;</span><span class="p">]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">tau</span>       <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;tau&quot;</span><span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">alpha_max</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;alpha_max&quot;</span><span class="p">]</span>
-
-        <span class="k">if</span> <span class="n">has_sigma</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">sigma_k</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;sigma_k&quot;</span><span class="p">]</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">nspot</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;nspot&quot;</span><span class="p">]</span>
-            <span class="n">fspot</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;fspot&quot;</span><span class="p">]</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">sigma_k</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">nspot</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">fspot</span><span class="p">)</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;sigma_k&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma_k</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">alpha_max</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;alpha_max&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sigma_k</span>   <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;sigma_k&quot;</span><span class="p">]</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span>   <span class="o">=</span> <span class="n">verbose</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">tsim</span>      <span class="o">=</span> <span class="n">tsim</span>

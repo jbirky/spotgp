@@ -3,23 +3,22 @@ import jax.numpy as jnp
 import numpy as np
 from functools import partial
 
+try:
+    from .params import (
+        resolve_hparam,
+        BASE_REQUIRED_KEYS as _REQUIRED_KEYS_BASE,
+        _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
+        _AMPLITUDE_KEYS_PHYSICAL_RATE, _AMPLITUDE_KEYS_PHYSICAL,
+    )
+except ImportError:
+    from params import (
+        resolve_hparam,
+        BASE_REQUIRED_KEYS as _REQUIRED_KEYS_BASE,
+        _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
+        _AMPLITUDE_KEYS_PHYSICAL_RATE, _AMPLITUDE_KEYS_PHYSICAL,
+    )
+
 __all__ = ["AnalyticKernel"]
-
-# Required keys common to all modes
-_REQUIRED_KEYS_BASE = {"peq", "kappa", "inc", "lspot"}
-
-# Envelope timescale: provide EITHER tau (symmetric) OR tau_em + tau_dec (asymmetric)
-_TAU_KEYS_SYMMETRIC = {"tau"}
-_TAU_KEYS_ASYMMETRIC = {"tau_em", "tau_dec"}
-
-# Backward compatibility: gp_solver and other modules import _REQUIRED_KEYS
-_REQUIRED_KEYS = _REQUIRED_KEYS_BASE | {"tau"}
-
-# Two valid modes for specifying amplitude:
-#   Mode 1: provide sigma_k directly
-#   Mode 2: provide nspot and fspot (sigma_k computed from Eq. kernel_Nspot)
-_AMPLITUDE_KEYS_SIGMA = {"sigma_k"}
-_AMPLITUDE_KEYS_PHYSICAL = {"nspot", "fspot", "alpha_max"}
 
 
 @jax.jit
@@ -318,60 +317,29 @@ class AnalyticKernel:
     def __init__(self, hparam, n_harmonics=3, n_lat=64,
                  lat_range=(-np.pi/2, np.pi/2), quadrature="trapezoid"):
 
-        if not isinstance(hparam, dict):
-            raise TypeError("hparam must be a dict")
-
-        missing = _REQUIRED_KEYS_BASE - set(hparam.keys())
-        if missing:
-            raise ValueError(f"hparam dict is missing required keys: {missing}")
-
-        has_tau_sym = "tau" in hparam
-        has_tau_asym = "tau_em" in hparam and "tau_dec" in hparam
-
-        if not has_tau_sym and not has_tau_asym:
-            raise ValueError(
-                "hparam must contain either 'tau' (symmetric) or both "
-                "'tau_em' and 'tau_dec' (asymmetric)")
-
-        has_sigma = "sigma_k" in hparam
-        has_physical = "nspot" in hparam and "fspot" in hparam and "alpha_max" in hparam
-
-        if not has_sigma and not has_physical:
-            raise ValueError(
-                "hparam must contain either 'sigma_k' or all of "
-                "'nspot', 'fspot', and 'alpha_max'")
-
-        self.hparam = dict(hparam)
+        # Validate, resolve envelope timescale, and compute sigma_k
+        self.hparam = resolve_hparam(hparam)
 
         self.peq = self.hparam["peq"]
         self.kappa = self.hparam["kappa"]
         self.inc = self.hparam["inc"]
         self.lspot = self.hparam["lspot"]
+        self.sigma_k = self.hparam["sigma_k"]
 
-        if has_tau_asym:
+        # Tau: asymmetric if tau_em/tau_dec present in the *original* dict
+        if "tau_em" in hparam and "tau_dec" in hparam:
             self.asymmetric = True
             self.tau_em = self.hparam["tau_em"]
             self.tau_dec = self.hparam["tau_dec"]
-            # _R_Gamma_asymmetric assumes te <= td; enforce via min/max
+            self.tau = self.hparam["tau"]  # mean, injected by resolve_hparam
+            # _R_Gamma_asymmetric requires te <= td
             self._te = min(self.tau_em, self.tau_dec)
             self._td = max(self.tau_em, self.tau_dec)
-            # For methods that need a single tau (e.g., PSD), use the mean
-            self.tau = (self.tau_em + self.tau_dec) / 2
         else:
             self.asymmetric = False
             self.tau = self.hparam["tau"]
             self.tau_em = self.tau
             self.tau_dec = self.tau
-
-        if has_sigma:
-            self.sigma_k = self.hparam["sigma_k"]
-        else:
-            # sigma_k^2 = N_spot * (1 - f_spot)^2 * alpha_max^4 / pi^2
-            nspot = self.hparam["nspot"]
-            fspot = self.hparam["fspot"]
-            alpha_max = self.hparam["alpha_max"]
-            self.sigma_k = np.sqrt(nspot) * (1 - fspot) * alpha_max**2 / np.pi
-            self.hparam["sigma_k"] = self.sigma_k
 
         self.n_harmonics = n_harmonics
         self.n_lat = n_lat

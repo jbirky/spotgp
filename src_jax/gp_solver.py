@@ -15,32 +15,34 @@ import jax.scipy.linalg as jla
 import numpy as np
 
 try:
+    from .params import (
+        resolve_hparam, KERNEL_HPARAM_KEYS, HPARAM_KEYS_WITH_NOISE,
+        _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
+        _AMPLITUDE_KEYS_PHYSICAL, _AMPLITUDE_KEYS_PHYSICAL_RATE,
+    )
     from .analytic_kernel import (
-        AnalyticKernel, _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
-        _AMPLITUDE_KEYS_PHYSICAL, _R_Gamma_symmetric, _cn_general_jax,
-        _gauss_legendre_grid,
+        AnalyticKernel, _R_Gamma_symmetric, _cn_general_jax, _gauss_legendre_grid,
     )
     from .banded_cholesky import (banded_cholesky, banded_solve,
                                    banded_cholesky_compact, banded_solve_compact)
 except ImportError:
+    from params import (
+        resolve_hparam, KERNEL_HPARAM_KEYS, HPARAM_KEYS_WITH_NOISE,
+        _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
+        _AMPLITUDE_KEYS_PHYSICAL, _AMPLITUDE_KEYS_PHYSICAL_RATE,
+    )
     from analytic_kernel import (
-        AnalyticKernel, _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
-        _AMPLITUDE_KEYS_PHYSICAL, _R_Gamma_symmetric, _cn_general_jax,
-        _gauss_legendre_grid,
+        AnalyticKernel, _R_Gamma_symmetric, _cn_general_jax, _gauss_legendre_grid,
     )
     from banded_cholesky import (banded_cholesky, banded_solve,
                                  banded_cholesky_compact, banded_solve_compact)
 
 __all__ = ["GPSolver"]
 
-# Fixed parameter ordering for the theta vector.
-# The kernel always works in terms of sigma_k (the amplitude prefactor).
-# Users who prefer (nspot, fspot, alpha_max) should compute sigma_k via
-# sigma_k = sqrt(nspot) * (1 - fspot) * alpha_max^2 / pi  (see AnalyticKernel).
-KERNEL_HPARAM_KEYS = ["peq", "kappa", "inc", "lspot", "tau", "sigma_k"]
-
-# Full hyperparameter keys including optional white noise
-HPARAM_KEYS_WITH_NOISE = KERNEL_HPARAM_KEYS + ["sigma_n"]
+# KERNEL_HPARAM_KEYS and HPARAM_KEYS_WITH_NOISE are imported from params.
+# Re-export as lists for any callers that expect list type.
+KERNEL_HPARAM_KEYS = list(KERNEL_HPARAM_KEYS)
+HPARAM_KEYS_WITH_NOISE = list(HPARAM_KEYS_WITH_NOISE)
 
 
 # =====================================================================
@@ -296,17 +298,12 @@ def _default_log_prior(theta_arr, bounds):
 
 
 def _validate_hparam(hparam):
-    """Validate hparam dict (shared by __init__ and update_hparam)."""
-    if not isinstance(hparam, dict):
-        raise TypeError("hparam must be a dict")
-    missing = _REQUIRED_KEYS - set(hparam.keys())
-    if missing:
-        raise ValueError(f"hparam dict is missing required keys: {missing}")
-    has_sigma = _AMPLITUDE_KEYS_SIGMA <= set(hparam.keys())
-    has_physical = _AMPLITUDE_KEYS_PHYSICAL <= set(hparam.keys())
-    if not has_sigma and not has_physical:
-        raise ValueError(
-            "hparam must contain either 'sigma_k' or both 'nspot' and 'fspot'")
+    """Validate hparam dict (shared by __init__ and update_hparam).
+
+    Delegates to params.resolve_hparam for all validation logic; raises
+    on the first error encountered.
+    """
+    resolve_hparam(hparam)  # raises TypeError / ValueError on bad input
 
 
 # =====================================================================
@@ -759,7 +756,8 @@ class GPSolver:
 
     def plot_prediction(self, theta=None, n_points=2000, n_sigma=(1, 2),
                         ax=None, data_color="k", model_color="r",
-                        show_legend=True, xlim=None, ylim=None):
+                        show_legend=True, xlim=None, ylim=None, 
+                        model_label="GP mean", data_label="Data"):
         """
         Plot the GP posterior mean and uncertainty bands over the data.
 
@@ -816,8 +814,8 @@ class GPSolver:
         ax.errorbar(np.asarray(self.x), np.asarray(self.y),
                     yerr=np.asarray(self.yerr),
                     fmt=".", color=data_color, capsize=0, alpha=0.5,
-                    label="Data")
-        ax.plot(xpred, mu, color=model_color, lw=1.5, label="MAP mean")
+                    label=data_label)
+        ax.plot(xpred, mu, color=model_color, lw=1.5, label=model_label)
 
         alphas = {1: 0.35, 2: 0.18, 3: 0.10}
         for ns in (n_sigma if hasattr(n_sigma, "__iter__") else (n_sigma,)):
@@ -1458,8 +1456,9 @@ class GPSolver:
         return jnp.asarray(theta, dtype=jnp.float64)
 
     def plot_acf(self, theta=None, tlags=None, n_bins=50, ax=None,
-                 normalize=True, data_color="k", model_color="r",
-                 show_legend=True, xlim=None, ylim=None):
+                 normalize=False, data_color="k", model_color="r",
+                 show_legend=True, xlim=None, ylim=None, 
+                 model_label="Analytic ACF", data_label="Data ACF"):
         """
         Plot the empirical ACF and optionally the analytic kernel.
 
@@ -1500,7 +1499,7 @@ class GPSolver:
         if ax is None:
             fig, ax = plt.subplots()
 
-        ax.plot(lag_centers, acf_data, color=data_color, label="Data ACF")
+        ax.plot(lag_centers, acf_data, color=data_color, label=data_label)
 
         if theta is not None:
             theta_arr = self._theta_dict_to_phys_array(theta)
@@ -1513,7 +1512,7 @@ class GPSolver:
                 var = np.mean((np.asarray(self.y) - self.mean_val) ** 2)
                 if var > 0:
                     K_model = K_model / var
-            ax.plot(lag_fine, K_model, color=model_color, label="Analytic kernel")
+            ax.plot(lag_fine, K_model, color=model_color, label=model_label)
 
         if xlim is not None:
             ax.set_xlim(xlim)
@@ -1530,7 +1529,8 @@ class GPSolver:
 
     def plot_psd(self, theta=None, n_freq=500, dt_kernel=None, ax=None,
                  data_color="k", model_color="r", show_legend=True,
-                 xlim=None, ylim=None):
+                 xlim=None, ylim=None, model_label="Analytic PSD", 
+                 data_label="Data Lomb-Scargle"):
         """
         Plot the empirical PSD (Lomb-Scargle) and optionally the analytic
         kernel PSD (FFT of the autocovariance function).
@@ -1586,8 +1586,7 @@ class GPSolver:
         if ax is None:
             fig, ax = plt.subplots()
 
-        ax.semilogy(freqs, psd_data, color=data_color, lw=0.8,
-                    label="Lomb-Scargle")
+        ax.semilogy(freqs, psd_data, color=data_color, lw=0.8, label=data_label)
 
         if theta is not None:
             theta_arr = self._theta_dict_to_phys_array(theta)
@@ -1608,8 +1607,7 @@ class GPSolver:
             fm, pm = freqs_model[mask], psd_model[mask]
             # Normalize so ∫PSD df = var(data)
             pm = pm * var / np.trapezoid(pm, fm)
-            ax.semilogy(fm, pm, color=model_color, lw=1.5,
-                        label="Analytic kernel")
+            ax.semilogy(fm, pm, color=model_color, lw=1.5, label=model_label)
             
         if xlim is not None:
             ax.set_xlim(xlim)

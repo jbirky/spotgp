@@ -426,7 +426,7 @@
 </div>
 <section id="1.-Generate-Synthetic-Data">
 <h2>1. Generate Synthetic Data<a class="headerlink" href="#1.-Generate-Synthetic-Data" title="Link to this heading">#</a></h2>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[22]:
 </pre></div>
 </div>
@@ -434,10 +434,22 @@
 
 <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
 
-<span class="n">theta_true</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">peq</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">kappa</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">3</span><span class="p">,</span> <span class="n">nspot</span><span class="o">=</span><span class="mi">40</span><span class="p">,</span>
-                  <span class="n">lspot</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">tau</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">alpha_max</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">fspot</span><span class="o">=</span><span class="mf">0.</span><span class="p">)</span>
+<span class="c1"># Simulation parameters</span>
+<span class="n">tsim</span> <span class="o">=</span> <span class="mi">100</span>
+<span class="n">nspot</span> <span class="o">=</span> <span class="mi">40</span>
+<span class="n">nspot_rate</span> <span class="o">=</span> <span class="n">nspot</span> <span class="o">/</span> <span class="n">tsim</span>   <span class="c1"># spots/day — used for GP kernel amplitude</span>
 
-<span class="n">lc</span> <span class="o">=</span> <span class="n">LightcurveModel</span><span class="p">(</span><span class="o">**</span><span class="n">theta_true</span><span class="p">,</span> <span class="n">tsim</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">tsamp</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+<span class="c1"># hparam dict: compatible with GPSolver and AnalyticKernel.</span>
+<span class="c1"># Uses nspot_rate (preferred) for the amplitude; nspot is passed</span>
+<span class="c1"># separately to LightcurveModel for the forward simulation.</span>
+<span class="n">hparam</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">peq</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">kappa</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">3</span><span class="p">,</span>
+              <span class="n">lspot</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">tau</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>
+              <span class="n">nspot_rate</span><span class="o">=</span><span class="n">nspot_rate</span><span class="p">,</span> <span class="n">fspot</span><span class="o">=</span><span class="mf">0.</span><span class="p">,</span> <span class="n">alpha_max</span><span class="o">=</span><span class="mf">0.05</span><span class="p">)</span>
+
+<span class="n">lc</span> <span class="o">=</span> <span class="n">LightcurveModel</span><span class="p">(</span><span class="n">peq</span><span class="o">=</span><span class="n">hparam</span><span class="p">[</span><span class="s1">&#39;peq&#39;</span><span class="p">],</span> <span class="n">kappa</span><span class="o">=</span><span class="n">hparam</span><span class="p">[</span><span class="s1">&#39;kappa&#39;</span><span class="p">],</span> <span class="n">inc</span><span class="o">=</span><span class="n">hparam</span><span class="p">[</span><span class="s1">&#39;inc&#39;</span><span class="p">],</span>
+                     <span class="n">nspot</span><span class="o">=</span><span class="n">nspot</span><span class="p">,</span> <span class="n">lspot</span><span class="o">=</span><span class="n">hparam</span><span class="p">[</span><span class="s1">&#39;lspot&#39;</span><span class="p">],</span> <span class="n">tau</span><span class="o">=</span><span class="n">hparam</span><span class="p">[</span><span class="s1">&#39;tau&#39;</span><span class="p">],</span>
+                     <span class="n">alpha_max</span><span class="o">=</span><span class="n">hparam</span><span class="p">[</span><span class="s1">&#39;alpha_max&#39;</span><span class="p">],</span> <span class="n">fspot</span><span class="o">=</span><span class="n">hparam</span><span class="p">[</span><span class="s1">&#39;fspot&#39;</span><span class="p">],</span>
+                     <span class="n">tsim</span><span class="o">=</span><span class="n">tsim</span><span class="p">,</span> <span class="n">tsamp</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
                      <span class="n">lat</span><span class="o">=</span><span class="p">[</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">],</span> <span class="n">long</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">])</span>
 
 <span class="n">tobs</span> <span class="o">=</span> <span class="n">lc</span><span class="o">.</span><span class="n">t</span>
@@ -456,32 +468,17 @@
 </pre></div>
 </div>
 </div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_gp_solver_quickstart_3_0.png" src="../_images/tutorials_gp_solver_quickstart_3_0.png" />
-</div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-200 observations
-</pre></div></div>
-</div>
 </section>
 <section id="2.-Fit-GP-with-src_numpy">
 <h2>2. Fit GP with <code class="docutils literal notranslate"><span class="pre">src_numpy</span></code><a class="headerlink" href="#2.-Fit-GP-with-src_numpy" title="Link to this heading">#</a></h2>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[23]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">src_numpy.gp_solver</span><span class="w"> </span><span class="kn">import</span> <span class="n">GPSolver</span> <span class="k">as</span> <span class="n">GPSolverNumpy</span>
 
 <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-<span class="n">gp_np</span> <span class="o">=</span> <span class="n">GPSolverNumpy</span><span class="p">(</span><span class="n">tobs</span><span class="p">,</span> <span class="n">flux</span><span class="p">,</span> <span class="n">flux_err</span><span class="p">,</span> <span class="n">theta_true</span><span class="p">)</span>
+<span class="n">gp_np</span> <span class="o">=</span> <span class="n">GPSolverNumpy</span><span class="p">(</span><span class="n">tobs</span><span class="p">,</span> <span class="n">flux</span><span class="p">,</span> <span class="n">flux_err</span><span class="p">,</span> <span class="n">hparam</span><span class="p">)</span>
 <span class="n">t_build_np</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span>
 
 <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
@@ -493,20 +490,11 @@
 </pre></div>
 </div>
 </div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-[numpy] build:         0.137 s
-[numpy] log-likelihood: 0.000 s  →  1108.41
-</pre></div></div>
-</div>
 </section>
 <section id="3.-Fit-GP-with-src_jax">
 <h2>3. Fit GP with <code class="docutils literal notranslate"><span class="pre">src_jax</span></code><a class="headerlink" href="#3.-Fit-GP-with-src_jax" title="Link to this heading">#</a></h2>
 <p>Choose which device to run JAX computations (<code class="docutils literal notranslate"><span class="pre">cpu</span></code> or <code class="docutils literal notranslate"><span class="pre">gpu</span></code>)</p>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[24]:
 </pre></div>
 </div>
@@ -517,8 +505,10 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">src_jax.gp_solver</span><span class="w"> </span><span class="kn">import</span> <span class="n">GPSolver</span> <span class="k">as</span> <span class="n">GPSolverJAX</span>
 
+<span class="c1"># hparam uses nspot_rate — GPSolver calls resolve_hparam internally,</span>
+<span class="c1"># which computes sigma_k = sqrt(nspot_rate) * (1 - fspot) * alpha_max^2.</span>
 <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-<span class="n">gp_jax</span> <span class="o">=</span> <span class="n">GPSolverJAX</span><span class="p">(</span><span class="n">tobs</span><span class="p">,</span> <span class="n">flux</span><span class="p">,</span> <span class="n">flux_err</span><span class="p">,</span> <span class="n">theta_true</span><span class="p">)</span>
+<span class="n">gp_jax</span> <span class="o">=</span> <span class="n">GPSolverJAX</span><span class="p">(</span><span class="n">tobs</span><span class="p">,</span> <span class="n">flux</span><span class="p">,</span> <span class="n">flux_err</span><span class="p">,</span> <span class="n">hparam</span><span class="p">)</span>
 <span class="n">t_build_jax</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0</span>
 
 <span class="c1"># First call triggers JIT compilation</span>
@@ -533,19 +523,10 @@
 </pre></div>
 </div>
 </div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-[jax]   build:          0.321 s
-[jax]   log-likelihood:  0.000 s  →  1108.41
-</pre></div></div>
-</div>
 </section>
 <section id="4.-GP-Prediction">
 <h2>4. GP Prediction<a class="headerlink" href="#4.-GP-Prediction" title="Link to this heading">#</a></h2>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[25]:
 </pre></div>
 </div>
@@ -581,17 +562,10 @@
 </pre></div>
 </div>
 </div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_gp_solver_quickstart_9_0.png" src="../_images/tutorials_gp_solver_quickstart_9_0.png" />
-</div>
-</div>
 </section>
 <section id="5.-Kernel-/-ACF">
 <h2>5. Kernel / ACF<a class="headerlink" href="#5.-Kernel-/-ACF" title="Link to this heading">#</a></h2>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[26]:
 </pre></div>
 </div>
@@ -614,23 +588,20 @@
 </pre></div>
 </div>
 </div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_gp_solver_quickstart_11_0.png" src="../_images/tutorials_gp_solver_quickstart_11_0.png" />
-</div>
-</div>
 </section>
 <section id="6.-Find-MAP-Estimate">
 <h2>6. Find MAP Estimate<a class="headerlink" href="#6.-Find-MAP-Estimate" title="Link to this heading">#</a></h2>
 <p>Optimize the GP hyperparameters by maximizing the log-posterior.</p>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[27]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">theta0</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">peq</span><span class="o">=</span><span class="mf">4.0</span><span class="p">,</span> <span class="n">kappa</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">4</span><span class="p">,</span>
-              <span class="n">lspot</span><span class="o">=</span><span class="mf">8.0</span><span class="p">,</span> <span class="n">tau</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">nspot</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">alpha_max</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">fspot</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># theta0: initial parameter values for MAP optimization.</span>
+<span class="c1"># Use sigma_k directly (the amplitude parameter that GPSolver fits).</span>
+<span class="c1"># The resolved sigma_k from hparam is available via gp_jax.hparam[&#39;sigma_k&#39;].</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="n">theta0</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">peq</span><span class="o">=</span><span class="mf">4.0</span><span class="p">,</span> <span class="n">kappa</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">4</span><span class="p">,</span>
+              <span class="n">lspot</span><span class="o">=</span><span class="mf">8.0</span><span class="p">,</span> <span class="n">tau</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">sigma_k</span><span class="o">=</span><span class="mf">0.005</span><span class="p">)</span>
 
 <span class="n">free_keys</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;peq&quot;</span><span class="p">,</span> <span class="s2">&quot;kappa&quot;</span><span class="p">,</span> <span class="s2">&quot;inc&quot;</span><span class="p">,</span> <span class="s2">&quot;lspot&quot;</span><span class="p">,</span> <span class="s2">&quot;tau&quot;</span><span class="p">,</span> <span class="s2">&quot;sigma_k&quot;</span><span class="p">]</span>
 
@@ -647,30 +618,12 @@
 <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Parameter       true      numpy MAP  jax MAP&quot;</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;-&quot;</span> <span class="o">*</span> <span class="mi">50</span><span class="p">)</span>
 <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">free_keys</span><span class="p">:</span>
-    <span class="n">tv</span> <span class="o">=</span> <span class="n">theta_true</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;nan&#39;</span><span class="p">))</span>
+    <span class="n">tv</span> <span class="o">=</span> <span class="n">hparam</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;nan&#39;</span><span class="p">))</span>
     <span class="n">nv</span> <span class="o">=</span> <span class="n">theta_map_np</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;nan&#39;</span><span class="p">))</span>
     <span class="n">jv</span> <span class="o">=</span> <span class="n">theta_map_jax</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;nan&#39;</span><span class="p">))</span>
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">k</span><span class="si">:</span><span class="s2">&lt;14</span><span class="si">}</span><span class="s2">  </span><span class="si">{</span><span class="n">tv</span><span class="si">:</span><span class="s2">8.4f</span><span class="si">}</span><span class="s2">   </span><span class="si">{</span><span class="n">nv</span><span class="si">:</span><span class="s2">8.4f</span><span class="si">}</span><span class="s2">   </span><span class="si">{</span><span class="n">jv</span><span class="si">:</span><span class="s2">8.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-[numpy] MAP in 39.52 s
-[jax]   MAP in 5.10 s
-
-Parameter       true      numpy MAP  jax MAP
---------------------------------------------------
-peq               5.0000     5.3930     7.3448
-kappa             0.3000     0.1305     0.1594
-inc               1.0472     1.0520     0.9222
-lspot            10.0000     7.6089     9.3803
-tau               5.0000     3.1403     3.0420
-sigma_k              nan     0.0014     0.0026
-</pre></div></div>
 </div>
 </section>
 </section>

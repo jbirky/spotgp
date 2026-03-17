@@ -424,57 +424,63 @@
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">theta_full</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">peq</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span>
-                  <span class="n">kappa</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span>
-                  <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span>
-                  <span class="n">nspot</span><span class="o">=</span><span class="mi">40</span><span class="p">,</span>
-                  <span class="n">lspot</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>
-                  <span class="n">tau</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>
-                  <span class="n">alpha_max</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span>
-                  <span class="n">fspot</span><span class="o">=</span><span class="mf">0.</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># NumericalKernel always requires nspot (total count) for forward simulations.</span>
+<span class="n">TSIM</span> <span class="o">=</span> <span class="mf">300.0</span>
+<span class="n">nspot</span> <span class="o">=</span> <span class="mi">40</span>
+<span class="n">nspot_rate</span> <span class="o">=</span> <span class="n">nspot</span> <span class="o">/</span> <span class="n">TSIM</span>   <span class="c1"># spots/day</span>
+
+<span class="n">theta_numerical</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">peq</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span>
+                        <span class="n">kappa</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span>
+                        <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span>
+                        <span class="n">nspot</span><span class="o">=</span><span class="n">nspot</span><span class="p">,</span>
+                        <span class="n">lspot</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>
+                        <span class="n">tau</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>
+                        <span class="n">alpha_max</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span>
+                        <span class="n">fspot</span><span class="o">=</span><span class="mf">0.</span><span class="p">)</span>
+
+<span class="c1"># AnalyticKernel uses nspot_rate (preferred) — sigma_k computed automatically.</span>
+<span class="c1"># nspot_rate = sqrt-rate of spot emergence [spots/day]</span>
+<span class="n">theta_analytic</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">peq</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span>
+                       <span class="n">kappa</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span>
+                       <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span>
+                       <span class="n">nspot_rate</span><span class="o">=</span><span class="n">nspot_rate</span><span class="p">,</span>
+                       <span class="n">lspot</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>
+                       <span class="n">tau</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>
+                       <span class="n">alpha_max</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span>
+                       <span class="n">fspot</span><span class="o">=</span><span class="mf">0.</span><span class="p">)</span>
 
 <span class="n">tlags</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">TSIM</span> <span class="o">=</span> <span class="mf">300.0</span>    <span class="c1"># time baseline for lightcurve simulations (used for numerical kernel computation)</span>
-<span class="n">TSAMP</span> <span class="o">=</span> <span class="mf">0.1</span>     <span class="c1"># time sampling for lightcurve simulations (used for numerical kernel computation)</span>
-<span class="n">NSIM</span> <span class="o">=</span> <span class="mi">300</span>      <span class="c1"># number of lightcurve simulations to average over (used for numerical kernel computation)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">TSAMP</span> <span class="o">=</span> <span class="mf">0.1</span>     <span class="c1"># time sampling for lightcurve simulations</span>
+<span class="n">NSIM</span> <span class="o">=</span> <span class="mi">300</span>      <span class="c1"># number of lightcurve simulations to average over</span>
 
-<span class="c1"># compute the autocorrelation function (ACF) of the lightcurve simulations</span>
 <span class="n">t0_num</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
 
-<span class="n">nk</span> <span class="o">=</span> <span class="n">NumericalKernel</span><span class="p">(</span><span class="n">theta_full</span><span class="p">,</span> <span class="n">tsim</span><span class="o">=</span><span class="n">TSIM</span><span class="p">,</span> <span class="n">tsamp</span><span class="o">=</span><span class="n">TSAMP</span><span class="p">,</span> <span class="n">nsim</span><span class="o">=</span><span class="n">NSIM</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="n">nk</span> <span class="o">=</span> <span class="n">NumericalKernel</span><span class="p">(</span><span class="n">theta_numerical</span><span class="p">,</span> <span class="n">tsim</span><span class="o">=</span><span class="n">TSIM</span><span class="p">,</span> <span class="n">tsamp</span><span class="o">=</span><span class="n">TSAMP</span><span class="p">,</span> <span class="n">nsim</span><span class="o">=</span><span class="n">NSIM</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
 <span class="n">acf_num</span> <span class="o">=</span> <span class="n">nk</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">tlags</span><span class="p">)</span>
 <span class="n">tf_num</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">t0_num</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;numerical computation time: </span><span class="si">{</span><span class="n">tf_num</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<br/></pre></div>
+</pre></div>
 </div>
 </div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-numerical computation time: 0.783
-</pre></div></div>
-</div>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># compute the ACF using the analytical kernel model</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># AnalyticKernel receives nspot_rate; resolve_hparam computes</span>
+<span class="c1"># sigma_k = sqrt(nspot_rate) * (1 - fspot) * alpha_max^2 internally.</span>
 <span class="n">t0_ana</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
 
-<span class="c1"># compute kernel analytically using up to n_harmonics spherical harmonics</span>
-<span class="c1"># and integrate over n_lat latitudes in the range lat_range using the specified quadrature method (default &quot;trapezoid&quot;)</span>
-<span class="n">ak</span> <span class="o">=</span> <span class="n">AnalyticKernel</span><span class="p">(</span><span class="n">theta_full</span><span class="p">,</span> <span class="n">n_harmonics</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">n_lat</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span> <span class="n">lat_range</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">),</span> <span class="n">quadrature</span><span class="o">=</span><span class="s2">&quot;trapezoid&quot;</span><span class="p">)</span>
+<span class="n">ak</span> <span class="o">=</span> <span class="n">AnalyticKernel</span><span class="p">(</span><span class="n">theta_analytic</span><span class="p">,</span> <span class="n">n_harmonics</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">n_lat</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span>
+                    <span class="n">lat_range</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">),</span> <span class="n">quadrature</span><span class="o">=</span><span class="s2">&quot;trapezoid&quot;</span><span class="p">)</span>
 
 <span class="n">acf_ana</span> <span class="o">=</span> <span class="n">ak</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">tlags</span><span class="p">)</span>
 <span class="n">acf_ana</span> <span class="o">=</span> <span class="n">acf_ana</span> <span class="o">/</span> <span class="n">acf_ana</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>  <span class="c1"># normalize</span>
@@ -484,22 +490,14 @@ numerical computation time: 0.783
 </pre></div>
 </div>
 </div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-analytic computation time: 0.238
-</pre></div></div>
-</div>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">tlags</span><span class="p">,</span> <span class="n">acf_num</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Numerical ACF&quot;</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">tlags</span><span class="p">,</span> <span class="n">acf_ana</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Analytical ACF&quot;</span><span class="p">)</span>
 <span class="k">for</span> <span class="n">ii</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">):</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">ii</span> <span class="o">*</span> <span class="n">theta_full</span><span class="p">[</span><span class="s2">&quot;peq&quot;</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;gray&#39;</span><span class="p">,</span> <span class="n">ls</span><span class="o">=</span><span class="s1">&#39;--&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.6</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">ii</span> <span class="o">*</span> <span class="n">theta_analytic</span><span class="p">[</span><span class="s2">&quot;peq&quot;</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;gray&#39;</span><span class="p">,</span> <span class="n">ls</span><span class="o">=</span><span class="s1">&#39;--&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.6</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">axhline</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;gray&#39;</span><span class="p">,</span> <span class="n">ls</span><span class="o">=</span><span class="s1">&#39;--&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.6</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;Time lag&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;Autocorrelation function&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
@@ -507,13 +505,6 @@ analytic computation time: 0.238
 <span class="n">plt</span><span class="o">.</span><span class="n">xlim</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">tlags</span><span class="p">),</span> <span class="nb">max</span><span class="p">(</span><span class="n">tlags</span><span class="p">))</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 </pre></div>
-</div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_numerical_vs_analytical_kernel_6_0.png" src="../_images/tutorials_numerical_vs_analytical_kernel_6_0.png" />
 </div>
 </div>
 <div class="nbinput nblast docutils container">

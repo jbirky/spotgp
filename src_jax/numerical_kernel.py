@@ -16,17 +16,9 @@ except:
 
 from . import starspot
 from .psd import compute_psd
+from .params import resolve_hparam
 
 __all__ = ["NumericalKernel", "generate_sims", "avg_covariance_tlag"]
-
-# Required keys for all modes
-_REQUIRED_KEYS = {"peq", "kappa", "inc", "lspot", "tau", "alpha_max"}
-
-# Two valid modes for specifying amplitude:
-#   Mode 1: provide sigma_k directly
-#   Mode 2: provide nspot and fspot (sigma_k computed from Eq. kernel_Nspot)
-_AMPLITUDE_KEYS_SIGMA = {"sigma_k"}
-_AMPLITUDE_KEYS_PHYSICAL = {"nspot", "fspot"}
 
 
 # ======================================================================
@@ -104,24 +96,14 @@ class NumericalKernel(object):
 
         t0 = time.time()
 
-        if not isinstance(hparam, dict):
-            raise TypeError("hparam must be a dict")
+        # NumericalKernel always requires nspot for the forward simulations,
+        # regardless of which amplitude mode is used.
+        if not isinstance(hparam, dict) or "nspot" not in hparam:
+            raise ValueError("hparam must be a dict containing 'nspot' "
+                             "(required for numerical simulations)")
 
-        missing = _REQUIRED_KEYS - set(hparam.keys())
-        if missing:
-            raise ValueError(f"hparam dict is missing required keys: {missing}")
-
-        if "nspot" not in hparam:
-            raise ValueError("nspot is required for numerical simulations")
-
-        has_sigma = "sigma_k" in hparam
-        has_physical = "nspot" in hparam and "fspot" in hparam
-
-        if not has_sigma and not has_physical:
-            raise ValueError(
-                "hparam must contain either 'sigma_k' or both 'nspot' and 'fspot'")
-
-        self.hparam = dict(hparam)
+        # Validate, resolve envelope, and compute sigma_k
+        self.hparam = resolve_hparam(hparam)
 
         self.peq       = self.hparam["peq"]
         self.kappa     = self.hparam["kappa"]
@@ -129,15 +111,8 @@ class NumericalKernel(object):
         self.nspot     = self.hparam["nspot"]
         self.lspot     = self.hparam["lspot"]
         self.tau       = self.hparam["tau"]
-        self.alpha_max = self.hparam["alpha_max"]
-
-        if has_sigma:
-            self.sigma_k = self.hparam["sigma_k"]
-        else:
-            nspot = self.hparam["nspot"]
-            fspot = self.hparam["fspot"]
-            self.sigma_k = np.sqrt(nspot) * (1 - fspot) / np.pi
-            self.hparam["sigma_k"] = self.sigma_k
+        self.alpha_max = self.hparam.get("alpha_max", None)
+        self.sigma_k   = self.hparam["sigma_k"]
 
         self.verbose   = verbose
         self.tsim      = tsim
