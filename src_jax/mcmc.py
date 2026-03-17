@@ -45,6 +45,11 @@ class MCMCSampler:
         # Storage for MCMC results
         self.samples = None
         self._info = None
+        self._last_state = None
+        self._adapted_step_size = None
+        self._adapted_inv_mass = None
+        self._last_rng_key = None
+        self._checkpoint_file = None
 
     @property
     def param_keys(self):
@@ -316,17 +321,27 @@ class BlackJAXSampler(MCMCSampler):
 
     def run_nuts(self, n_samples=1000, n_warmup=500, theta_init=None,
                  mass_matrix_method="hessian_map", step_size=None,
-                 rng_key=None, target_accept=0.8, progress_bar=False):
+                 rng_key=None, target_accept=0.8, progress_bar=False,
+                 n_chains=1, checkpoint_file=None):
         """
         Run BlackJAX NUTS sampler.
 
-        Uses a manual warmup loop with dual averaging for step-size
-        adaptation, then a JIT-compiled sampling loop via lax.scan.
+        Uses ``blackjax.window_adaptation`` for JIT-compiled warmup
+        (step-size and mass-matrix adaptation), then ``jax.lax.scan``
+        for the sampling loop.  Both paths avoid Python-level loops,
+        minimizing retracing overhead and memory from accumulated
+        intermediates.
+
+        Warmup always runs a single chain to adapt the step size and
+        mass matrix.  When ``n_chains > 1``, the adapted parameters
+        are shared across all chains, which are initialized with
+        jittered copies of the warmup endpoint and sampled in parallel
+        via ``jax.vmap``.
 
         Parameters
         ----------
         n_samples : int
-            Number of post-warmup samples (default 1000).
+            Number of post-warmup samples per chain (default 1000).
         n_warmup : int
             Number of warmup steps for step-size adaptation (default 500).
         theta_init : dict or array_like, optional
@@ -334,22 +349,32 @@ class BlackJAXSampler(MCMCSampler):
         mass_matrix_method : {"hessian_map", "fisher", "laplace", "diagonal", None}
             Method to estimate the mass matrix (delegated to GPSolver).
         step_size : float, optional
-            NUTS step size. If None, adapted via dual averaging.
+            Initial NUTS step size before adaptation. If None, a
+            heuristic based on the mass matrix scale is used.
         rng_key : jax.random.PRNGKey, optional
             Random key. Default: PRNGKey(0).
         target_accept : float
             Target acceptance rate for dual averaging (default 0.8).
         progress_bar : bool
-            If True, display tqdm progress bars for warmup and sampling
-            (default False). When enabled, sampling falls back to a
-            Python loop instead of lax.scan.
+            If True, print periodic progress updates during the
+            lax.scan sampling loop (default False).
+        n_chains : int
+            Number of independent chains to run in parallel via
+            ``jax.vmap`` (default 1).  All chains share the same
+            adapted step size and mass matrix from a single warmup.
+        checkpoint_file : str, optional
+            Default file path for ``save_checkpoint``.  When set,
+            calling ``save_checkpoint()`` with no arguments will
+            use this path.
 
         Returns
         -------
-        samples : jnp.ndarray, shape (n_samples, n_params)
-            Posterior samples.
+        samples : jnp.ndarray
+            Shape ``(n_samples, n_params)`` when ``n_chains=1``, or
+            ``(n_chains, n_samples, n_params)`` when ``n_chains > 1``.
         info : dict
-            Sampling diagnostics.
+            Sampling diagnostics (arrays have a leading chain
+            dimension when ``n_chains > 1``).
         """
         import blackjax
 
@@ -385,125 +410,434 @@ class BlackJAXSampler(MCMCSampler):
             step_size = float(0.5 * jnp.min(jnp.sqrt(inv_mass_diag)))
             step_size = max(step_size, 1e-5)
 
-        # -- Warmup: dual averaging for step size --------------------
-        if progress_bar:
-            from tqdm.auto import tqdm
+        self._n_chains = n_chains
+        if checkpoint_file is not None:
+            self._checkpoint_file = checkpoint_file
 
-        print(f"Warmup: {n_warmup} steps (dual averaging, "
+        # -- Warmup (single chain) -----------------------------------
+        print(f"Warmup: {n_warmup} steps (window adaptation, "
               f"init step_size={step_size:.6f})...")
-        log_step = jnp.log(step_size)
-        log_step_bar = jnp.log(step_size)
-        mu = jnp.log(10.0 * step_size)
-        gamma = 0.05
-        t0 = 10
-        kappa = 0.75
-        H_bar = 0.0
-
-        state = blackjax.nuts(
-            gp.log_posterior,
-            step_size=step_size,
-            inverse_mass_matrix=inv_mass_diag,
-        ).init(theta_init)
 
         warmup_key, sample_key = jax.random.split(rng_key)
 
-        warmup_iter = range(1, n_warmup + 1)
-        if progress_bar:
-            warmup_iter = tqdm(warmup_iter, desc="Warmup", leave=True)
-
-        for m in warmup_iter:
-            warmup_key, step_key = jax.random.split(warmup_key)
-            current_step = max(float(jnp.exp(log_step)), 1e-10)
-
-            kernel = blackjax.nuts(
-                gp.log_posterior,
-                step_size=current_step,
-                inverse_mass_matrix=inv_mass_diag,
-            )
-            state, step_info = kernel.step(step_key, state)
-
-            accept = float(step_info.acceptance_rate)
-            # Dual averaging update (Hoffman & Gelman 2014, Algorithm 5)
-            w = 1.0 / (m + t0)
-            H_bar = (1 - w) * H_bar + w * (target_accept - accept)
-            log_step = mu - jnp.sqrt(m) / gamma * H_bar
-            m_w = m ** (-kappa)
-            log_step_bar = m_w * log_step + (1 - m_w) * log_step_bar
-
-            if progress_bar:
-                warmup_iter.set_postfix(
-                    step_size=f"{current_step:.2e}", accept=f"{accept:.3f}")
-
-        final_step_size = max(float(jnp.exp(log_step_bar)), 1e-8)
-        print(f"  Adapted step size: {final_step_size:.6f}")
-
-        # -- Sampling ------------------------------------------------
-        print(f"Sampling {n_samples} post-warmup iterations...")
-
-        nuts_kernel = blackjax.nuts(
+        warmup = blackjax.window_adaptation(
+            blackjax.nuts,
             gp.log_posterior,
-            step_size=final_step_size,
-            inverse_mass_matrix=inv_mass_diag,
+            is_mass_matrix_diagonal=True,
+            initial_step_size=step_size,
+            target_acceptance_rate=target_accept,
+            progress_bar=progress_bar,
+        )
+        adapt_results, adapt_info = warmup.run(
+            warmup_key, theta_init, num_steps=n_warmup,
         )
 
-        sample_keys = jax.random.split(sample_key, n_samples)
+        adapted_step_size = adapt_results.parameters["step_size"]
+        adapted_inv_mass = adapt_results.parameters["inverse_mass_matrix"]
+        warmup_state = adapt_results.state
 
-        if progress_bar:
-            all_positions = []
-            all_divergent = []
-            all_accept = []
-            all_num_steps = []
+        print(f"  Adapted step size: {float(adapted_step_size):.6f}")
 
-            sample_iter = tqdm(range(n_samples), desc="Sampling",
-                               leave=True)
-            for i in sample_iter:
-                state, step_info = nuts_kernel.step(sample_keys[i], state)
-                all_positions.append(state.position)
-                all_divergent.append(step_info.is_divergent)
-                all_accept.append(step_info.acceptance_rate)
-                all_num_steps.append(step_info.num_integration_steps)
+        # Store adapted parameters and checkpoint between warmup and
+        # sampling so that warmup intermediates can be freed.
+        self._adapted_step_size = float(adapted_step_size)
+        self._adapted_inv_mass = np.asarray(adapted_inv_mass)
+        self._last_state = warmup_state
+        self._last_rng_key = sample_key
+        self._info = {
+            "step_size": self._adapted_step_size,
+            "n_warmup": n_warmup,
+            "n_samples": 0,
+            "n_chains": n_chains,
+            "n_divergent": 0,
+        }
 
-                if i % 10 == 0:
-                    sample_iter.set_postfix(
-                        accept=f"{float(step_info.acceptance_rate):.3f}",
-                        div=int(jnp.sum(jnp.array(all_divergent))))
+        if self._checkpoint_file is not None:
+            self.save_checkpoint(append_samples=False)
+            print("  Warmup checkpoint saved; clearing warmup memory...")
 
-            self.samples = jnp.stack(all_positions)
+        del adapt_results, adapt_info, warmup
+        jax.clear_caches()
+
+        # -- Sampling via lax.scan -----------------------------------
+        def _run_one_chain(state, chain_key):
+            """Sample one chain via lax.scan."""
+            kernel = blackjax.nuts(
+                gp.log_posterior,
+                step_size=adapted_step_size,
+                inverse_mass_matrix=adapted_inv_mass,
+            )
+            chain_keys = jax.random.split(chain_key, n_samples)
+
+            def one_step(carry, key_idx):
+                st, n_div = carry
+                key, _idx = key_idx
+                st, info = kernel.step(key, st)
+                n_div = n_div + info.is_divergent.astype(jnp.int32)
+                return (st, n_div), (st.position, info)
+
+            indices = jnp.arange(n_samples)
+            (final_st, total_div), (positions, infos) = jax.lax.scan(
+                one_step, (state, jnp.int32(0)), (chain_keys, indices),
+            )
+            return final_st, total_div, positions, infos, chain_keys[-1]
+
+        if n_chains > 1:
+            print(f"Sampling {n_samples} iterations x {n_chains} chains...")
+
+            # Jitter the warmup endpoint to create independent starting
+            # positions for each chain
+            jitter_key, sample_key = jax.random.split(sample_key)
+            jitter_scale = 0.01 * jnp.sqrt(adapted_inv_mass)
+            noise = jax.random.normal(
+                jitter_key, shape=(n_chains, len(theta_init)))
+            init_positions = warmup_state.position[None, :] \
+                + jitter_scale[None, :] * noise
+
+            # Initialize NUTS states for each chain from jittered positions
+            init_fn = blackjax.nuts(
+                gp.log_posterior,
+                step_size=adapted_step_size,
+                inverse_mass_matrix=adapted_inv_mass,
+            ).init
+            states = jax.vmap(init_fn)(init_positions)
+
+            sample_keys = jax.random.split(sample_key, n_chains)
+
+            all_final, all_div, all_pos, all_infos, all_last_keys = jax.vmap(
+                _run_one_chain
+            )(states, sample_keys)
+
+            # Shape: (n_chains, n_samples, n_params)
+            self.samples = all_pos
             self._info = {
-                "divergences": np.asarray(all_divergent),
-                "acceptance_rate": np.asarray(all_accept),
-                "num_steps": np.asarray(all_num_steps),
-                "step_size": final_step_size,
+                "divergences": np.asarray(all_infos.is_divergent),
+                "acceptance_rate": np.asarray(all_infos.acceptance_rate),
+                "num_steps": np.asarray(
+                    all_infos.num_integration_steps),
+                "step_size": float(adapted_step_size),
                 "n_warmup": n_warmup,
                 "n_samples": n_samples,
-                "n_divergent": int(jnp.sum(jnp.array(all_divergent))),
+                "n_chains": n_chains,
+                "n_divergent": int(jnp.sum(all_div)),
             }
+
+            self._last_state = all_final
+            self._adapted_step_size = float(adapted_step_size)
+            self._adapted_inv_mass = np.asarray(adapted_inv_mass)
+            self._last_rng_key = all_last_keys
+
+            total_div = int(jnp.sum(all_div))
+            mean_accept = float(jnp.mean(
+                jnp.array(self._info["acceptance_rate"])))
+            print(f"NUTS complete: {n_chains} chains x {n_samples} samples, "
+                  f"{total_div} total divergences, "
+                  f"mean acceptance rate = {mean_accept:.3f}")
         else:
-            # JIT-compiled scan (faster, no progress bar)
-            def one_step(carry, key):
-                state = carry
-                state, info = nuts_kernel.step(key, state)
-                return state, (state, info)
+            print(f"Sampling {n_samples} post-warmup iterations...")
 
-            final_state, (states, infos) = jax.lax.scan(
-                one_step, state, sample_keys
-            )
+            final_state, total_div, positions, infos, last_key = \
+                _run_one_chain(warmup_state, sample_key)
 
-            self.samples = states.position
+            self.samples = positions
             self._info = {
                 "divergences": np.asarray(infos.is_divergent),
                 "acceptance_rate": np.asarray(infos.acceptance_rate),
                 "num_steps": np.asarray(infos.num_integration_steps),
-                "step_size": final_step_size,
+                "step_size": float(adapted_step_size),
                 "n_warmup": n_warmup,
                 "n_samples": n_samples,
-                "n_divergent": int(jnp.sum(infos.is_divergent)),
+                "n_chains": 1,
+                "n_divergent": int(total_div),
             }
 
-        n_div = self._info["n_divergent"]
-        mean_accept = float(np.mean(self._info["acceptance_rate"]))
-        print(f"NUTS complete: {n_samples} samples, "
-              f"{n_div} divergences, "
-              f"mean acceptance rate = {mean_accept:.3f}")
+            self._last_state = final_state
+            self._adapted_step_size = float(adapted_step_size)
+            self._adapted_inv_mass = np.asarray(adapted_inv_mass)
+            self._last_rng_key = last_key
+
+            mean_accept = float(np.mean(self._info["acceptance_rate"]))
+            print(f"NUTS complete: {n_samples} samples, "
+                  f"{int(total_div)} divergences, "
+                  f"mean acceptance rate = {mean_accept:.3f}")
+
+        return self.samples, self._info
+
+    def save_checkpoint(self, path=None, append_samples=True):
+        """
+        Save sampler state to disk for later resumption.
+
+        When ``append_samples=True`` (the default), new samples are
+        appended to any existing samples already stored in ``path``,
+        and ``self.samples`` is cleared from memory.  This enables a
+        sample-checkpoint-clear loop that keeps memory usage constant.
+
+        Parameters
+        ----------
+        path : str, optional
+            File path (saved as ``.npz``).  If None, uses the
+            ``checkpoint_file`` set in ``run_nuts``.
+        append_samples : bool
+            If True, append current ``self.samples`` to any samples
+            already on disk, then clear ``self.samples`` from memory.
+            If False, overwrite with only the current in-memory samples.
+        """
+        if self._last_state is None:
+            raise RuntimeError("No sampler state to save. Run run_nuts first.")
+        if path is None:
+            path = self._checkpoint_file
+        if path is None:
+            raise ValueError(
+                "No path provided and no checkpoint_file set. "
+                "Pass a path or set checkpoint_file in run_nuts.")
+
+        samples_to_save = np.asarray(self.samples) if self.samples is not None else None
+
+        # Merge with samples already on disk
+        if append_samples and samples_to_save is not None:
+            import os
+            _path = path if path.endswith(".npz") else path + ".npz"
+            if os.path.exists(_path):
+                existing = np.load(_path)
+                if "samples" in existing and existing["samples"].size > 0:
+                    samples_to_save = np.concatenate(
+                        [existing["samples"], samples_to_save], axis=0)
+                existing.close()
+
+        save_kwargs = {
+            # NUTS state (shape has leading chain dim when n_chains > 1)
+            "position": np.asarray(self._last_state.position),
+            "logdensity": np.asarray(self._last_state.logdensity),
+            "logdensity_grad": np.asarray(self._last_state.logdensity_grad),
+            # Adapted kernel parameters
+            "step_size": np.asarray(self._adapted_step_size),
+            "inverse_mass_matrix": np.asarray(self._adapted_inv_mass),
+            "rng_key": np.asarray(self._last_rng_key),
+            # Diagnostics (scalars)
+            "n_warmup": np.asarray(self._info["n_warmup"]),
+            "n_chains": np.asarray(getattr(self, "_n_chains", 1)),
+        }
+
+        if samples_to_save is not None:
+            save_kwargs["samples"] = samples_to_save
+            n_on_disk = samples_to_save.shape[0]
+        else:
+            save_kwargs["samples"] = np.array([])
+            n_on_disk = 0
+
+        np.savez(path, **save_kwargs)
+
+        if append_samples:
+            # Free in-memory samples and per-sample diagnostics
+            self.samples = None
+            self._info = {
+                "step_size": self._info["step_size"],
+                "n_warmup": self._info["n_warmup"],
+                "n_samples": n_on_disk,
+                "n_divergent": self._info.get("n_divergent", 0),
+            }
+
+        print(f"Checkpoint saved to {path} ({n_on_disk} samples on disk)")
+
+    def load_checkpoint(self, path):
+        """
+        Restore sampler state from a checkpoint file.
+
+        Loads only the NUTS state and adapted kernel parameters needed
+        to resume sampling.  Samples stored in the file are **not**
+        loaded into memory — use ``load_samples`` to read them later.
+
+        Parameters
+        ----------
+        path : str
+            Path to a ``.npz`` checkpoint file.
+        """
+        import blackjax
+
+        data = np.load(path)
+
+        # Reconstruct NUTS state (works for both single and multi-chain:
+        # arrays have a leading chain dimension when n_chains > 1)
+        self._last_state = blackjax.mcmc.hmc.HMCState(
+            position=jnp.asarray(data["position"]),
+            logdensity=jnp.asarray(data["logdensity"]),
+            logdensity_grad=jnp.asarray(data["logdensity_grad"]),
+        )
+
+        n_chains = int(data["n_chains"]) if "n_chains" in data else 1
+        self._n_chains = n_chains
+
+        if n_chains > 1:
+            self._adapted_step_size = np.asarray(data["step_size"])
+        else:
+            self._adapted_step_size = float(data["step_size"])
+        self._adapted_inv_mass = jnp.asarray(data["inverse_mass_matrix"])
+        self._last_rng_key = jnp.asarray(data["rng_key"])
+
+        n_on_disk = data["samples"].shape[0] if data["samples"].size > 0 else 0
+        n_warmup = int(data["n_warmup"])
+        data.close()
+
+        # Don't load samples into memory — keep it lightweight
+        self.samples = None
+        self._info = {
+            "step_size": self._adapted_step_size,
+            "n_warmup": n_warmup,
+            "n_samples": n_on_disk,
+            "n_chains": n_chains,
+            "n_divergent": 0,
+        }
+
+        print(f"Checkpoint loaded from {path} "
+              f"({n_on_disk} samples on disk, {n_chains} chain(s), "
+              f"not loaded into memory)")
+
+    @staticmethod
+    def load_samples(path):
+        """
+        Read all samples from a checkpoint file without loading
+        the sampler state.
+
+        Parameters
+        ----------
+        path : str
+            Path to a ``.npz`` checkpoint file.
+
+        Returns
+        -------
+        samples : np.ndarray, shape (n_total, n_params)
+        """
+        data = np.load(path)
+        samples = data["samples"].copy()
+        data.close()
+        return samples
+
+    def resume_nuts(self, n_samples=1000, rng_key=None, progress_bar=False):
+        """
+        Continue NUTS sampling from a previous run or loaded checkpoint.
+
+        Skips warmup entirely and uses the previously adapted step size
+        and mass matrix (shared across all chains).  Returns only the
+        new batch of samples.  Call ``save_checkpoint`` afterward to
+        append the batch to disk and free memory.
+
+        Automatically resumes with the same number of chains used in
+        the original ``run_nuts`` call.
+
+        Parameters
+        ----------
+        n_samples : int
+            Number of additional samples per chain (default 1000).
+        rng_key : jax.random.PRNGKey, optional
+            Random key.  If None, advances from the last key used.
+        progress_bar : bool
+            If True, print periodic progress updates (default False).
+            Only supported for single-chain runs.
+
+        Returns
+        -------
+        samples : jnp.ndarray
+            Shape ``(n_samples, n_params)`` for single chain, or
+            ``(n_chains, n_samples, n_params)`` for multiple chains.
+        info : dict
+            Diagnostics for this batch.
+        """
+        import blackjax
+
+        if self._last_state is None:
+            raise RuntimeError(
+                "No previous state. Run run_nuts or load_checkpoint first.")
+
+        n_chains = getattr(self, "_n_chains", 1)
+        gp = self.gp
+        step_size = self._adapted_step_size
+        inv_mass = jnp.asarray(self._adapted_inv_mass)
+
+        def _run_one_chain(state, chain_key):
+            kernel = blackjax.nuts(
+                gp.log_posterior,
+                step_size=step_size,
+                inverse_mass_matrix=inv_mass,
+            )
+            chain_keys = jax.random.split(chain_key, n_samples)
+
+            def one_step(carry, key_idx):
+                st, n_div = carry
+                key, _idx = key_idx
+                st, info = kernel.step(key, st)
+                n_div = n_div + info.is_divergent.astype(jnp.int32)
+                return (st, n_div), (st.position, info)
+
+            indices = jnp.arange(n_samples)
+            (final_st, total_div), (positions, infos) = jax.lax.scan(
+                one_step, (state, jnp.int32(0)), (chain_keys, indices),
+            )
+            return final_st, total_div, positions, infos, chain_keys[-1]
+
+        if n_chains > 1:
+            states = self._last_state
+
+            if rng_key is None:
+                rng_key = jax.random.fold_in(self._last_rng_key[0], 1)
+            chain_keys = jax.random.split(rng_key, n_chains)
+
+            print(f"Resuming: {n_chains} chains x {n_samples} samples...")
+
+            all_final, all_div, all_pos, all_infos, all_last_keys = \
+                jax.vmap(_run_one_chain)(states, chain_keys)
+
+            self.samples = all_pos
+            self._info = {
+                "divergences": np.asarray(all_infos.is_divergent),
+                "acceptance_rate": np.asarray(all_infos.acceptance_rate),
+                "num_steps": np.asarray(
+                    all_infos.num_integration_steps),
+                "step_size": step_size,
+                "n_warmup": self._info.get("n_warmup", 0),
+                "n_samples": n_samples,
+                "n_chains": n_chains,
+                "n_divergent": int(jnp.sum(all_div)),
+            }
+
+            self._last_state = all_final
+            self._last_rng_key = all_last_keys
+
+            total_div = int(jnp.sum(all_div))
+            mean_accept = float(jnp.mean(
+                jnp.array(self._info["acceptance_rate"])))
+            print(f"Resume complete: {n_chains} chains x {n_samples} "
+                  f"new samples, {total_div} divergences, "
+                  f"mean acceptance rate = {mean_accept:.3f}")
+        else:
+            state = self._last_state
+
+            if rng_key is None:
+                rng_key = jax.random.split(self._last_rng_key)[0]
+
+            print(f"Resuming: {n_samples} additional samples "
+                  f"(step_size={step_size:.6f})...")
+
+            final_state, new_div, new_positions, new_infos, last_key = \
+                _run_one_chain(state, rng_key)
+
+            self.samples = new_positions
+            self._info = {
+                "step_size": step_size,
+                "n_warmup": self._info.get("n_warmup", 0),
+                "n_samples": n_samples,
+                "n_chains": 1,
+                "n_divergent": int(new_div),
+                "divergences": np.asarray(new_infos.is_divergent),
+                "acceptance_rate": np.asarray(new_infos.acceptance_rate),
+                "num_steps": np.asarray(new_infos.num_integration_steps),
+            }
+
+            self._last_state = final_state
+            self._last_rng_key = last_key
+
+            mean_accept = float(np.mean(self._info["acceptance_rate"]))
+            print(f"Resume complete: {n_samples} new samples, "
+                  f"{int(new_div)} divergences, "
+                  f"mean acceptance rate = {mean_accept:.3f}")
 
         return self.samples, self._info
