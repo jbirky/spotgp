@@ -697,7 +697,7 @@
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span><span class="p">,</span> <span class="n">hparam</span><span class="p">,</span> <span class="n">kernel_type</span><span class="o">=</span><span class="s2">&quot;analytic&quot;</span><span class="p">,</span>
                  <span class="n">mean</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fit_sigma_n</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">bounds</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                  <span class="n">log_prior</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">matrix_solver</span><span class="o">=</span><span class="s2">&quot;cholesky_banded&quot;</span><span class="p">,</span>
-                 <span class="o">**</span><span class="n">kernel_kwargs</span><span class="p">):</span>
+                 <span class="n">save_dir</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kernel_kwargs</span><span class="p">):</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
@@ -814,6 +814,11 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_build_transform</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_build_logposterior</span><span class="p">()</span>
 
+        <span class="k">if</span> <span class="n">save_dir</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">os</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">_os</span>
+            <span class="n">_os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">save_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">save_dir</span> <span class="o">=</span> <span class="n">save_dir</span>
+
         <span class="c1"># Storage for optimization results</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">map_estimate</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">inverse_mass_matrix</span> <span class="o">=</span> <span class="kc">None</span>
@@ -821,6 +826,14 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_fisher_matrix</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_laplace_hessian</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_laplace_mean</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_autosave</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">save_dir</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">os</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">_os</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">_os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">save_dir</span><span class="p">,</span> <span class="n">filename</span><span class="p">)</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">savez</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Saved </span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2"> → </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_build_kernel</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Instantiate the kernel object.&quot;&quot;&quot;</span>
@@ -1165,9 +1178,10 @@
 <a class="viewcode-back" href="../../api/src_numpy.html#src_numpy.gp_solver.GPSolver.fit_acf">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">fit_acf</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">theta0</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">keys</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">tlags</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">n_bins</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span>
                 <span class="n">method</span><span class="o">=</span><span class="s2">&quot;L-BFGS-B&quot;</span><span class="p">,</span> <span class="n">maxiter</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">ftol</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">gtol</span><span class="o">=</span><span class="mf">1e-8</span><span class="p">,</span>
-                <span class="n">disp</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+                <span class="n">disp</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">nopt</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">ncore</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Fit the analytic kernel to the empirical ACF via least-squares.</span>
+<span class="sd">        When ``nopt &gt; 1``, delegates to ``fit_acf_parallel``.</span>
 
 <span class="sd">        Minimizes sum_i (ACF_data(lag_i) - K(lag_i; theta))^2 over the</span>
 <span class="sd">        kernel hyperparameters, using numerical gradients and scipy.</span>
@@ -1207,6 +1221,13 @@
 <span class="sd">        result : scipy.optimize.OptimizeResult</span>
 <span class="sd">            Full optimizer output.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">nopt</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">fit_acf_parallel</span><span class="p">(</span>
+                <span class="n">nopt</span><span class="o">=</span><span class="n">nopt</span><span class="p">,</span> <span class="n">ncore</span><span class="o">=</span><span class="n">ncore</span><span class="p">,</span> <span class="n">keys</span><span class="o">=</span><span class="n">keys</span><span class="p">,</span> <span class="n">tlags</span><span class="o">=</span><span class="n">tlags</span><span class="p">,</span>
+                <span class="n">n_bins</span><span class="o">=</span><span class="n">n_bins</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span> <span class="n">maxiter</span><span class="o">=</span><span class="n">maxiter</span><span class="p">,</span>
+                <span class="n">ftol</span><span class="o">=</span><span class="n">ftol</span><span class="p">,</span> <span class="n">gtol</span><span class="o">=</span><span class="n">gtol</span><span class="p">,</span> <span class="n">disp</span><span class="o">=</span><span class="n">disp</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
+            <span class="p">)</span>
+
         <span class="c1"># Build lag bins</span>
         <span class="k">if</span> <span class="n">tlags</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">baseline</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">)</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">x</span><span class="p">))</span>
@@ -1302,6 +1323,7 @@
 
         <span class="n">theta_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">theta_full</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
                       <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">kernel_keys</span><span class="p">)}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_autosave</span><span class="p">(</span><span class="s2">&quot;acf_fit_results.npz&quot;</span><span class="p">,</span> <span class="n">theta_acf</span><span class="o">=</span><span class="n">theta_dict</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">theta_dict</span><span class="p">,</span> <span class="n">result</span></div>
 
 
@@ -1391,6 +1413,7 @@
             <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">best_theta</span><span class="p">[</span><span class="n">k</span><span class="p">])</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">kernel_keys</span><span class="p">],</span>
             <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_acf_fit_result</span> <span class="o">=</span> <span class="n">best_result</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_autosave</span><span class="p">(</span><span class="s2">&quot;acf_fit_results.npz&quot;</span><span class="p">,</span> <span class="n">theta_acf</span><span class="o">=</span><span class="n">best_theta</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">best_theta</span><span class="p">,</span> <span class="n">best_result</span></div>
 
 
@@ -1904,14 +1927,16 @@
     <span class="c1"># MAP estimation</span>
     <span class="c1"># =================================================================</span>
 
-<div class="viewcode-block" id="GPSolver.find_map">
-<a class="viewcode-back" href="../../api/src_numpy.html#src_numpy.gp_solver.GPSolver.find_map">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">find_map</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">theta0</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">keys</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">&quot;L-BFGS-B&quot;</span><span class="p">,</span>
-                 <span class="n">maxiter</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">ftol</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">gtol</span><span class="o">=</span><span class="mf">1e-8</span><span class="p">,</span> <span class="n">disp</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<div class="viewcode-block" id="GPSolver.fit_map">
+<a class="viewcode-back" href="../../api/src_numpy.html#src_numpy.gp_solver.GPSolver.fit_map">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fit_map</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">theta0</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">keys</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">&quot;L-BFGS-B&quot;</span><span class="p">,</span>
+                 <span class="n">maxiter</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">ftol</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">gtol</span><span class="o">=</span><span class="mf">1e-8</span><span class="p">,</span> <span class="n">disp</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">nopt</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+                 <span class="n">ncore</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Find the maximum a posteriori (MAP) estimate.</span>
 
 <span class="sd">        Uses scipy.optimize.minimize with numerical gradients.</span>
+<span class="sd">        When ``nopt &gt; 1``, delegates to ``fit_map_parallel``.</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
@@ -1937,6 +1962,12 @@
 <span class="sd">        result : scipy OptimizeResult</span>
 <span class="sd">            Full optimizer output.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">nopt</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">fit_map_parallel</span><span class="p">(</span>
+                <span class="n">nopt</span><span class="o">=</span><span class="n">nopt</span><span class="p">,</span> <span class="n">ncore</span><span class="o">=</span><span class="n">ncore</span><span class="p">,</span> <span class="n">keys</span><span class="o">=</span><span class="n">keys</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span>
+                <span class="n">maxiter</span><span class="o">=</span><span class="n">maxiter</span><span class="p">,</span> <span class="n">ftol</span><span class="o">=</span><span class="n">ftol</span><span class="p">,</span> <span class="n">gtol</span><span class="o">=</span><span class="n">gtol</span><span class="p">,</span> <span class="n">disp</span><span class="o">=</span><span class="n">disp</span><span class="p">,</span> <span class="n">rng</span><span class="o">=</span><span class="n">rng</span><span class="p">,</span>
+            <span class="p">)</span>
+
         <span class="c1"># --- Parse theta0 -------------------------------------------------</span>
         <span class="k">if</span> <span class="n">theta0</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">theta0_arr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">theta0</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
@@ -2013,17 +2044,21 @@
 
         <span class="bp">self</span><span class="o">.</span><span class="n">map_estimate</span> <span class="o">=</span> <span class="n">theta_full</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_map_result</span> <span class="o">=</span> <span class="n">result</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_result_dict</span><span class="p">(</span><span class="n">theta_full</span><span class="p">),</span> <span class="n">result</span></div>
+        <span class="n">theta_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_result_dict</span><span class="p">(</span><span class="n">theta_full</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_autosave</span><span class="p">(</span><span class="s2">&quot;map_fit_results.npz&quot;</span><span class="p">,</span>
+                       <span class="n">theta_map</span><span class="o">=</span><span class="n">theta_dict</span><span class="p">,</span>
+                       <span class="n">theta_true</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_result_dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">theta0</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">theta_dict</span><span class="p">,</span> <span class="n">result</span></div>
 
 
-<div class="viewcode-block" id="GPSolver.find_map_parallel">
-<a class="viewcode-back" href="../../api/src_numpy.html#src_numpy.gp_solver.GPSolver.find_map_parallel">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">find_map_parallel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nopt</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">ncore</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">keys</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<div class="viewcode-block" id="GPSolver.fit_map_parallel">
+<a class="viewcode-back" href="../../api/src_numpy.html#src_numpy.gp_solver.GPSolver.fit_map_parallel">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fit_map_parallel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nopt</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">ncore</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">keys</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                           <span class="n">method</span><span class="o">=</span><span class="s2">&quot;nelder-mead&quot;</span><span class="p">,</span> <span class="n">maxiter</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">ftol</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
                           <span class="n">gtol</span><span class="o">=</span><span class="mf">1e-8</span><span class="p">,</span> <span class="n">disp</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">return_all</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
                           <span class="n">rng</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Run ``find_map`` from multiple random starting points in parallel.</span>
+<span class="sd">        Run ``fit_map`` from multiple random starting points in parallel.</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
@@ -2032,11 +2067,11 @@
 <span class="sd">        ncore : int or None</span>
 <span class="sd">            Number of parallel workers.</span>
 <span class="sd">        keys : list of str, optional</span>
-<span class="sd">            Free parameters (forwarded to ``find_map``).</span>
+<span class="sd">            Free parameters (forwarded to ``fit_map``).</span>
 <span class="sd">        method : str</span>
 <span class="sd">            Optimizer method (default &quot;nelder-mead&quot;).</span>
 <span class="sd">        maxiter, ftol, gtol, disp</span>
-<span class="sd">            Forwarded to ``find_map``.</span>
+<span class="sd">            Forwarded to ``fit_map``.</span>
 <span class="sd">        return_all : bool</span>
 <span class="sd">            If True, return all solutions sorted by objective value.</span>
 <span class="sd">        rng : numpy.random.Generator, optional</span>
@@ -2071,7 +2106,7 @@
             <span class="n">starts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">theta0_dict</span><span class="p">)</span>
 
         <span class="k">def</span><span class="w"> </span><span class="nf">_run_one</span><span class="p">(</span><span class="n">theta0_dict</span><span class="p">):</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">find_map</span><span class="p">(</span><span class="n">theta0</span><span class="o">=</span><span class="n">theta0_dict</span><span class="p">,</span> <span class="n">keys</span><span class="o">=</span><span class="n">keys</span><span class="p">,</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">fit_map</span><span class="p">(</span><span class="n">theta0</span><span class="o">=</span><span class="n">theta0_dict</span><span class="p">,</span> <span class="n">keys</span><span class="o">=</span><span class="n">keys</span><span class="p">,</span>
                                  <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span> <span class="n">maxiter</span><span class="o">=</span><span class="n">maxiter</span><span class="p">,</span>
                                  <span class="n">ftol</span><span class="o">=</span><span class="n">ftol</span><span class="p">,</span> <span class="n">gtol</span><span class="o">=</span><span class="n">gtol</span><span class="p">,</span> <span class="n">disp</span><span class="o">=</span><span class="n">disp</span><span class="p">)</span>
 
@@ -2089,6 +2124,9 @@
             <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">best_theta</span><span class="p">[</span><span class="n">k</span><span class="p">])</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">param_keys</span><span class="p">],</span>
             <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_map_result</span> <span class="o">=</span> <span class="n">best_result</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_autosave</span><span class="p">(</span><span class="s2">&quot;map_fit_results.npz&quot;</span><span class="p">,</span>
+                       <span class="n">theta_map</span><span class="o">=</span><span class="n">best_theta</span><span class="p">,</span>
+                       <span class="n">theta_true</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_result_dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">theta0</span><span class="p">))</span>
         <span class="k">return</span> <span class="n">best_theta</span><span class="p">,</span> <span class="n">best_result</span></div>
 
 
@@ -2108,7 +2146,7 @@
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        theta_map : array_like, optional</span>
-<span class="sd">            MAP estimate. If None, calls find_map() first.</span>
+<span class="sd">            MAP estimate. If None, calls fit_map() first.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
@@ -2116,7 +2154,7 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">theta_map</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">map_estimate</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">find_map</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">fit_map</span><span class="p">()</span>
             <span class="n">theta_map</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">map_estimate</span>
         <span class="n">theta_map</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">theta_map</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
 
@@ -2171,7 +2209,7 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">theta_map</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">map_estimate</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">find_map</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">fit_map</span><span class="p">()</span>
             <span class="n">theta_map</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">map_estimate</span>
         <span class="n">theta_map</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">theta_map</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
 
@@ -2237,7 +2275,7 @@
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        theta_map : array_like, optional</span>
-<span class="sd">            MAP estimate. If None, calls find_map() first.</span>
+<span class="sd">            MAP estimate. If None, calls fit_map() first.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
@@ -2245,7 +2283,7 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="n">theta_map</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">map_estimate</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">find_map</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">fit_map</span><span class="p">()</span>
             <span class="n">theta_map</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">map_estimate</span>
         <span class="n">theta_map</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">theta_map</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
 

@@ -10,6 +10,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
+from matplotlib.collections import LineCollection
 from matplotlib.colors import LinearSegmentedColormap
 from scipy.ndimage import gaussian_filter, uniform_filter1d, maximum_filter1d, minimum_filter1d, gaussian_filter1d
 from PIL import Image
@@ -266,11 +267,13 @@ def make_logo(theme: str, out: str) -> None:
     t = np.linspace(0, 6 * np.pi, 900)
     y  = 0.60 * np.sin(t + 0.3)
     y += 0.30 * np.sin(2.03*t - 0.6)
-    y += 0.22 * np.sin(3.07*t + 1.1)
-    y += 0.14 * np.sin(4.01*t - 0.9)
-    y += 0.08 * np.sin(5.2 *t + 0.5)
+    y += 0.25 * np.sin(3.07*t + 1.1)
+    y += 0.22 * np.sin(4.01*t - 0.9)
+    y += 0.20 * np.sin(5.2 *t + 0.5)
+    y += 0.18 * np.sin(7.3 *t - 1.2)
+    y += 0.16 * np.sin(9.1 *t + 0.8)
     y += rng.normal(0, 0.018, size=len(t))
-    y_sm   = uniform_filter1d(y, size=5)
+    y_sm   = uniform_filter1d(y, size=2)
     y_norm = (y_sm - y_sm.mean()) / (y_sm.max() - y_sm.min())
 
     gp_amp = 0.10
@@ -334,12 +337,20 @@ def make_logo(theme: str, out: str) -> None:
     ax.fill_between(t_norm, band_lo, band_hi,
                     color="#89CFF0", alpha=0.45, linewidth=0, zorder=2)
 
-    outside = in_text < 0.05
-    for seg in np.split(np.where(outside)[0],
-                        np.where(np.diff(np.where(outside)[0]) > 1)[0] + 1):
-        if len(seg) >= 2:
-            ax.plot(t_norm[seg], y_plot[seg],
-                    color=CURVE_COLOR, linewidth=1.8, zorder=3)
+    # Mean line with gradient alpha: dark outside text, faint inside
+    r, g, b = matplotlib.colors.to_rgb(CURVE_COLOR)
+    alpha_line = 1.0 - 0.8 * in_text          # 1.0 outside → 0.2 inside
+    seg_alpha  = (alpha_line[:-1] + alpha_line[1:]) / 2  # per-segment average
+    seg_colors = np.column_stack([
+        np.full(len(seg_alpha), r),
+        np.full(len(seg_alpha), g),
+        np.full(len(seg_alpha), b),
+        seg_alpha,
+    ])
+    pts  = np.array([t_norm, y_plot]).T.reshape(-1, 1, 2)
+    segs = np.concatenate([pts[:-1], pts[1:]], axis=1)
+    lc   = LineCollection(segs, colors=seg_colors, linewidth=1.8, zorder=4)
+    ax.add_collection(lc)
 
     candidate_idx = np.where((t_norm < left_text_ax - trans) |
                              (t_norm > right_text_ax + trans))[0]
