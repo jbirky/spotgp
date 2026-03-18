@@ -317,7 +317,19 @@ class BlackJAXSampler(MCMCSampler):
     ----------
     gp : GPSolver
         A configured GPSolver instance.
+    save_dir : str, optional
+        Directory for all outputs produced by this sampler (corner
+        plots, covariance plots, etc.).  Created automatically if it
+        does not exist.  When set, ``save_checkpoint`` will default to
+        saving the checkpoint inside this directory.
     """
+
+    def __init__(self, gp, save_dir=None):
+        super().__init__(gp)
+        if save_dir is not None:
+            import os
+            os.makedirs(save_dir, exist_ok=True)
+        self.save_dir = save_dir
 
     def run_nuts(self, n_samples=1000, n_warmup=500, theta_init=None,
                  mass_matrix_method="hessian_map", step_size=None,
@@ -563,7 +575,8 @@ class BlackJAXSampler(MCMCSampler):
 
         return self.samples, self._info
 
-    def save_checkpoint(self, path=None, append_samples=True):
+    def save_checkpoint(self, path=None, append_samples=True,
+                        plot_corner=False):
         """
         Save sampler state to disk for later resumption.
 
@@ -576,20 +589,29 @@ class BlackJAXSampler(MCMCSampler):
         ----------
         path : str, optional
             File path (saved as ``.npz``).  If None, uses the
-            ``checkpoint_file`` set in ``run_nuts``.
+            ``checkpoint_file`` set in ``run_nuts``, or
+            ``save_dir/checkpoint.npz`` if ``save_dir`` was set.
         append_samples : bool
             If True, append current ``self.samples`` to any samples
             already on disk, then clear ``self.samples`` from memory.
             If False, overwrite with only the current in-memory samples.
+        plot_corner : bool
+            If True, load all samples currently on disk after saving
+            and write a corner plot to ``save_dir/corner_plot.png``
+            (or alongside the checkpoint file if ``save_dir`` is not
+            set).
         """
+        import os
         if self._last_state is None:
             raise RuntimeError("No sampler state to save. Run run_nuts first.")
         if path is None:
             path = self._checkpoint_file
+        if path is None and self.save_dir is not None:
+            path = os.path.join(self.save_dir, "checkpoint.npz")
         if path is None:
             raise ValueError(
-                "No path provided and no checkpoint_file set. "
-                "Pass a path or set checkpoint_file in run_nuts.")
+                "No path provided, no checkpoint_file set, and no save_dir. "
+                "Pass a path, set checkpoint_file in run_nuts, or set save_dir.")
 
         samples_to_save = np.asarray(self.samples) if self.samples is not None else None
 
@@ -638,6 +660,25 @@ class BlackJAXSampler(MCMCSampler):
             }
 
         print(f"Checkpoint saved to {path} ({n_on_disk} samples on disk)")
+
+        if plot_corner and n_on_disk > 0:
+            import corner
+            import matplotlib.pyplot as plt
+            all_samples = self.load_samples(path)
+            fig = corner.corner(
+                all_samples,
+                labels=list(self.param_keys),
+                show_titles=True,
+                title_fmt=".3f",
+            )
+            _chk = path if path.endswith(".npz") else path + ".npz"
+            corner_dir = self.save_dir if self.save_dir is not None \
+                else os.path.dirname(os.path.abspath(_chk))
+            corner_path = os.path.join(corner_dir, "corner_plot.png")
+            fig.savefig(corner_path, dpi=150, bbox_inches="tight")
+            plt.close(fig)
+            print(f"Corner plot saved to {corner_path} "
+                  f"({n_on_disk} samples)")
 
     def load_checkpoint(self, path):
         """
