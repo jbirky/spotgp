@@ -22,7 +22,9 @@ body {
     --color-sidebar-search-text: #06437a;
     --color-sidebar-item-text: #06437a;
 }
-.sidebar-brand, .sidebar-tree, .toc-tree {
+.sidebar-brand, .sidebar-tree, .toc-tree,
+.toc-drawer, .bd-sidebar, .bd-sidebar-primary, .bd-sidebar-secondary,
+.bd-toc, .nav-bar, .article-header-buttons {
     font-family: 'Roboto', sans-serif;
 }
 

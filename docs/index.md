@@ -50,6 +50,7 @@ tutorials/gp_solver_quickstart
 tutorials/custom_envelope
 tutorials/custom_latitude_distribution
 tutorials/gp_optimization
+tutorials/mcmc_blackjax
 ```
 
 ```{toctree}
