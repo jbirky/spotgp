@@ -10,16 +10,23 @@ rc('figure', facecolor='w')
 rc('xtick', labelsize=20)
 rc('ytick', labelsize=20)
 
+try:
+    from .params import resolve_hparam
+except ImportError:
+    from params import resolve_hparam
+
 __all__ = ["LightcurveModel", "compute_sigmak"]
 
 
-def compute_sigmak(nspot, alpha_max, fspot=0.0):
+def compute_sigmak(nspot_rate, alpha_max, fspot=0.0):
     """Compute the kernel amplitude prefactor sigma_k.
+
+    Thin wrapper around params.resolve_hparam for the physical_rate mode.
 
     Parameters
     ----------
-    nspot : float
-        Number of spots.
+    nspot_rate : float
+        Spot emergence rate [spots/day].
     alpha_max : float
         Peak spot angular radius [rad].
     fspot : float, optional
@@ -28,8 +35,9 @@ def compute_sigmak(nspot, alpha_max, fspot=0.0):
     Returns
     -------
     sigma_k : float
+        sigma_k = sqrt(nspot_rate) * (1 - fspot) * alpha_max**2
     """
-    return np.sqrt(nspot) * (1 - fspot) * alpha_max**2 / np.pi
+    return np.sqrt(nspot_rate) * (1 - fspot) * alpha_max**2
 
 
 # =====================================================================
@@ -270,6 +278,41 @@ class LightcurveModel(object):
 
         # compute lightcurve
         self.flux = self.Flux(self.t)
+
+    @classmethod
+    def from_hparam(cls, hparam: dict, nspot: int, **kwargs):
+        """Construct a LightcurveModel from a GPSolver-compatible hparam dict.
+
+        Accepts the same raw hparam dict that GPSolver/AnalyticKernel take,
+        including all amplitude modes (sigma_k, nspot_rate, or nspot), and
+        both symmetric (tau) and asymmetric (tau_em + tau_dec) envelopes.
+        This removes the need to manually decompose the dict in scripts.
+
+        Parameters
+        ----------
+        hparam : dict
+            Raw hyperparameter dict.  Must contain peq, kappa, inc, lspot,
+            an envelope timescale, and an amplitude specification.
+        nspot : int
+            Total number of spots to simulate (distinct from nspot_rate).
+        **kwargs
+            Forwarded to LightcurveModel.__init__ (e.g. tsim, tsamp, lat, long).
+
+        Returns
+        -------
+        LightcurveModel
+        """
+        p = resolve_hparam(hparam)
+        tau_em  = p.get("tau_em",  p["tau"])
+        tau_dec = p.get("tau_dec", p["tau"])
+        alpha_max = p.get("alpha_max", kwargs.pop("alpha_max", 0.1))
+        fspot     = p.get("fspot",     kwargs.pop("fspot", 0.0))
+        return cls(
+            peq=p["peq"], kappa=p["kappa"], inc=p["inc"], nspot=nspot,
+            tem=tau_em, tdec=tau_dec,
+            alpha_max=alpha_max, fspot=fspot, lspot=p["lspot"],
+            **kwargs,
+        )
 
     def _assign_property(self, var):
         if isinstance(var, (int, float)):

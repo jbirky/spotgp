@@ -11,25 +11,32 @@ from scipy.optimize import minimize, approx_fprime
 from scipy.special import log_expit
 
 try:
+    from .params import (
+        resolve_hparam, KERNEL_HPARAM_KEYS, HPARAM_KEYS_WITH_NOISE,
+        _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
+        _AMPLITUDE_KEYS_PHYSICAL, _AMPLITUDE_KEYS_PHYSICAL_RATE,
+    )
     from .analytic_kernel import (
-        AnalyticKernel, _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
-        _AMPLITUDE_KEYS_PHYSICAL, _R_Gamma_symmetric, _cn_general,
+        AnalyticKernel, _R_Gamma_symmetric, _cn_general,
         _cn_squared_coefficients, _gauss_legendre_grid,
     )
 except ImportError:
+    from params import (
+        resolve_hparam, KERNEL_HPARAM_KEYS, HPARAM_KEYS_WITH_NOISE,
+        _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
+        _AMPLITUDE_KEYS_PHYSICAL, _AMPLITUDE_KEYS_PHYSICAL_RATE,
+    )
     from analytic_kernel import (
-        AnalyticKernel, _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
-        _AMPLITUDE_KEYS_PHYSICAL, _R_Gamma_symmetric, _cn_general,
+        AnalyticKernel, _R_Gamma_symmetric, _cn_general,
         _cn_squared_coefficients, _gauss_legendre_grid,
     )
 
 __all__ = ["GPSolver"]
 
-# Fixed parameter ordering for the theta vector.
-KERNEL_HPARAM_KEYS = ["peq", "kappa", "inc", "lspot", "tau", "sigma_k"]
-
-# Full hyperparameter keys including optional white noise
-HPARAM_KEYS_WITH_NOISE = KERNEL_HPARAM_KEYS + ["sigma_n"]
+# KERNEL_HPARAM_KEYS and HPARAM_KEYS_WITH_NOISE are imported from params.
+# Re-export as lists for any callers that expect list type.
+KERNEL_HPARAM_KEYS = list(KERNEL_HPARAM_KEYS)
+HPARAM_KEYS_WITH_NOISE = list(HPARAM_KEYS_WITH_NOISE)
 
 
 # =====================================================================
@@ -324,16 +331,7 @@ def _default_log_prior(theta_arr, bounds):
 
 def _validate_hparam(hparam):
     """Validate hparam dict (shared by __init__ and update_hparam)."""
-    if not isinstance(hparam, dict):
-        raise TypeError("hparam must be a dict")
-    missing = _REQUIRED_KEYS - set(hparam.keys())
-    if missing:
-        raise ValueError(f"hparam dict is missing required keys: {missing}")
-    has_sigma = _AMPLITUDE_KEYS_SIGMA <= set(hparam.keys())
-    has_physical = _AMPLITUDE_KEYS_PHYSICAL <= set(hparam.keys())
-    if not has_sigma and not has_physical:
-        raise ValueError(
-            "hparam must contain either 'sigma_k' or both 'nspot' and 'fspot'")
+    resolve_hparam(hparam)  # raises TypeError/ValueError on invalid input
 
 
 # =====================================================================
