@@ -115,10 +115,10 @@ def make_logo(theme: str, out: str) -> None:
             fontsize=FONTSIZE, fontweight="bold", fontfamily=FONTFAM,
             ha="left", va="center", color=TEXT_MAIN,
             transform=ax.transAxes, zorder=5)
-    ax.text(X_CENTER, y_sub, SUB_TEXT,
-            fontsize=sub_fs, fontfamily=SUB_FONT, fontweight="normal",
-            color=TEXT_SUB, fontstyle="italic",
-            ha="center", va="center", transform=ax.transAxes, zorder=5)
+    # ax.text(X_CENTER, y_sub, SUB_TEXT,
+    #         fontsize=sub_fs, fontfamily=SUB_FONT, fontweight="normal",
+    #         color=TEXT_SUB, fontstyle="italic",
+    #         ha="center", va="center", transform=ax.transAxes, zorder=5)
 
     # ── Star disk inset ───────────────────────────────────────────────────────
     ax_pos  = ax.get_position()
