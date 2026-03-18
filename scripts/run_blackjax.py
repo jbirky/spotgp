@@ -1,7 +1,8 @@
 import os
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
-import jax
+import jax 
+import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_platforms", "cuda")
 _ = jax.devices("cuda")
@@ -71,11 +72,6 @@ bounds = {
     "sigma_k":  (1e-5, 0.1),
 }
 
-# Custom prior: uniform on peq, kappa, inc, lspot, tau;
-#               log-uniform on sigma_k.
-# theta_arr order matches bounds key order above.
-import jax as _jax
-import jax.numpy as jnp
 _bounds_arr  = jnp.array(list(bounds.values()), dtype=jnp.float64)
 _sk_idx      = list(bounds.keys()).index("sigma_k")
 _sk_lo, _sk_hi = _bounds_arr[_sk_idx, 0], _bounds_arr[_sk_idx, 1]
@@ -84,8 +80,8 @@ def log_prior(theta_arr):
     lo, hi = _bounds_arr[:, 0], _bounds_arr[:, 1]
     k = 500
     # Differentiable soft boundary barriers (same as default prior)
-    barriers = (jnp.sum(_jax.nn.log_sigmoid(k * (theta_arr - lo)))
-                + jnp.sum(_jax.nn.log_sigmoid(k * (hi - theta_arr))))
+    barriers = (jnp.sum(jax.nn.log_sigmoid(k * (theta_arr - lo)))
+                + jnp.sum(jax.nn.log_sigmoid(k * (hi - theta_arr))))
     # Uniform log-density for all params: -log(hi - lo)
     log_p = -jnp.sum(jnp.log(hi - lo))
     # Replace sigma_k uniform term with log-uniform: p(x) ∝ 1/x
