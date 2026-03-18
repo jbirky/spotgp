@@ -51,7 +51,7 @@
     <script src="_static/notebook_download.js?v=2428894a"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Starspot Lightcurve Model" href="tutorials/lightcurve_demo.html" />
+    <link rel="next" title="Understanding the Hyperparameters" href="tutorials/hparam_guide.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="0.1.0" />
@@ -145,6 +145,7 @@
     <div class="bd-toc-item navbar-nav active">
         <p aria-level="2" class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="tutorials/hparam_guide.html">Understanding the Hyperparameters</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/lightcurve_demo.html">Starspot Lightcurve Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/gp_solver_quickstart.html">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/custom_envelope.html">Custom Envelope Functions</a></li>
@@ -454,6 +455,17 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <div class="toctree-wrapper compound">
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/hparam_guide.html">Understanding the Hyperparameters</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/hparam_guide.html#The-kernel-formula">The kernel formula</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/hparam_guide.html#resolve_hparam-—-validation-and-normalization"><code class="docutils literal notranslate"><span class="pre">resolve_hparam</span></code> — validation and normalization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/hparam_guide.html#1-—-Rotation-geometry-parameters">1 — Rotation geometry parameters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/hparam_guide.html#2-—-Amplitude-parameterizations">2 — Amplitude parameterizations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/hparam_guide.html#3-—-Envelope-shape-parameters">3 — Envelope shape parameters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/hparam_guide.html#4-—-Comparing-all-three-envelopes">4 — Comparing all three envelopes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/hparam_guide.html#5-—-Computing-R_\Gamma-for-a-custom-envelope">5 — Computing <span class="math notranslate nohighlight">\(R_\Gamma\)</span> for a custom envelope</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/hparam_guide.html#Quick-reference">Quick reference</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/lightcurve_demo.html">Starspot Lightcurve Model</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="tutorials/lightcurve_demo.html#Generate-a-lightcurve-with-given-spot-parameters">Generate a lightcurve with given spot parameters</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tutorials/lightcurve_demo.html#LightcurveModel-Parameters"><code class="docutils literal notranslate"><span class="pre">LightcurveModel</span></code> Parameters</a></li>
@@ -542,11 +554,11 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
                   
 <div class="prev-next-area">
     <a class="right-next"
-       href="tutorials/lightcurve_demo.html"
+       href="tutorials/hparam_guide.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Starspot Lightcurve Model</p>
+        <p class="prev-next-title">Understanding the Hyperparameters</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>

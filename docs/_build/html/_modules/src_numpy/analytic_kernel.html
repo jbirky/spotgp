@@ -141,6 +141,7 @@
     <div class="bd-toc-item navbar-nav active">
         <p aria-level="2" class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/hparam_guide.html">Understanding the Hyperparameters</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../tutorials/lightcurve_demo.html">Starspot Lightcurve Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../tutorials/gp_solver_quickstart.html">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../tutorials/custom_envelope.html">Custom Envelope Functions</a></li>
@@ -301,23 +302,22 @@
   <h1>Source code for src_numpy.analytic_kernel</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.params</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+        <span class="n">resolve_hparam</span><span class="p">,</span>
+        <span class="n">BASE_REQUIRED_KEYS</span> <span class="k">as</span> <span class="n">_REQUIRED_KEYS_BASE</span><span class="p">,</span>
+        <span class="n">_REQUIRED_KEYS</span><span class="p">,</span> <span class="n">_AMPLITUDE_KEYS_SIGMA</span><span class="p">,</span>
+        <span class="n">_AMPLITUDE_KEYS_PHYSICAL_RATE</span><span class="p">,</span> <span class="n">_AMPLITUDE_KEYS_PHYSICAL</span><span class="p">,</span>
+    <span class="p">)</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">params</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+        <span class="n">resolve_hparam</span><span class="p">,</span>
+        <span class="n">BASE_REQUIRED_KEYS</span> <span class="k">as</span> <span class="n">_REQUIRED_KEYS_BASE</span><span class="p">,</span>
+        <span class="n">_REQUIRED_KEYS</span><span class="p">,</span> <span class="n">_AMPLITUDE_KEYS_SIGMA</span><span class="p">,</span>
+        <span class="n">_AMPLITUDE_KEYS_PHYSICAL_RATE</span><span class="p">,</span> <span class="n">_AMPLITUDE_KEYS_PHYSICAL</span><span class="p">,</span>
+    <span class="p">)</span>
+
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;AnalyticKernel&quot;</span><span class="p">]</span>
-
-<span class="c1"># Required keys common to all modes</span>
-<span class="n">_REQUIRED_KEYS_BASE</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;peq&quot;</span><span class="p">,</span> <span class="s2">&quot;kappa&quot;</span><span class="p">,</span> <span class="s2">&quot;inc&quot;</span><span class="p">,</span> <span class="s2">&quot;lspot&quot;</span><span class="p">}</span>
-
-<span class="c1"># Envelope timescale: provide EITHER tau (symmetric) OR tau_em + tau_dec (asymmetric)</span>
-<span class="n">_TAU_KEYS_SYMMETRIC</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;tau&quot;</span><span class="p">}</span>
-<span class="n">_TAU_KEYS_ASYMMETRIC</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;tau_em&quot;</span><span class="p">,</span> <span class="s2">&quot;tau_dec&quot;</span><span class="p">}</span>
-
-<span class="c1"># Backward compatibility: gp_solver and other modules import _REQUIRED_KEYS</span>
-<span class="n">_REQUIRED_KEYS</span> <span class="o">=</span> <span class="n">_REQUIRED_KEYS_BASE</span> <span class="o">|</span> <span class="p">{</span><span class="s2">&quot;tau&quot;</span><span class="p">}</span>
-
-<span class="c1"># Two valid modes for specifying amplitude:</span>
-<span class="c1">#   Mode 1: provide sigma_k directly</span>
-<span class="c1">#   Mode 2: provide nspot and fspot (sigma_k computed from Eq. kernel_Nspot)</span>
-<span class="n">_AMPLITUDE_KEYS_SIGMA</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;sigma_k&quot;</span><span class="p">}</span>
-<span class="n">_AMPLITUDE_KEYS_PHYSICAL</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;nspot&quot;</span><span class="p">,</span> <span class="s2">&quot;fspot&quot;</span><span class="p">,</span> <span class="s2">&quot;alpha_max&quot;</span><span class="p">}</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_Gamma_hat</span><span class="p">(</span><span class="n">omega</span><span class="p">,</span> <span class="n">ell</span><span class="p">,</span> <span class="n">tau</span><span class="p">):</span>
@@ -580,59 +580,29 @@
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hparam</span><span class="p">,</span> <span class="n">n_harmonics</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">n_lat</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span>
                  <span class="n">lat_range</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">),</span> <span class="n">quadrature</span><span class="o">=</span><span class="s2">&quot;trapezoid&quot;</span><span class="p">):</span>
 
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">hparam</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;hparam must be a dict&quot;</span><span class="p">)</span>
-
-        <span class="n">missing</span> <span class="o">=</span> <span class="n">_REQUIRED_KEYS_BASE</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">hparam</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
-        <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;hparam dict is missing required keys: </span><span class="si">{</span><span class="n">missing</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-        <span class="n">has_tau_sym</span> <span class="o">=</span> <span class="s2">&quot;tau&quot;</span> <span class="ow">in</span> <span class="n">hparam</span>
-        <span class="n">has_tau_asym</span> <span class="o">=</span> <span class="s2">&quot;tau_em&quot;</span> <span class="ow">in</span> <span class="n">hparam</span> <span class="ow">and</span> <span class="s2">&quot;tau_dec&quot;</span> <span class="ow">in</span> <span class="n">hparam</span>
-
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">has_tau_sym</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">has_tau_asym</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;hparam must contain either &#39;tau&#39; (symmetric) or both &quot;</span>
-                <span class="s2">&quot;&#39;tau_em&#39; and &#39;tau_dec&#39; (asymmetric)&quot;</span><span class="p">)</span>
-
-        <span class="n">has_sigma</span> <span class="o">=</span> <span class="s2">&quot;sigma_k&quot;</span> <span class="ow">in</span> <span class="n">hparam</span>
-        <span class="n">has_physical</span> <span class="o">=</span> <span class="s2">&quot;nspot&quot;</span> <span class="ow">in</span> <span class="n">hparam</span> <span class="ow">and</span> <span class="s2">&quot;fspot&quot;</span> <span class="ow">in</span> <span class="n">hparam</span> <span class="ow">and</span> <span class="s2">&quot;alpha_max&quot;</span> <span class="ow">in</span> <span class="n">hparam</span>
-
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">has_sigma</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">has_physical</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;hparam must contain either &#39;sigma_k&#39; or all of &quot;</span>
-                <span class="s2">&quot;&#39;nspot&#39;, &#39;fspot&#39;, and &#39;alpha_max&#39;&quot;</span><span class="p">)</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">hparam</span><span class="p">)</span>
+        <span class="c1"># Validate, resolve envelope timescale, and compute sigma_k</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span> <span class="o">=</span> <span class="n">resolve_hparam</span><span class="p">(</span><span class="n">hparam</span><span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">peq</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;peq&quot;</span><span class="p">]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">kappa</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;kappa&quot;</span><span class="p">]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">inc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;inc&quot;</span><span class="p">]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">lspot</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;lspot&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sigma_k</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;sigma_k&quot;</span><span class="p">]</span>
 
-        <span class="k">if</span> <span class="n">has_tau_asym</span><span class="p">:</span>
+        <span class="c1"># Tau: asymmetric if tau_em/tau_dec present in the *original* dict</span>
+        <span class="k">if</span> <span class="s2">&quot;tau_em&quot;</span> <span class="ow">in</span> <span class="n">hparam</span> <span class="ow">and</span> <span class="s2">&quot;tau_dec&quot;</span> <span class="ow">in</span> <span class="n">hparam</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">asymmetric</span> <span class="o">=</span> <span class="kc">True</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">tau_em</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;tau_em&quot;</span><span class="p">]</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">tau_dec</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;tau_dec&quot;</span><span class="p">]</span>
-            <span class="c1"># _R_Gamma_asymmetric assumes te &lt;= td; enforce via min/max</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tau</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;tau&quot;</span><span class="p">]</span>  <span class="c1"># mean, injected by resolve_hparam</span>
+            <span class="c1"># _R_Gamma_asymmetric requires te &lt;= td</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_te</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tau_em</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau_dec</span><span class="p">)</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_td</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tau_em</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau_dec</span><span class="p">)</span>
-            <span class="c1"># For methods that need a single tau (e.g., PSD), use the mean</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">tau</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tau_em</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau_dec</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">asymmetric</span> <span class="o">=</span> <span class="kc">False</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">tau</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;tau&quot;</span><span class="p">]</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">tau_em</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">tau_dec</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau</span>
-
-        <span class="k">if</span> <span class="n">has_sigma</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">sigma_k</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;sigma_k&quot;</span><span class="p">]</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">nspot</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;nspot&quot;</span><span class="p">]</span>
-            <span class="n">fspot</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;fspot&quot;</span><span class="p">]</span>
-            <span class="n">alpha_max</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;alpha_max&quot;</span><span class="p">]</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">sigma_k</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">nspot</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">fspot</span><span class="p">)</span> <span class="o">*</span> <span class="n">alpha_max</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;sigma_k&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sigma_k</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">n_harmonics</span> <span class="o">=</span> <span class="n">n_harmonics</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">n_lat</span> <span class="o">=</span> <span class="n">n_lat</span>

@@ -15,7 +15,7 @@ except ImportError:
         _AMPLITUDE_KEYS_PHYSICAL_RATE, _AMPLITUDE_KEYS_PHYSICAL,
     )
 
-__all__ = ["AnalyticKernel"]
+__all__ = ["AnalyticKernel", "compute_R_Gamma_numerical"]
 
 
 def _Gamma_hat(omega, ell, tau):
@@ -241,6 +241,99 @@ def _gauss_legendre_grid(n, a, b):
     nodes = 0.5 * (b - a) * nodes_ref + 0.5 * (a + b)
     weights = 0.5 * (b - a) * weights_ref
     return nodes, weights
+
+
+def compute_R_Gamma_numerical(envelope_func, tau_ref, n_grid=4096, extent=12.0):
+    """
+    Compute R_Gamma(lag) = ∫ Gamma(t) · Gamma(t + lag) dt numerically via FFT.
+
+    Use this whenever no closed-form autocorrelation is available for a
+    custom envelope shape.  The result is stored as a pair of numpy arrays
+    and can be evaluated at arbitrary lags with ``np.interp``::
+
+        lag_grid, R_vals = compute_R_Gamma_numerical(my_envelope, tau_ref=tau)
+        R_at_lags = np.interp(np.abs(lags), lag_grid, R_vals)
+
+    Parameters
+    ----------
+    envelope_func : callable
+        ``f(t: np.ndarray) -> np.ndarray``
+        The normalized envelope Gamma(t) ≥ 0, evaluated on a 1-D numpy
+        array of time values [days].  Negative values are clipped to zero.
+        The envelope should be negligibly small at ±extent·tau_ref so
+        that the FFT does not suffer from wrap-around artefacts.
+    tau_ref : float
+        Reference timescale [days] that sets the grid extent and resolution.
+        A good choice is the half-width at half-maximum or the decay
+        timescale of the envelope.
+    n_grid : int, optional
+        Number of time-grid points (default 4096).  Larger values give
+        finer lag resolution and a larger maximum representable lag.
+    extent : float, optional
+        Grid half-width in units of tau_ref (default 12.0).  Increase if
+        the envelope has a heavy tail that is non-negligible at
+        ±extent·tau_ref.
+
+    Returns
+    -------
+    lag_grid : np.ndarray, shape (n_grid,)
+        Non-negative lag values [days], starting at 0.
+    R_Gamma_vals : np.ndarray, shape (n_grid,)
+        R_Gamma at each lag.  R_Gamma is symmetric, so only non-negative
+        lags are stored; use ``np.abs(lag)`` when interpolating.
+    """
+    T = float(extent) * float(tau_ref)
+    t_np = np.linspace(-T, T, n_grid)
+    dt = float(t_np[1] - t_np[0])
+
+    env_np = np.asarray(envelope_func(t_np), dtype=np.float64)
+    env_np = np.maximum(env_np, 0.0)  # clip any numerical negatives
+
+    # FFT-based autocorrelation, zero-padded to 2·n_grid to avoid aliasing
+    env_fft = np.fft.rfft(env_np, n=2 * n_grid)
+    R_vals = np.fft.irfft(np.abs(env_fft) ** 2, n=2 * n_grid)[:n_grid] * dt
+
+    lag_grid = np.arange(n_grid, dtype=np.float64) * dt
+    return lag_grid, R_vals
+
+
+def _skew_normal_envelope_func(sigma_sn, n_sn):
+    """
+    Return a callable for the normalized skew-normal envelope.
+
+    Implements Eq. (1) of Baranyi et al. (2021) A&A 653, A59:
+
+        Gamma(t) ∝ exp(-t²/(2σ²)) · (1 + erf(n·t / (σ·√2)))
+
+    normalized so that the peak value equals 1.
+
+    Parameters
+    ----------
+    sigma_sn : float
+        Scale parameter [days].
+    n_sn : float
+        Skewness parameter (dimensionless).
+        n_sn < 0: rapid rise / slow decay.
+        n_sn > 0: slow rise / rapid decay.
+        n_sn = 0: symmetric Gaussian envelope.
+
+    Returns
+    -------
+    callable
+        f(t: np.ndarray) -> np.ndarray
+    """
+    from scipy.special import erf as _scipy_erf
+    sigma = float(sigma_sn)
+    n = float(n_sn)
+
+    def _f(t):
+        z = np.asarray(t, dtype=np.float64) / sigma
+        env = np.exp(-z ** 2 / 2.0) * (1.0 + _scipy_erf(n * z / np.sqrt(2.0)))
+        env = np.maximum(env, 0.0)
+        peak = env.max()
+        return env / peak if peak > 0.0 else env
+
+    return _f
 
 
 class AnalyticKernel:

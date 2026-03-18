@@ -142,6 +142,7 @@
     <div class="bd-toc-item navbar-nav active">
         <p aria-level="2" class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/hparam_guide.html">Understanding the Hyperparameters</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/lightcurve_demo.html">Starspot Lightcurve Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/gp_solver_quickstart.html">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a></li>
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/custom_envelope.html">Custom Envelope Functions</a></li>
@@ -379,7 +380,16 @@
             </div>
             <nav aria-label="Page">
                 <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#lightcurve-model">Lightcurve Model</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#lightcurve-model">Lightcurve Model</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src_numpy.starspot.LightcurveModel"><code class="docutils literal notranslate"><span class="pre">LightcurveModel</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src_numpy.starspot.LightcurveModel.from_hparam"><code class="docutils literal notranslate"><span class="pre">LightcurveModel.from_hparam()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src_numpy.starspot.LightcurveModel.Flux"><code class="docutils literal notranslate"><span class="pre">LightcurveModel.Flux()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src_numpy.starspot.LightcurveModel.plot_lightcurve"><code class="docutils literal notranslate"><span class="pre">LightcurveModel.plot_lightcurve()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src_numpy.starspot.LightcurveModel.animate_lightcurve"><code class="docutils literal notranslate"><span class="pre">LightcurveModel.animate_lightcurve()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#analytic-kernel">Analytic Kernel</a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src_numpy.analytic_kernel.AnalyticKernel"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code></a><ul class="nav section-nav flex-column">
 <li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src_numpy.analytic_kernel.AnalyticKernel.omega0"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.omega0()</span></code></a></li>
@@ -451,6 +461,108 @@
 <span id="api-reference-src-numpy"></span><h1>API Reference (<code class="docutils literal notranslate"><span class="pre">src_numpy</span></code>)<a class="headerlink" href="#module-src_numpy" title="Link to this heading">#</a></h1>
 <section id="lightcurve-model">
 <h2>Lightcurve Model<a class="headerlink" href="#lightcurve-model" title="Link to this heading">#</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="src_numpy.starspot.LightcurveModel">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">src_numpy.starspot.</span></span><span class="sig-name descname"><span class="pre">LightcurveModel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">peq</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kappa</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.5707963267948966</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nspot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tau</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tem</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tdec</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha_max</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fspot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lspot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">long</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[0,</span> <span class="pre">6.283185307179586]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lat</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[-1.5707963267948966,</span> <span class="pre">1.5707963267948966]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tsim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">28</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tsamp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.02</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">limb_darkening</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/starspot.html#LightcurveModel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.starspot.LightcurveModel" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>NumPy star with spots and its lightcurve.</p>
+<p>Same interface as the JAX version but uses NumPy loops for spot
+computation instead of vmap.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>peq</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Equatorial period of the star.</p></li>
+<li><p><strong>kappa</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Differential rotation shear.</p></li>
+<li><p><strong>inc</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Inclination of the star.</p></li>
+<li><p><strong>nspot</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of spots.</p></li>
+<li><p><strong>tau</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Timescale for both emergence and decay of the spots. Defaults to None.</p></li>
+<li><p><strong>tem</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Emergence timescale of the spots. Defaults to 2.</p></li>
+<li><p><strong>tdec</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Decay timescale of the spots. Defaults to 2.</p></li>
+<li><p><strong>alpha_max</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Maximum angular area of the spots. Defaults to 0.1.</p></li>
+<li><p><strong>fspot</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Spot contrast fraction. Defaults to 0.</p></li>
+<li><p><strong>lspot</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Spot lifetime. Defaults to 5.</p></li>
+<li><p><strong>long</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>, </em><em>optional</em>) – Range of spot longitudes. Defaults to [0, 2*pi].</p></li>
+<li><p><strong>lat</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em>, </em><em>optional</em>) – Range of spot latitudes. Defaults to [0, pi].</p></li>
+<li><p><strong>tsim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – End simulation time. Defaults to 28.</p></li>
+<li><p><strong>tsamp</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Sampling cadence. Defaults to 0.02.</p></li>
+<li><p><strong>limb_darkening</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>optional</em>) – Flag to enable limb darkening. Defaults to False.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="src_numpy.starspot.LightcurveModel.from_hparam">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">from_hparam</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hparam</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">nspot</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/starspot.html#LightcurveModel.from_hparam"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.starspot.LightcurveModel.from_hparam" title="Link to this definition">#</a></dt>
+<dd><p>Construct a LightcurveModel from a GPSolver-compatible hparam dict.</p>
+<p>Accepts the same raw hparam dict that GPSolver/AnalyticKernel take,
+including all amplitude modes (sigma_k, nspot_rate, or nspot), and
+both symmetric (tau) and asymmetric (tau_em + tau_dec) envelopes.
+This removes the need to manually decompose the dict in scripts.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>hparam</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a>) – Raw hyperparameter dict.  Must contain peq, kappa, inc, lspot,
+an envelope timescale, and an amplitude specification.</p></li>
+<li><p><strong>nspot</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Total number of spots to simulate (distinct from nspot_rate).</p></li>
+<li><p><strong>**kwargs</strong> – Forwarded to LightcurveModel.__init__ (e.g. tsim, tsamp, lat, long).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#src_numpy.starspot.LightcurveModel" title="src_numpy.starspot.LightcurveModel">LightcurveModel</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src_numpy.starspot.LightcurveModel.Flux">
+<span class="sig-name descname"><span class="pre">Flux</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">teval</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/starspot.html#LightcurveModel.Flux"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.starspot.LightcurveModel.Flux" title="Link to this definition">#</a></dt>
+<dd><p>Compute the full lightcurve by looping over all spots.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src_numpy.starspot.LightcurveModel.plot_lightcurve">
+<span class="sig-name descname"><span class="pre">plot_lightcurve</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">show_spots</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_title</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/starspot.html#LightcurveModel.plot_lightcurve"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.starspot.LightcurveModel.plot_lightcurve" title="Link to this definition">#</a></dt>
+<dd><p>Plot the lightcurve.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src_numpy.starspot.LightcurveModel.animate_lightcurve">
+<span class="sig-name descname"><span class="pre">animate_lightcurve</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">30</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">duration</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">outfile</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dpi</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">150</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_spots</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_grid</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">figsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(14,</span> <span class="pre">5.5)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_last_frame</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_dr</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">label_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">18</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_numpy/starspot.html#LightcurveModel.animate_lightcurve"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_numpy.starspot.LightcurveModel.animate_lightcurve" title="Link to this definition">#</a></dt>
+<dd><p>Animate the starspot evolution with two panels: a 2D projection
+of the rotating star (left) and the lightcurve (right).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fps</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Frames per second (default 30).</p></li>
+<li><p><strong>duration</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Animation duration in seconds (default 10).</p></li>
+<li><p><strong>outfile</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em> or </em><em>None</em>) – Output file path (.mp4 or .gif). If None, returns the
+animation object without saving.</p></li>
+<li><p><strong>dpi</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Resolution (default 150).</p></li>
+<li><p><strong>show_spots</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, show individual spot contributions on the
+lightcurve panel (default True).</p></li>
+<li><p><strong>show_grid</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, draw latitude/longitude grid on the star
+(default True).</p></li>
+<li><p><strong>show_params</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, show parameter annotation on the lightcurve
+panel (default True).</p></li>
+<li><p><strong>figsize</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><em>tuple</em></a>) – Figure size (default (14, 5.5)).</p></li>
+<li><p><strong>save_last_frame</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em> or </em><em>None</em>) – If provided, save the last frame of the animation as a
+static image to this file path (e.g. “frame.png”).</p></li>
+<li><p><strong>show_dr</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, color the stellar disk by latitude-dependent
+rotation frequency and display a colorbar (default True).</p></li>
+<li><p><strong>label_size</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em> or </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Font size for all labels, tick marks, and text in the
+plot (default 18).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>anim</strong> – The animation object.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>matplotlib.animation.FuncAnimation</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
 </section>
 <section id="analytic-kernel">
 <h2>Analytic Kernel<a class="headerlink" href="#analytic-kernel" title="Link to this heading">#</a></h2>
@@ -1214,7 +1326,16 @@ astropy.timeseries.LombScargle.</p>
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#lightcurve-model">Lightcurve Model</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#lightcurve-model">Lightcurve Model</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src_numpy.starspot.LightcurveModel"><code class="docutils literal notranslate"><span class="pre">LightcurveModel</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src_numpy.starspot.LightcurveModel.from_hparam"><code class="docutils literal notranslate"><span class="pre">LightcurveModel.from_hparam()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src_numpy.starspot.LightcurveModel.Flux"><code class="docutils literal notranslate"><span class="pre">LightcurveModel.Flux()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src_numpy.starspot.LightcurveModel.plot_lightcurve"><code class="docutils literal notranslate"><span class="pre">LightcurveModel.plot_lightcurve()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src_numpy.starspot.LightcurveModel.animate_lightcurve"><code class="docutils literal notranslate"><span class="pre">LightcurveModel.animate_lightcurve()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#analytic-kernel">Analytic Kernel</a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src_numpy.analytic_kernel.AnalyticKernel"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code></a><ul class="nav section-nav flex-column">
 <li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src_numpy.analytic_kernel.AnalyticKernel.omega0"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.omega0()</span></code></a></li>

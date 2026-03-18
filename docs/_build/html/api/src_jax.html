@@ -141,6 +141,7 @@
     <div class="bd-toc-item navbar-nav active">
         <p aria-level="2" class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/hparam_guide.html">Understanding the Hyperparameters</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/lightcurve_demo.html">Starspot Lightcurve Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/gp_solver_quickstart.html">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a></li>
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/custom_envelope.html">Custom Envelope Functions</a></li>
@@ -598,19 +599,23 @@ plot (default 18).</p></li>
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>hparam</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a>) – <p>Hyperparameters. Required keys: peq, kappa, inc, lspot.
-For the envelope timescale, provide EITHER:</p>
+For the envelope shape, provide ONE of:</p>
 <blockquote>
 <div><ul>
-<li><p>tau : symmetric emergence/decay timescale, OR</p></li>
-<li><p>tau_em + tau_dec : distinct emergence and decay timescales.</p></li>
+<li><p>tau                   : symmetric trapezoidal envelope, OR</p></li>
+<li><p>tau_em + tau_dec      : asymmetric trapezoidal envelope, OR</p></li>
+<li><dl class="simple">
+<dt>sigma_sn + n_sn<span class="classifier">skew-normal envelope (Baranyi et al. 2021</span></dt><dd><p>eq. 1); lspot is required by schema but
+unused — set to 0.</p>
+</dd>
+</dl>
+</li>
 </ul>
 </div></blockquote>
 <dl class="simple">
 <dt>For the kernel amplitude, provide EITHER:</dt><dd><ul>
 <li><p>sigma_k : overall amplitude prefactor, OR</p></li>
-<li><p>nspot + fspot + alpha_max : number of spots, spot contrast,
-and max spot radius, from which sigma_k is computed as
-sqrt(N_spot) * (1 - f_spot) * alpha_max^2 / pi.</p></li>
+<li><p>nspot_rate + fspot + alpha_max : physical parameterization.</p></li>
 </ul>
 </dd>
 </dl>
@@ -632,7 +637,7 @@ sqrt(N_spot) * (1 - f_spot) * alpha_max^2 / pi.</p></li>
 <dl class="py method">
 <dt class="sig sig-object py" id="src_jax.analytic_kernel.AnalyticKernel.R_Gamma">
 <span class="sig-name descname"><span class="pre">R_Gamma</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lag</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src_jax/analytic_kernel.html#AnalyticKernel.R_Gamma"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src_jax.analytic_kernel.AnalyticKernel.R_Gamma" title="Link to this definition">#</a></dt>
-<dd><p>Autocorrelation of the squared envelope (closed-form piecewise polynomial).</p>
+<dd><p>Autocorrelation of the squared envelope.</p>
 </dd></dl>
 
 <dl class="py method">

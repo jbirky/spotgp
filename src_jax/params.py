@@ -246,6 +246,32 @@ register_envelope(EnvelopeSpec(
 ))
 
 
+def _resolve_skew_normal(raw: dict) -> dict:
+    sigma_sn = float(raw["sigma_sn"])
+    n_sn = float(raw["n_sn"])
+    return {
+        "sigma_sn": sigma_sn,
+        "n_sn": n_sn,
+        # scalar tau for modules that need a single timescale
+        "tau": sigma_sn,
+    }
+
+
+register_envelope(EnvelopeSpec(
+    name="skew_normal",
+    signature_keys=frozenset({"sigma_sn", "n_sn"}),
+    resolve=_resolve_skew_normal,
+    description=(
+        "Skew-normal: sigma_sn (scale [days]) + n_sn (skewness, dimensionless). "
+        "Eq. (1) of Baranyi et al. (2021) A&A 653, A59. "
+        "n_sn < 0: rapid rise / slow decay; "
+        "n_sn > 0: slow rise / rapid decay; "
+        "n_sn = 0: Gaussian envelope. "
+        "lspot is required by the base schema but unused; set to 0."
+    ),
+))
+
+
 # ── Built-in amplitude registrations ──────────────────────────────────────────
 
 register_amplitude(AmplitudeSpec(

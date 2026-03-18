@@ -45,6 +45,7 @@ Both `src_numpy` and `src_jax` expose the same interface. The JAX backend adds J
 :maxdepth: 2
 :caption: Tutorials
 
+tutorials/hparam_guide
 tutorials/lightcurve_demo
 tutorials/gp_solver_quickstart
 tutorials/custom_envelope
