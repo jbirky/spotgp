@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from matplotlib.colors import LinearSegmentedColormap
 from scipy.ndimage import gaussian_filter, uniform_filter1d
+from PIL import Image
+import io
 
 # ── Star / curve colours (shared) ─────────────────────────────────────────────
 STAR_INNER = "#FFD0A0"
@@ -73,25 +75,33 @@ def make_logo(theme: str, out: str) -> None:
         t.remove()
         return bb
 
-    bb_o     = probe("o",   FONTSIZE, 0.5, 0.5, ha="center", va="center")
+    bb_o     = probe("o",   FONTSIZE, 0.5, 0.5, ha="center", va="center", fontstyle="italic")
     o_w_ax   = bb_o.width  / fig_w_px
     o_h_ax   = bb_o.height / fig_h_px
 
-    bb_sp_m  = probe("sp",  FONTSIZE, 0.5, 0.5, ha="right", va="center")
-    bb_tgp_m = probe("tgp", FONTSIZE, 0.5, 0.5, ha="left",  va="center")
+    bb_sp_m  = probe("sp",  FONTSIZE, 0.5, 0.5, ha="right", va="center", fontstyle="italic")
+    bb_tgp_m = probe("tgp", FONTSIZE, 0.5, 0.5, ha="left",  va="center", fontstyle="italic")
     sp_w_ax  = bb_sp_m.width  / fig_w_px
     tgp_w_ax = bb_tgp_m.width / fig_w_px
 
-    total_w = sp_w_ax + o_w_ax + tgp_w_ax
+    gap_extra = o_w_ax * 0.35        # extra padding so the star clears "p" and "t"
+    o_gap_ax  = o_w_ax + gap_extra
+    total_w = sp_w_ax + o_gap_ax + tgp_w_ax
     x_sp    = X_CENTER - total_w / 2 + sp_w_ax
-    x_tgp   = X_CENTER - total_w / 2 + sp_w_ax + o_w_ax
-    X_STAR  = X_CENTER - total_w / 2 + sp_w_ax + o_w_ax / 2
+    x_tgp   = X_CENTER - total_w / 2 + sp_w_ax + o_gap_ax
+    X_STAR  = X_CENTER - total_w / 2 + sp_w_ax + o_gap_ax / 2
 
-    bb_sp  = probe("sp",  FONTSIZE, x_sp,  0.5, ha="right", va="center")
-    bb_tgp = probe("tgp", FONTSIZE, x_tgp, 0.5, ha="left",  va="center")
+    bb_sp  = probe("sp",  FONTSIZE, x_sp,  0.5, ha="right", va="center", fontstyle="italic")
+    bb_tgp = probe("tgp", FONTSIZE, x_tgp, 0.5, ha="left",  va="center", fontstyle="italic")
 
     left_text_ax  = ax_inv.transform((bb_sp.x0,  0))[0]
     right_text_ax = ax_inv.transform((bb_tgp.x1, 0))[0]
+
+    # Re-derive X_STAR as the exact midpoint between the right edge of "sp"
+    # and the left edge of "tgp" so the star is evenly spaced between p and t.
+    right_sp_ax  = ax_inv.transform((bb_sp.x1,  0))[0]
+    left_tgp_ax  = ax_inv.transform((bb_tgp.x0, 0))[0]
+    X_STAR = (right_sp_ax + left_tgp_ax) / 2
     text_width_ax = right_text_ax - left_text_ax
 
     bb_sub_trial = probe(SUB_TEXT, 13, X_CENTER, 0.5,
@@ -109,11 +119,11 @@ def make_logo(theme: str, out: str) -> None:
     # ── Wordmark text ─────────────────────────────────────────────────────────
     ax.text(x_sp, Y_TEXT, "sp",
             fontsize=FONTSIZE, fontweight="bold", fontfamily=FONTFAM,
-            ha="right", va="center", color=TEXT_MAIN,
+            fontstyle="italic", ha="right", va="center", color=TEXT_MAIN,
             transform=ax.transAxes, zorder=5)
     ax.text(x_tgp, Y_TEXT, "tgp",
             fontsize=FONTSIZE, fontweight="bold", fontfamily=FONTFAM,
-            ha="left", va="center", color=TEXT_MAIN,
+            fontstyle="italic", ha="left", va="center", color=TEXT_MAIN,
             transform=ax.transAxes, zorder=5)
     # ax.text(X_CENTER, y_sub, SUB_TEXT,
     #         fontsize=sub_fs, fontfamily=SUB_FONT, fontweight="normal",
@@ -298,9 +308,14 @@ def make_logo(theme: str, out: str) -> None:
                 ecolor=CURVE_COLOR, elinewidth=0.9, capsize=0,
                 markeredgecolor=CURVE_COLOR, markeredgewidth=0.9, zorder=4)
 
-    # ── Save ──────────────────────────────────────────────────────────────────
-    fig.savefig(out, dpi=DPI, bbox_inches="tight", transparent=True)
+    # ── Save (with 15° counter-clockwise rotation) ────────────────────────────
+    buf = io.BytesIO()
+    fig.savefig(buf, dpi=DPI, bbox_inches="tight", transparent=True)
     plt.close(fig)
+    buf.seek(0)
+    img = Image.open(buf).convert("RGBA")
+    img = img.rotate(10, expand=True, resample=Image.BICUBIC)
+    img.save(out)
     print(f"Saved → {out}")
 
 
