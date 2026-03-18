@@ -11,7 +11,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from matplotlib.colors import LinearSegmentedColormap
-from scipy.ndimage import gaussian_filter, uniform_filter1d
+from scipy.ndimage import gaussian_filter, uniform_filter1d, maximum_filter1d, minimum_filter1d, gaussian_filter1d
 from PIL import Image
 import io
 
@@ -285,9 +285,54 @@ def make_logo(theme: str, out: str) -> None:
     in_text = (smooth_step(t_norm, left_text_ax - trans, left_text_ax + trans)
                * (1 - smooth_step(t_norm, right_text_ax - trans, right_text_ax + trans)))
 
-    sigma_band = 0.055 + 0.175 * in_text
-    ax.fill_between(t_norm, y_plot - sigma_band, y_plot + sigma_band,
-                    color=CURVE_COLOR, alpha=0.20, linewidth=0, zorder=2)
+    # Capture the canvas (text + star already drawn) and read per-column
+    # pixel extents to make the uncertainty band follow the text contour.
+    fig.canvas.draw()
+    buf_rgba = np.array(fig.canvas.buffer_rgba())   # (H, W, 4) uint8
+    fig_H, fig_W = buf_rgba.shape[:2]
+    alpha_ch = buf_rgba[..., 3].astype(float)
+
+    NARROW     = 0.055  # band half-width (axes units) outside the text
+    PAD        = 0.018  # padding above/below detected text pixels (wide band)
+    PAD_CURVY  = 0.055  # wider offset for the curvy band
+    WIDE_BIG   = 80     # large window — fills inter-letter gaps, boxy
+    WIDE_SMALL = 20     # small window — follows letter shapes closely, curvy
+
+    # Raw pixel extents with standard padding (for wide band)
+    band_hi_raw = y_plot + NARROW
+    band_lo_raw = y_plot - NARROW
+    # Raw pixel extents with wider padding (for curvy band)
+    band_hi_raw_curvy = y_plot + NARROW
+    band_lo_raw_curvy = y_plot - NARROW
+    for i, tx in enumerate(t_norm):
+        col_px = int(np.clip(tx * fig_W, 0, fig_W - 1))
+        rows = np.where(alpha_ch[:, col_px] > 20)[0]
+        if len(rows) > 0:
+            band_hi_raw[i]       = 1.0 - rows.min() / fig_H + PAD
+            band_lo_raw[i]       = 1.0 - rows.max() / fig_H - PAD
+            band_hi_raw_curvy[i] = 1.0 - rows.min() / fig_H + PAD_CURVY
+            band_lo_raw_curvy[i] = 1.0 - rows.max() / fig_H - PAD_CURVY
+
+    # Wide band: fills all inter-letter gaps but boxy
+    band_hi_wide = maximum_filter1d(band_hi_raw, size=WIDE_BIG)
+    band_lo_wide = minimum_filter1d(band_lo_raw, size=WIDE_BIG)
+
+    # Narrow band: follows letter contours closely, curvy but has gaps
+    band_hi_curvy = maximum_filter1d(band_hi_raw_curvy, size=WIDE_SMALL)
+    band_lo_curvy = minimum_filter1d(band_lo_raw_curvy, size=WIDE_SMALL)
+
+    # Take the maximum width between the two so gaps are filled AND edges are curvy
+    band_hi = np.maximum(band_hi_wide, band_hi_curvy)
+    band_lo = np.minimum(band_lo_wide, band_lo_curvy)
+
+    # Outside the text region revert to narrow band, then smooth transitions
+    band_hi = np.where(in_text > 0.01, band_hi, y_plot + NARROW)
+    band_lo = np.where(in_text > 0.01, band_lo, y_plot - NARROW)
+    band_hi = gaussian_filter1d(band_hi, sigma=12)
+    band_lo = gaussian_filter1d(band_lo, sigma=12)
+
+    ax.fill_between(t_norm, band_lo, band_hi,
+                    color="#89CFF0", alpha=0.45, linewidth=0, zorder=2)
 
     outside = in_text < 0.05
     for seg in np.split(np.where(outside)[0],

@@ -48,3 +48,15 @@ body {
     display: flex;
     flex-direction: column;
 }
+
+/* Dark mode: lighter dark-gray sidebars, near-black main content */
+[data-theme="dark"] .bd-sidebar-primary,
+[data-theme="dark"] .bd-sidebar-secondary,
+[data-theme="dark"] .toc-drawer {
+    background-color: #1e2227;
+}
+
+[data-theme="dark"] .bd-article-container,
+[data-theme="dark"] .bd-content {
+    background-color: #0d1117;
+}
