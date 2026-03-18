@@ -284,7 +284,9 @@ class LightcurveModel(object):
 
         self.long = self._assign_property(long)
         self.lat = self._assign_property(lat)
-        self.tmax = np.random.uniform(-self.tlifetime, self.tsim + self.tlifetime, self.nspot)
+        self.tmax = np.random.uniform(-(self.lspot/2 + self.tdec),
+                                      self.tsim + self.lspot/2 + self.tem,
+                                      self.nspot)
 
         # limb darkening
         self.limb_darkening = limb_darkening
