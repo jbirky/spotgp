@@ -59,8 +59,6 @@ napoleon_use_rtype = True
 html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
-html_title = "spotgp"
-
 highlight_language = "python3"
 pygments_style     = "friendly"
 
@@ -73,6 +71,10 @@ html_theme_options = {
     "use_repository_button": True,
     "use_issues_button": True,
     "use_download_button": True,
+    "logo": {
+        "image_light": "_static/spotgp_logo_light.png",
+        "image_dark": "_static/spotgp_logo_dark.png",
+    },
 }
 
 # -- nbsphinx ----------------------------------------------------------------
