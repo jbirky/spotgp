@@ -387,7 +387,7 @@ class GPSolver:
     def __init__(self, x, y, yerr, hparam, kernel_type="analytic",
                  mean=None, fit_sigma_n=False, bounds=None,
                  log_prior=None, matrix_solver="cholesky_banded",
-                 **kernel_kwargs):
+                 save_dir=None, **kernel_kwargs):
 
         self.x = np.asarray(x, dtype=np.float64)
         self.y = np.asarray(y, dtype=np.float64)
@@ -504,6 +504,11 @@ class GPSolver:
         self._build_transform()
         self._build_logposterior()
 
+        if save_dir is not None:
+            import os as _os
+            _os.makedirs(save_dir, exist_ok=True)
+        self.save_dir = save_dir
+
         # Storage for optimization results
         self.map_estimate = None
         self.inverse_mass_matrix = None
@@ -511,6 +516,14 @@ class GPSolver:
         self._fisher_matrix = None
         self._laplace_hessian = None
         self._laplace_mean = None
+
+    def _autosave(self, filename, **arrays):
+        if self.save_dir is None:
+            return
+        import os as _os
+        path = _os.path.join(self.save_dir, filename)
+        np.savez(path, **arrays)
+        print(f"Saved {filename} → {path}")
 
     def _build_kernel(self):
         """Instantiate the kernel object."""
@@ -835,9 +848,10 @@ class GPSolver:
 
     def fit_acf(self, theta0=None, keys=None, tlags=None, n_bins=50,
                 method="L-BFGS-B", maxiter=500, ftol=0, gtol=1e-8,
-                disp=False):
+                disp=False, nopt=1, ncore=None, rng=None):
         """
         Fit the analytic kernel to the empirical ACF via least-squares.
+        When ``nopt > 1``, delegates to ``fit_acf_parallel``.
 
         Minimizes sum_i (ACF_data(lag_i) - K(lag_i; theta))^2 over the
         kernel hyperparameters, using numerical gradients and scipy.
@@ -877,6 +891,13 @@ class GPSolver:
         result : scipy.optimize.OptimizeResult
             Full optimizer output.
         """
+        if nopt > 1:
+            return self.fit_acf_parallel(
+                nopt=nopt, ncore=ncore, keys=keys, tlags=tlags,
+                n_bins=n_bins, method=method, maxiter=maxiter,
+                ftol=ftol, gtol=gtol, disp=disp, rng=rng,
+            )
+
         # Build lag bins
         if tlags is None:
             baseline = float(np.max(self.x) - np.min(self.x))
@@ -972,6 +993,7 @@ class GPSolver:
 
         theta_dict = {k: float(theta_full[i])
                       for i, k in enumerate(kernel_keys)}
+        self._autosave("acf_fit_results.npz", theta_acf=theta_dict)
         return theta_dict, result
 
     def fit_acf_parallel(self, nopt=10, ncore=None, keys=None,
@@ -1058,6 +1080,7 @@ class GPSolver:
             [float(best_theta[k]) for k in kernel_keys],
             dtype=np.float64)
         self._acf_fit_result = best_result
+        self._autosave("acf_fit_results.npz", theta_acf=best_theta)
         return best_theta, best_result
 
     def fit_acf_psd(self, theta0=None, keys=None,
@@ -1552,12 +1575,14 @@ class GPSolver:
     # MAP estimation
     # =================================================================
 
-    def find_map(self, theta0=None, keys=None, method="L-BFGS-B",
-                 maxiter=500, ftol=0, gtol=1e-8, disp=False):
+    def fit_map(self, theta0=None, keys=None, method="L-BFGS-B",
+                 maxiter=500, ftol=0, gtol=1e-8, disp=False, nopt=1,
+                 ncore=None, rng=None):
         """
         Find the maximum a posteriori (MAP) estimate.
 
         Uses scipy.optimize.minimize with numerical gradients.
+        When ``nopt > 1``, delegates to ``fit_map_parallel``.
 
         Parameters
         ----------
@@ -1583,6 +1608,12 @@ class GPSolver:
         result : scipy OptimizeResult
             Full optimizer output.
         """
+        if nopt > 1:
+            return self.fit_map_parallel(
+                nopt=nopt, ncore=ncore, keys=keys, method=method,
+                maxiter=maxiter, ftol=ftol, gtol=gtol, disp=disp, rng=rng,
+            )
+
         # --- Parse theta0 -------------------------------------------------
         if theta0 is None:
             theta0_arr = self.theta0.copy()
@@ -1659,14 +1690,18 @@ class GPSolver:
 
         self.map_estimate = theta_full
         self._map_result = result
-        return self._result_dict(theta_full), result
+        theta_dict = self._result_dict(theta_full)
+        self._autosave("map_fit_results.npz",
+                       theta_map=theta_dict,
+                       theta_true=self._result_dict(self.theta0))
+        return theta_dict, result
 
-    def find_map_parallel(self, nopt=10, ncore=None, keys=None,
+    def fit_map_parallel(self, nopt=10, ncore=None, keys=None,
                           method="nelder-mead", maxiter=500, ftol=0,
                           gtol=1e-8, disp=False, return_all=False,
                           rng=None):
         """
-        Run ``find_map`` from multiple random starting points in parallel.
+        Run ``fit_map`` from multiple random starting points in parallel.
 
         Parameters
         ----------
@@ -1675,11 +1710,11 @@ class GPSolver:
         ncore : int or None
             Number of parallel workers.
         keys : list of str, optional
-            Free parameters (forwarded to ``find_map``).
+            Free parameters (forwarded to ``fit_map``).
         method : str
             Optimizer method (default "nelder-mead").
         maxiter, ftol, gtol, disp
-            Forwarded to ``find_map``.
+            Forwarded to ``fit_map``.
         return_all : bool
             If True, return all solutions sorted by objective value.
         rng : numpy.random.Generator, optional
@@ -1714,7 +1749,7 @@ class GPSolver:
             starts.append(theta0_dict)
 
         def _run_one(theta0_dict):
-            return self.find_map(theta0=theta0_dict, keys=keys,
+            return self.fit_map(theta0=theta0_dict, keys=keys,
                                  method=method, maxiter=maxiter,
                                  ftol=ftol, gtol=gtol, disp=disp)
 
@@ -1732,6 +1767,9 @@ class GPSolver:
             [float(best_theta[k]) for k in self.param_keys],
             dtype=np.float64)
         self._map_result = best_result
+        self._autosave("map_fit_results.npz",
+                       theta_map=best_theta,
+                       theta_true=self._result_dict(self.theta0))
         return best_theta, best_result
 
     # =================================================================
@@ -1748,7 +1786,7 @@ class GPSolver:
         Parameters
         ----------
         theta_map : array_like, optional
-            MAP estimate. If None, calls find_map() first.
+            MAP estimate. If None, calls fit_map() first.
 
         Returns
         -------
@@ -1756,7 +1794,7 @@ class GPSolver:
         """
         if theta_map is None:
             if self.map_estimate is None:
-                self.find_map()
+                self.fit_map()
             theta_map = self.map_estimate
         theta_map = np.asarray(theta_map, dtype=np.float64)
 
@@ -1808,7 +1846,7 @@ class GPSolver:
         """
         if theta_map is None:
             if self.map_estimate is None:
-                self.find_map()
+                self.fit_map()
             theta_map = self.map_estimate
         theta_map = np.asarray(theta_map, dtype=np.float64)
 
@@ -1871,7 +1909,7 @@ class GPSolver:
         Parameters
         ----------
         theta_map : array_like, optional
-            MAP estimate. If None, calls find_map() first.
+            MAP estimate. If None, calls fit_map() first.
 
         Returns
         -------
@@ -1879,7 +1917,7 @@ class GPSolver:
         """
         if theta_map is None:
             if self.map_estimate is None:
-                self.find_map()
+                self.fit_map()
             theta_map = self.map_estimate
         theta_map = np.asarray(theta_map, dtype=np.float64)
 

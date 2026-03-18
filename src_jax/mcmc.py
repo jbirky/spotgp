@@ -152,7 +152,7 @@ class MCMCSampler:
         # Get MAP center
         if theta_map is None:
             if gp.map_estimate is None:
-                gp.find_map()
+                gp.fit_map()
             theta_map = gp.map_estimate
         mu = np.asarray(theta_map, dtype=np.float64)
 
@@ -398,7 +398,7 @@ class BlackJAXSampler(MCMCSampler):
         # Initial position
         if theta_init is None:
             if gp.map_estimate is None:
-                gp.find_map()
+                gp.fit_map()
             theta_init = gp.map_estimate
         elif isinstance(theta_init, dict):
             theta_init = jnp.array(
@@ -622,8 +622,11 @@ class BlackJAXSampler(MCMCSampler):
             if os.path.exists(_path):
                 existing = np.load(_path)
                 if "samples" in existing and existing["samples"].size > 0:
+                    # multi-chain: (n_chains, n_samples, n_params) → concat on axis=1
+                    # single-chain: (n_samples, n_params) → concat on axis=0
+                    cat_axis = 1 if samples_to_save.ndim == 3 else 0
                     samples_to_save = np.concatenate(
-                        [existing["samples"], samples_to_save], axis=0)
+                        [existing["samples"], samples_to_save], axis=cat_axis)
                 existing.close()
 
         save_kwargs = {
@@ -734,7 +737,7 @@ class BlackJAXSampler(MCMCSampler):
               f"not loaded into memory)")
 
     @staticmethod
-    def load_samples(path):
+    def load_samples(path, flatten_chains=True):
         """
         Read all samples from a checkpoint file without loading
         the sampler state.
@@ -743,14 +746,24 @@ class BlackJAXSampler(MCMCSampler):
         ----------
         path : str
             Path to a ``.npz`` checkpoint file.
+        flatten_chains : bool
+            If True (default), collapse the chain dimension so the
+            returned array is always ``(n_total, n_params)``.  Set to
+            False to get the raw ``(n_chains, n_samples, n_params)``
+            array for per-chain diagnostics (e.g. R-hat).
 
         Returns
         -------
-        samples : np.ndarray, shape (n_total, n_params)
+        samples : np.ndarray
+            Shape ``(n_total, n_params)`` when ``flatten_chains=True``,
+            or ``(n_chains, n_samples, n_params)`` otherwise.
         """
         data = np.load(path)
         samples = data["samples"].copy()
         data.close()
+        if flatten_chains and samples.ndim == 3:
+            n_chains, n_samp, n_params = samples.shape
+            samples = samples.reshape(n_chains * n_samp, n_params)
         return samples
 
     def resume_nuts(self, n_samples=1000, rng_key=None, progress_bar=False):
