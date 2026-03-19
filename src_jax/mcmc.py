@@ -766,7 +766,7 @@ class BlackJAXSampler(MCMCSampler):
             samples = samples.reshape(n_chains * n_samp, n_params)
         return samples
 
-    def resume_nuts(self, n_samples=1000, rng_key=None, progress_bar=False):
+    def resume_nuts(self, n_samples=1000, n_chains=None, rng_key=None, progress_bar=False):
         """
         Continue NUTS sampling from a previous run or loaded checkpoint.
 
@@ -775,13 +775,14 @@ class BlackJAXSampler(MCMCSampler):
         new batch of samples.  Call ``save_checkpoint`` afterward to
         append the batch to disk and free memory.
 
-        Automatically resumes with the same number of chains used in
-        the original ``run_nuts`` call.
-
         Parameters
         ----------
         n_samples : int
             Number of additional samples per chain (default 1000).
+        n_chains : int, optional
+            Number of chains to run.  If None (default), uses the value
+            stored in the sampler state (from ``run_nuts`` or
+            ``load_checkpoint``).
         rng_key : jax.random.PRNGKey, optional
             Random key.  If None, advances from the last key used.
         progress_bar : bool
@@ -802,7 +803,10 @@ class BlackJAXSampler(MCMCSampler):
             raise RuntimeError(
                 "No previous state. Run run_nuts or load_checkpoint first.")
 
-        n_chains = getattr(self, "_n_chains", 1)
+        if n_chains is None:
+            n_chains = getattr(self, "_n_chains", 1)
+        else:
+            self._n_chains = n_chains
         gp = self.gp
         step_size = self._adapted_step_size
         inv_mass = jnp.asarray(self._adapted_inv_mass)
