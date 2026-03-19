@@ -145,15 +145,17 @@
 </button></div>
         <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
     <div class="bd-toc-item navbar-nav active">
-        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Basics</span></p>
 <ul class="nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="tutorials/hparam_guide.html">Understanding the Hyperparameters</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/lightcurve_demo.html">Starspot Lightcurve Model</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/gp_solver_quickstart.html">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/custom_envelope.html">Custom Envelope Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="overview.html">Code Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/lightcurve_demo.html">Lightcurve Animations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/trapezoid_symmetric_tutorial.html">Spot Evolution Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/gp_optimization.html">GPSolver and Hyperparameter Optimization</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Advanced</span></p>
+<ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="tutorials/custom_latitude_distribution.html">Custom Latitude Distributions</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/gp_optimization.html">GP Hyperparameter Optimization</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/mcmc_blackjax.html">MCMC with BlackJAX</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/mcmc_sampling.html">MCMC Sampling with BlackJAX</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul class="nav bd-sidenav">
@@ -336,14 +338,10 @@
         <li><a href="api/src_numpy.html#src_numpy.analytic_kernel.AnalyticKernel">(class in src_numpy.analytic_kernel)</a>
 </li>
       </ul></li>
-      <li><a href="api/src_jax.html#src_jax.starspot.LightcurveModel.animate_lightcurve">animate_lightcurve() (src_jax.starspot.LightcurveModel method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.starspot.LightcurveModel.animate_lightcurve">(src_numpy.starspot.LightcurveModel method)</a>
-</li>
-      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/src_numpy.html#src_numpy.starspot.LightcurveModel.animate_lightcurve">animate_lightcurve() (src_numpy.starspot.LightcurveModel method)</a>
+</li>
       <li><a href="api/src_jax.html#src_jax.numerical_kernel.avg_covariance_tlag">avg_covariance_tlag() (in module src_jax.numerical_kernel)</a>
 
       <ul>
@@ -358,6 +356,14 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.mcmc.BlackJAXSampler">BlackJAXSampler (class in src_jax.mcmc)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/src_jax.html#src_jax.analytic_kernel.AnalyticKernel.build_jax">build_jax() (src_jax.analytic_kernel.AnalyticKernel method)</a>
+
+      <ul>
+        <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.build_jax">(src_jax.gp_solver.GPSolver method)</a>
+</li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -434,32 +440,24 @@
         <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.fit_acf_psd">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.fit_map">fit_map() (src_jax.gp_solver.GPSolver method)</a>
 
       <ul>
         <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.fit_map">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.fit_map_parallel">fit_map_parallel() (src_jax.gp_solver.GPSolver method)</a>
 
       <ul>
         <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.fit_map_parallel">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
       </ul></li>
-      <li><a href="api/src_jax.html#src_jax.starspot.LightcurveModel.Flux">Flux() (src_jax.starspot.LightcurveModel method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.starspot.LightcurveModel.Flux">(src_numpy.starspot.LightcurveModel method)</a>
+      <li><a href="api/src_numpy.html#src_numpy.starspot.LightcurveModel.Flux">Flux() (src_numpy.starspot.LightcurveModel method)</a>
 </li>
-      </ul></li>
-      <li><a href="api/src_jax.html#src_jax.starspot.LightcurveModel.from_hparam">from_hparam() (src_jax.starspot.LightcurveModel class method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.starspot.LightcurveModel.from_hparam">(src_numpy.starspot.LightcurveModel class method)</a>
+      <li><a href="api/src_numpy.html#src_numpy.starspot.LightcurveModel.from_hparam">from_hparam() (src_numpy.starspot.LightcurveModel class method)</a>
 </li>
-      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -530,12 +528,8 @@
         <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.laplace_samples">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
       </ul></li>
-      <li><a href="api/src_jax.html#src_jax.starspot.LightcurveModel">LightcurveModel (class in src_jax.starspot)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.starspot.LightcurveModel">(class in src_numpy.starspot)</a>
+      <li><a href="api/src_numpy.html#src_numpy.starspot.LightcurveModel">LightcurveModel (class in src_numpy.starspot)</a>
 </li>
-      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.mcmc.BlackJAXSampler.load_checkpoint">load_checkpoint() (src_jax.mcmc.BlackJAXSampler method)</a>
@@ -637,14 +631,12 @@
       </ul></li>
       <li><a href="api/src_jax.html#src_jax.mcmc.MCMCSampler.plot_covariance">plot_covariance() (src_jax.mcmc.MCMCSampler method)</a>
 </li>
-      <li><a href="api/src_jax.html#src_jax.starspot.LightcurveModel.plot_lightcurve">plot_lightcurve() (src_jax.starspot.LightcurveModel method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.starspot.LightcurveModel.plot_lightcurve">(src_numpy.starspot.LightcurveModel method)</a>
+      <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.plot_covariance_matrix">plot_covariance_matrix() (src_jax.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/src_numpy.html#src_numpy.starspot.LightcurveModel.plot_lightcurve">plot_lightcurve() (src_numpy.starspot.LightcurveModel method)</a>
+</li>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.plot_prediction">plot_prediction() (src_jax.gp_solver.GPSolver method)</a>
 
       <ul>

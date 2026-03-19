@@ -26,7 +26,7 @@ Define your resolve function, then register it::
 
 Your kernel can then read raw["tau_gauss"] directly after calling
 resolve_hparam(); every other module (gp_solver, mcmc) is unchanged
-because resolve_hparam always injects "sigma_k" and "tau".
+because resolve_hparam always injects "sigma_k" and "tau_spot".
 
 Extending with a new amplitude parameterization
 -------------------------------------------------
@@ -86,13 +86,13 @@ BASE_REQUIRED_KEYS: FrozenSet[str] = frozenset({"peq", "kappa", "inc", "lspot"})
 
 # Canonical ordered tuple for theta vectors, corner-plot labels, etc.
 # GPSolver and MCMCSampler use this to map array positions to param names.
-KERNEL_HPARAM_KEYS: tuple[str, ...] = ("peq", "kappa", "inc", "lspot", "tau", "sigma_k")
+KERNEL_HPARAM_KEYS: tuple[str, ...] = ("peq", "kappa", "inc", "lspot", "tau_spot", "sigma_k")
 
 # Extended version that includes the optional white-noise term
 HPARAM_KEYS_WITH_NOISE: tuple[str, ...] = KERNEL_HPARAM_KEYS + ("sigma_n",)
 
 # Backward-compat aliases — existing modules import these by name
-_REQUIRED_KEYS: FrozenSet[str] = BASE_REQUIRED_KEYS | {"tau"}
+_REQUIRED_KEYS: FrozenSet[str] = BASE_REQUIRED_KEYS | {"tau_spot"}
 _AMPLITUDE_KEYS_SIGMA: FrozenSet[str] = frozenset({"sigma_k"})
 _AMPLITUDE_KEYS_PHYSICAL_RATE: FrozenSet[str] = frozenset({"nspot_rate", "fspot", "alpha_max"})
 _AMPLITUDE_KEYS_PHYSICAL: FrozenSet[str] = frozenset({"nspot", "fspot", "alpha_max"})
@@ -115,7 +115,7 @@ class EnvelopeSpec:
         specific match (largest signature) wins.
     resolve : callable
         ``(raw: dict) -> dict``  Returns *additional* key-value pairs to
-        merge into the resolved hparam.  Must always include ``"tau"``
+        merge into the resolved hparam.  Must always include ``"tau_spot"``
         (a scalar timescale) for backward compatibility with modules that
         require a single timescale value.
     description : str
@@ -217,7 +217,7 @@ def _detect_amplitude(raw: dict) -> AmplitudeSpec | None:
 # ── Built-in envelope registrations ───────────────────────────────────────────
 
 def _resolve_trapezoid_symmetric(raw: dict) -> dict:
-    return {"tau": raw["tau"]}
+    return {"tau_spot": raw["tau_spot"]}
 
 
 def _resolve_trapezoid_asymmetric(raw: dict) -> dict:
@@ -226,16 +226,16 @@ def _resolve_trapezoid_asymmetric(raw: dict) -> dict:
     return {
         "tau_em": tau_em,
         "tau_dec": tau_dec,
-        # Scalar tau for modules that need a single timescale (e.g. PSD, bandwidth)
-        "tau": (tau_em + tau_dec) / 2.0,
+        # Scalar tau_spot for modules that need a single timescale (e.g. PSD, bandwidth)
+        "tau_spot": (tau_em + tau_dec) / 2.0,
     }
 
 
 register_envelope(EnvelopeSpec(
     name="trapezoid_symmetric",
-    signature_keys=frozenset({"tau"}),
+    signature_keys=frozenset({"tau_spot"}),
     resolve=_resolve_trapezoid_symmetric,
-    description="Symmetric trapezoid: lspot (plateau) + tau (rise/decay timescale)",
+    description="Symmetric trapezoid: lspot (plateau) + tau_spot (rise/decay timescale)",
 ))
 
 register_envelope(EnvelopeSpec(
@@ -252,8 +252,8 @@ def _resolve_skew_normal(raw: dict) -> dict:
     return {
         "sigma_sn": sigma_sn,
         "n_sn": n_sn,
-        # scalar tau for modules that need a single timescale
-        "tau": sigma_sn,
+        # scalar tau_spot for modules that need a single timescale
+        "tau_spot": sigma_sn,
     }
 
 
@@ -333,7 +333,7 @@ def resolve_hparam(raw: dict) -> dict:
     dict
         A new dict containing all original keys plus any keys injected by
         the envelope and amplitude resolvers.  The returned dict always
-        contains ``"tau"`` and ``"sigma_k"``.
+        contains ``"tau_spot"`` and ``"sigma_k"``.
 
     Raises
     ------

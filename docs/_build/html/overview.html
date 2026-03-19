@@ -1,0 +1,871 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Code Overview &#8212; spotgp 0.1.0 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d75fae25" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/sphinx-book-theme.css?v=3c74b3bc" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=eacfb618" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="_static/documentation_options.js?v=a1637f0b"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'overview';</script>
+    <script src="_static/notebook_download.js?v=2428894a"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Lightcurve Animations" href="tutorials/lightcurve_demo.html" />
+    <link rel="prev" title="spotgp" href="index.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="0.1.0" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/spotgp_logo_light.png" class="logo__image only-light" alt="spotgp 0.1.0 documentation - Home"/>
+    <img src="_static/spotgp_logo_dark.png" class="logo__image only-dark pst-js-only" alt="spotgp 0.1.0 documentation - Home"/>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Basics</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Code Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/lightcurve_demo.html">Lightcurve Animations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/trapezoid_symmetric_tutorial.html">Spot Evolution Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/gp_optimization.html">GPSolver and Hyperparameter Optimization</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Advanced</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="tutorials/custom_latitude_distribution.html">Custom Latitude Distributions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/mcmc_sampling.html">MCMC Sampling with BlackJAX</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="api/src_numpy.html">API Reference (<code class="docutils literal notranslate"><span class="pre">src_numpy</span></code>)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/src_jax.html">API Reference (<code class="docutils literal notranslate"><span class="pre">src_jax</span></code>)</a></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/jbirky/spotgp" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/jbirky/spotgp/blob/main/docs/overview.md?plain=1" target="_blank"
+   class="btn btn-sm btn-source-file-button dropdown-item"
+   title="Show source"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-code"></i>
+  </span>
+<span class="btn__text-container">Show source</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/jbirky/spotgp/edit/main/docs/overview.md" target="_blank"
+   class="btn btn-sm btn-source-edit-button dropdown-item"
+   title="Suggest edit"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-pencil-alt"></i>
+  </span>
+<span class="btn__text-container">Suggest edit</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/jbirky/spotgp/issues/new?title=Issue%20on%20page%20%2Foverview.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="_sources/overview.md" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.md</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+<button class="sidebar-toggle secondary-toggle btn btn-sm pst-navbar-icon" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>Code Overview</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#module-architecture">Module architecture</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#module-descriptions">Module descriptions</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#foundation">Foundation</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#model-layer">Model layer</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#envelope-py-spot-size-evolution"><code class="docutils literal notranslate"><span class="pre">envelope.py</span></code> — Spot size evolution</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#spot-model-py-rotation-geometry-and-model-assembly"><code class="docutils literal notranslate"><span class="pre">spot_model.py</span></code> — Rotation geometry and model assembly</a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#kernel-layer">Kernel layer</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#analytic-kernel-py-analytickernel"><code class="docutils literal notranslate"><span class="pre">analytic_kernel.py</span></code> — <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#numerical-kernel-py-numericalkernel"><code class="docutils literal notranslate"><span class="pre">numerical_kernel.py</span></code> — <code class="docutils literal notranslate"><span class="pre">NumericalKernel</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#simulation">Simulation</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#lightcurve-py-lightcurvemodel"><code class="docutils literal notranslate"><span class="pre">lightcurve.py</span></code> — <code class="docutils literal notranslate"><span class="pre">LightcurveModel</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#inference-layer">Inference layer</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#gp-solver-py-gpsolver"><code class="docutils literal notranslate"><span class="pre">gp_solver.py</span></code> — <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#mcmc-py-mcmcsampler-blackjaxsampler"><code class="docutils literal notranslate"><span class="pre">mcmc.py</span></code> — <code class="docutils literal notranslate"><span class="pre">MCMCSampler</span></code> / <code class="docutils literal notranslate"><span class="pre">BlackJAXSampler</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#data-flow-fitting-a-lightcurve">Data flow: fitting a lightcurve</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#extending-the-library">Extending the library</a></li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="code-overview">
+<h1>Code Overview<a class="headerlink" href="#code-overview" title="Link to this heading">#</a></h1>
+<p><code class="docutils literal notranslate"><span class="pre">spotgp</span></code> models stellar photometric variability caused by rotating starspots as
+a Gaussian Process. The GP covariance kernel is derived analytically from a
+physical spot evolution model, enabling fast, gradient-based inference of stellar
+rotation periods, differential rotation, spot lifetimes, and inclination.</p>
+<hr class="docutils" />
+<section id="module-architecture">
+<h2>Module architecture<a class="headerlink" href="#module-architecture" title="Link to this heading">#</a></h2>
+</section>
+<hr class="docutils" />
+<section id="module-descriptions">
+<h2>Module descriptions<a class="headerlink" href="#module-descriptions" title="Link to this heading">#</a></h2>
+<section id="foundation">
+<h3>Foundation<a class="headerlink" href="#foundation" title="Link to this heading">#</a></h3>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Module</p></th>
+<th class="head"><p>Key exports</p></th>
+<th class="head"><p>Role</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">params.py</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">resolve_hparam</span></code>, <code class="docutils literal notranslate"><span class="pre">KERNEL_HPARAM_KEYS</span></code></p></td>
+<td><p>Validates and normalises raw hyperparameter dicts. Single source of truth for parameter names, envelope detection, and amplitude modes.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">banded_cholesky.py</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">banded_cholesky_compact</span></code>, <code class="docutils literal notranslate"><span class="pre">banded_solve_compact</span></code></p></td>
+<td><p>O(n·b) memory Cholesky factorisation and solve for banded symmetric positive-definite matrices. Used internally by <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code>.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">psd.py</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">compute_psd</span></code></p></td>
+<td><p>Lomb–Scargle PSD of unevenly sampled time series via <code class="docutils literal notranslate"><span class="pre">astropy</span></code>.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<hr class="docutils" />
+<section id="model-layer">
+<h3>Model layer<a class="headerlink" href="#model-layer" title="Link to this heading">#</a></h3>
+<p>The model layer defines the <strong>physics</strong> of spot evolution and stellar geometry.
+It is composed of three independent components that are combined into a single
+<code class="docutils literal notranslate"><span class="pre">SpotEvolutionModel</span></code>.</p>
+<section id="envelope-py-spot-size-evolution">
+<h4><code class="docutils literal notranslate"><span class="pre">envelope.py</span></code> — Spot size evolution<a class="headerlink" href="#envelope-py-spot-size-evolution" title="Link to this heading">#</a></h4>
+<p><code class="docutils literal notranslate"><span class="pre">EnvelopeFunction</span></code> is an abstract base class. Subclass it and implement
+<code class="docutils literal notranslate"><span class="pre">tau_spot</span></code> (property) and <code class="docutils literal notranslate"><span class="pre">Gamma(t)</span></code> to define a new spot shape. Everything
+else has working defaults:</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Method</p></th>
+<th class="head"><p>Default</p></th>
+<th class="head"><p>Purpose</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Gamma(t)</span></code></p></td>
+<td><p><strong>required</strong></p></td>
+<td><p>Normalised spot-size envelope, peak = 1</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">tau_spot</span></code></p></td>
+<td><p><strong>required</strong></p></td>
+<td><p>Characteristic timescale [days]</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">R_Gamma(lag)</span></code></p></td>
+<td><p>FFT interpolation</p></td>
+<td><p>Autocorrelation ∫ Γ(t) Γ(t+lag) dt</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">Gamma_hat(omega)</span></code></p></td>
+<td><p>FFT interpolation</p></td>
+<td><p>Fourier transform magnitude |FT[Γ]|(ω)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">lspot</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">0.0</span></code></p></td>
+<td><p>Plateau duration [days]</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">param_dict</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">{}</span></code></p></td>
+<td><p>Free parameters exposed to <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">kernel_support()</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">lspot</span> <span class="pre">+</span> <span class="pre">6·tau_spot</span></code></p></td>
+<td><p>Lag beyond which R_Γ ≈ 0</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Use <code class="docutils literal notranslate"><span class="pre">check_functions()</span></code> to compare an analytic override of <code class="docutils literal notranslate"><span class="pre">R_Gamma</span></code> or
+<code class="docutils literal notranslate"><span class="pre">Gamma_hat</span></code> against the FFT baseline.</p>
+<p>Built-in envelopes:</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Class</p></th>
+<th class="head"><p>Parameters</p></th>
+<th class="head"><p>Notes</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">TrapezoidSymmetricEnvelope</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">lspot</span></code>, <code class="docutils literal notranslate"><span class="pre">tau_spot</span></code></p></td>
+<td><p>Analytic <code class="docutils literal notranslate"><span class="pre">Gamma_hat</span></code> and <code class="docutils literal notranslate"><span class="pre">R_Gamma</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">TrapezoidAsymmetricEnvelope</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">lspot</span></code>, <code class="docutils literal notranslate"><span class="pre">tau_em</span></code>, <code class="docutils literal notranslate"><span class="pre">tau_dec</span></code></p></td>
+<td><p>Analytic <code class="docutils literal notranslate"><span class="pre">R_Gamma</span></code>; rise ≠ decay</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">SkewedGaussianEnvelope</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">sigma_sn</span></code>, <code class="docutils literal notranslate"><span class="pre">n_sn</span></code></p></td>
+<td><p>Skew-normal shape</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ExponentialEnvelope</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">tau_spot</span></code></p></td>
+<td><p>Analytic <code class="docutils literal notranslate"><span class="pre">Gamma_hat</span></code>, <code class="docutils literal notranslate"><span class="pre">R_Gamma</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="spot-model-py-rotation-geometry-and-model-assembly">
+<h4><code class="docutils literal notranslate"><span class="pre">spot_model.py</span></code> — Rotation geometry and model assembly<a class="headerlink" href="#spot-model-py-rotation-geometry-and-model-assembly" title="Link to this heading">#</a></h4>
+<p><strong><code class="docutils literal notranslate"><span class="pre">VisibilityFunction</span></code></strong> encodes how much flux a spot at latitude φ contributes
+as the star rotates under differential rotation. The contribution is expanded as
+a Fourier series in rotation harmonics with coefficients cₙ(inc, φ).</p>
+<p>Parameters: <code class="docutils literal notranslate"><span class="pre">peq</span></code> (equatorial period), <code class="docutils literal notranslate"><span class="pre">kappa</span></code> (differential rotation shear),
+<code class="docutils literal notranslate"><span class="pre">inc</span></code> (stellar inclination).</p>
+<p><strong><code class="docutils literal notranslate"><span class="pre">LatitudeDistributionFunction</span></code></strong> defines the probability density p(φ) over
+stellar latitude. The default is uniform over [−π/2, π/2]. Subclass and
+override <code class="docutils literal notranslate"><span class="pre">__call__</span></code> and/or <code class="docutils literal notranslate"><span class="pre">lat_range</span></code> to define a custom distribution.</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Attribute / method</p></th>
+<th class="head"><p>Purpose</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">lat_range</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">(min,</span> <span class="pre">max)</span></code> latitude bounds used for spot placement and kernel integration</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">__call__(phi)</span></code></p></td>
+<td><p>Unnormalized PDF evaluated at φ; normalisation is handled internally</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The PDF weights the latitude integral inside <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code>, and <code class="docutils literal notranslate"><span class="pre">lat_range</span></code>
+sets the uniform sampling bounds for spot placement in <code class="docutils literal notranslate"><span class="pre">LightcurveModel</span></code>.</p>
+<p><strong><code class="docutils literal notranslate"><span class="pre">SpotEvolutionModel</span></code></strong> assembles the three components:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">model</span> <span class="o">=</span> <span class="n">SpotEvolutionModel</span><span class="p">(</span>
+    <span class="n">envelope</span><span class="o">=</span><span class="n">TrapezoidSymmetricEnvelope</span><span class="p">(</span><span class="n">lspot</span><span class="o">=</span><span class="mf">15.0</span><span class="p">,</span> <span class="n">tau_spot</span><span class="o">=</span><span class="mf">5.0</span><span class="p">),</span>
+    <span class="n">visibility</span><span class="o">=</span><span class="n">VisibilityFunction</span><span class="p">(</span><span class="n">peq</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">kappa</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">3</span><span class="p">),</span>
+    <span class="n">sigma_k</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+    <span class="n">latitude_distribution</span><span class="o">=</span><span class="n">GaussianLatitude</span><span class="p">(</span><span class="n">sigma_deg</span><span class="o">=</span><span class="mf">20.0</span><span class="p">),</span>  <span class="c1"># optional</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">param_keys</span></code> exposes the full ordered parameter vector
+<code class="docutils literal notranslate"><span class="pre">(peq,</span> <span class="pre">kappa,</span> <span class="pre">inc,</span> <span class="pre">&lt;envelope</span> <span class="pre">params&gt;,</span> <span class="pre">sigma_k)</span></code> used by <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code>.</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="kernel-layer">
+<h3>Kernel layer<a class="headerlink" href="#kernel-layer" title="Link to this heading">#</a></h3>
+<section id="analytic-kernel-py-analytickernel">
+<h4><code class="docutils literal notranslate"><span class="pre">analytic_kernel.py</span></code> — <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code><a class="headerlink" href="#analytic-kernel-py-analytickernel" title="Link to this heading">#</a></h4>
+<p>Computes the GP covariance kernel by integrating the per-latitude kernel
+contributions over the latitude distribution:</p>
+<p>$$K(\tau) = \sigma_k^2 , R_\Gamma(\tau)
+\int p(\phi), \left[ c_0^2(\phi) + 2\sum_{n=1}^{N} c_n^2(\phi)
+\cos(n,\omega_0(\phi),\tau) \right] d\phi$$</p>
+<p>where Rᵧ(τ) is the autocorrelation of the spot envelope and cₙ are the
+visibility Fourier coefficients.</p>
+<p>The latitude integral uses <code class="docutils literal notranslate"><span class="pre">jax.lax.scan</span></code> for O(M) memory regardless of the
+number of latitude points. Call <code class="docutils literal notranslate"><span class="pre">build_jax()</span></code> once after construction to
+pre-compile the XLA kernels.</p>
+<p>Key parameters: <code class="docutils literal notranslate"><span class="pre">n_harmonics</span></code> (default 3), <code class="docutils literal notranslate"><span class="pre">n_lat</span></code> (default 64),
+<code class="docutils literal notranslate"><span class="pre">quadrature</span></code> (<code class="docutils literal notranslate"><span class="pre">&quot;trapezoid&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;gauss-legendre&quot;</span></code>).</p>
+</section>
+<section id="numerical-kernel-py-numericalkernel">
+<h4><code class="docutils literal notranslate"><span class="pre">numerical_kernel.py</span></code> — <code class="docutils literal notranslate"><span class="pre">NumericalKernel</span></code><a class="headerlink" href="#numerical-kernel-py-numericalkernel" title="Link to this heading">#</a></h4>
+<p>Estimates the kernel empirically by simulating many lightcurves with
+<code class="docutils literal notranslate"><span class="pre">LightcurveModel</span></code> and averaging their autocovariance. Used for benchmarking
+and validating the analytic kernel against Monte Carlo simulations.</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="simulation">
+<h3>Simulation<a class="headerlink" href="#simulation" title="Link to this heading">#</a></h3>
+<section id="lightcurve-py-lightcurvemodel">
+<h4><code class="docutils literal notranslate"><span class="pre">lightcurve.py</span></code> — <code class="docutils literal notranslate"><span class="pre">LightcurveModel</span></code><a class="headerlink" href="#lightcurve-py-lightcurvemodel" title="Link to this heading">#</a></h4>
+<p>Simulates a stellar lightcurve by summing the flux deficit of <code class="docutils literal notranslate"><span class="pre">nspot</span></code>
+independently evolving spots. Each spot is placed at a random longitude,
+latitude (drawn uniformly within <code class="docutils literal notranslate"><span class="pre">lat_range</span></code>), and emergence time; its
+angular size follows the envelope <code class="docutils literal notranslate"><span class="pre">Gamma(t)</span></code>.</p>
+<p>Spot positions rotate at the latitude-dependent rate ω₀(φ) = 2π(1 − κ sin²φ)/Peq.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">lc</span> <span class="o">=</span> <span class="n">LightcurveModel</span><span class="o">.</span><span class="n">from_spot_model</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">nspot</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">tsim</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">tsamp</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Includes <code class="docutils literal notranslate"><span class="pre">plot_lightcurve()</span></code> and <code class="docutils literal notranslate"><span class="pre">animate_lightcurve()</span></code> for visualisation.</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="inference-layer">
+<h3>Inference layer<a class="headerlink" href="#inference-layer" title="Link to this heading">#</a></h3>
+<section id="gp-solver-py-gpsolver">
+<h4><code class="docutils literal notranslate"><span class="pre">gp_solver.py</span></code> — <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code><a class="headerlink" href="#gp-solver-py-gpsolver" title="Link to this heading">#</a></h4>
+<p>Builds the GP covariance matrix from <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code>, factorises it via
+Cholesky (full or banded), and evaluates the marginal log-posterior. Four
+JIT-compiled functions are exposed: <code class="docutils literal notranslate"><span class="pre">log_posterior</span></code>, <code class="docutils literal notranslate"><span class="pre">neg_log_posterior</span></code>,
+<code class="docutils literal notranslate"><span class="pre">grad_log_posterior</span></code>, <code class="docutils literal notranslate"><span class="pre">grad_neg_log_posterior</span></code>.</p>
+<p>Call <code class="docutils literal notranslate"><span class="pre">build_jax()</span></code> once before fitting to pre-compile all four. The banded
+Cholesky solver (default) uses the kernel support to determine bandwidth and
+achieves O(n·b) memory and O(n·b²) time.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">gp</span> <span class="o">=</span> <span class="n">GPSolver</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">flux</span><span class="p">,</span> <span class="n">flux_err</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">bounds</span><span class="o">=</span><span class="n">bounds</span><span class="p">)</span><span class="o">.</span><span class="n">build_jax</span><span class="p">()</span>
+<span class="n">theta_map</span><span class="p">,</span> <span class="n">result</span> <span class="o">=</span> <span class="n">gp</span><span class="o">.</span><span class="n">fit_map</span><span class="p">(</span><span class="n">nopt</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Key methods:</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Method</p></th>
+<th class="head"><p>Purpose</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">fit_map(nopt=N)</span></code></p></td>
+<td><p>L-BFGS-B MAP optimisation, N random restarts</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">predict()</span></code></p></td>
+<td><p>GP posterior mean and variance at new times</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">plot_prediction()</span></code></p></td>
+<td><p>Posterior mean ± σ bands over the data</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">plot_acf()</span></code></p></td>
+<td><p>Empirical ACF vs analytic kernel</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">plot_psd()</span></code></p></td>
+<td><p>Lomb–Scargle PSD vs analytic PSD</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">plot_covariance_matrix()</span></code></p></td>
+<td><p>Banded covariance matrix with sparsity annotation</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">mass_matrix_hessian_map()</span></code></p></td>
+<td><p>Hessian-based posterior covariance at MAP</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="mcmc-py-mcmcsampler-blackjaxsampler">
+<h4><code class="docutils literal notranslate"><span class="pre">mcmc.py</span></code> — <code class="docutils literal notranslate"><span class="pre">MCMCSampler</span></code> / <code class="docutils literal notranslate"><span class="pre">BlackJAXSampler</span></code><a class="headerlink" href="#mcmc-py-mcmcsampler-blackjaxsampler" title="Link to this heading">#</a></h4>
+<p>Wraps <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code> with MCMC sampling. <code class="docutils literal notranslate"><span class="pre">BlackJAXSampler</span></code> uses the BlackJAX NUTS
+sampler with gradient information from <code class="docutils literal notranslate"><span class="pre">grad_log_posterior</span></code>. Provides posterior
+summaries, corner plots, convergence diagnostics, and checkpointing.</p>
+</section>
+</section>
+</section>
+<hr class="docutils" />
+<section id="data-flow-fitting-a-lightcurve">
+<h2>Data flow: fitting a lightcurve<a class="headerlink" href="#data-flow-fitting-a-lightcurve" title="Link to this heading">#</a></h2>
+<div class="highlight-python3 notranslate"><div class="highlight"><pre><span></span><span class="n">Observed</span> <span class="n">flux</span> <span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">yerr</span><span class="p">)</span>
+         <span class="err">│</span>
+         <span class="err">▼</span>
+   <span class="n">SpotEvolutionModel</span>           <span class="err">←</span> <span class="n">EnvelopeFunction</span>
+   <span class="p">(</span><span class="n">peq</span><span class="p">,</span> <span class="n">kappa</span><span class="p">,</span> <span class="n">inc</span><span class="p">,</span>            <span class="err">←</span> <span class="n">VisibilityFunction</span>
+    <span class="n">lspot</span><span class="p">,</span> <span class="n">tau_spot</span><span class="p">,</span> <span class="n">sigma_k</span><span class="p">)</span>   <span class="err">←</span> <span class="n">LatitudeDistributionFunction</span>
+         <span class="err">│</span>
+         <span class="err">▼</span>
+   <span class="n">AnalyticKernel</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">lag</span><span class="p">)</span>
+         <span class="err">│</span>
+         <span class="err">▼</span>
+   <span class="n">GPSolver</span><span class="o">.</span><span class="n">build_jax</span><span class="p">()</span>
+         <span class="err">│</span>
+         <span class="err">├─</span> <span class="n">fit_map</span><span class="p">()</span>           <span class="err">→</span> <span class="n">theta_MAP</span> <span class="p">(</span><span class="n">point</span> <span class="n">estimate</span><span class="p">)</span>
+         <span class="err">│</span>
+         <span class="err">└─</span> <span class="n">BlackJAXSampler</span>     <span class="err">→</span> <span class="n">posterior</span> <span class="n">samples</span>
+</pre></div>
+</div>
+</section>
+<hr class="docutils" />
+<section id="extending-the-library">
+<h2>Extending the library<a class="headerlink" href="#extending-the-library" title="Link to this heading">#</a></h2>
+<p>Three extension points allow custom physics without modifying core code:</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Extension point</p></th>
+<th class="head"><p>Base class</p></th>
+<th class="head"><p>Minimum required</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Custom spot shape</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">EnvelopeFunction</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">tau_spot</span></code>, <code class="docutils literal notranslate"><span class="pre">Gamma(t)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Custom latitude distribution</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">LatitudeDistributionFunction</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">__call__(phi)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Custom amplitude parameterisation</p></td>
+<td><p>pass <code class="docutils literal notranslate"><span class="pre">sigma_k</span></code> directly</p></td>
+<td><p>—</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>See the tutorials for worked examples:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="tutorials/custom_envelope_gaussian.html"><span class="std std-doc">Custom Gaussian envelope</span></a></p></li>
+<li><p><a class="reference internal" href="tutorials/custom_latitude_distribution.html"><span class="std std-doc">Custom latitude distribution</span></a></p></li>
+</ul>
+</section>
+</section>
+
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="index.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title"><code class="docutils literal notranslate"><span class="pre">spotgp</span></code></p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="tutorials/lightcurve_demo.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Lightcurve Animations</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item"><div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#module-architecture">Module architecture</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#module-descriptions">Module descriptions</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#foundation">Foundation</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#model-layer">Model layer</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#envelope-py-spot-size-evolution"><code class="docutils literal notranslate"><span class="pre">envelope.py</span></code> — Spot size evolution</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#spot-model-py-rotation-geometry-and-model-assembly"><code class="docutils literal notranslate"><span class="pre">spot_model.py</span></code> — Rotation geometry and model assembly</a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#kernel-layer">Kernel layer</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#analytic-kernel-py-analytickernel"><code class="docutils literal notranslate"><span class="pre">analytic_kernel.py</span></code> — <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#numerical-kernel-py-numericalkernel"><code class="docutils literal notranslate"><span class="pre">numerical_kernel.py</span></code> — <code class="docutils literal notranslate"><span class="pre">NumericalKernel</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#simulation">Simulation</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#lightcurve-py-lightcurvemodel"><code class="docutils literal notranslate"><span class="pre">lightcurve.py</span></code> — <code class="docutils literal notranslate"><span class="pre">LightcurveModel</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#inference-layer">Inference layer</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#gp-solver-py-gpsolver"><code class="docutils literal notranslate"><span class="pre">gp_solver.py</span></code> — <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#mcmc-py-mcmcsampler-blackjaxsampler"><code class="docutils literal notranslate"><span class="pre">mcmc.py</span></code> — <code class="docutils literal notranslate"><span class="pre">MCMCSampler</span></code> / <code class="docutils literal notranslate"><span class="pre">BlackJAXSampler</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#data-flow-fitting-a-lightcurve">Data flow: fitting a lightcurve</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#extending-the-library">Extending the library</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By Jessica Birky
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2026, Jessica Birky.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

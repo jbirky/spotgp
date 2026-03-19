@@ -14,9 +14,10 @@ try:
 except:
     print("Unable to import matplotlib")
 
-from . import starspot
+from . import lightcurve as starspot
 from .psd import compute_psd
 from .params import resolve_hparam
+from .spot_model import SpotEvolutionModel
 
 __all__ = ["NumericalKernel", "generate_sims", "avg_covariance_tlag"]
 
@@ -80,7 +81,7 @@ class NumericalKernel(object):
 
     Parameters:
     - hparam: dict of hyperparameters.
-              Required keys: peq, kappa, inc, lspot, tau, alpha_max.
+              Required keys: peq, kappa, inc, lspot, tau_spot, alpha_max.
               For the kernel amplitude, provide EITHER:
                 - sigma_k : overall amplitude prefactor, OR
                 - nspot + fspot : number of spots and spot contrast, from which
@@ -92,27 +93,39 @@ class NumericalKernel(object):
     - verbose: whether to print verbose output (default: True)
 
     """
-    def __init__(self, hparam, tsim=20, tsamp=0.05, nsim=1e3, verbose=True):
-
+    def __init__(self, model_or_hparam, tsim=20, tsamp=0.05, nsim=1e3, verbose=True):
+        """
+        Parameters
+        ----------
+        model_or_hparam : SpotEvolutionModel or dict
+            Either a SpotEvolutionModel (new API) or a raw hparam dict
+            (backward-compatible old API). The dict must contain 'nspot'.
+        """
         t0 = time.time()
 
-        # NumericalKernel always requires nspot for the forward simulations,
-        # regardless of which amplitude mode is used.
-        if not isinstance(hparam, dict) or "nspot" not in hparam:
-            raise ValueError("hparam must be a dict containing 'nspot' "
-                             "(required for numerical simulations)")
+        # Accept SpotEvolutionModel or legacy hparam dict
+        if isinstance(model_or_hparam, SpotEvolutionModel):
+            self.spot_model = model_or_hparam
+            self.hparam = model_or_hparam.to_hparam()
+            if "nspot" not in self.hparam:
+                raise ValueError(
+                    "NumericalKernel requires 'nspot' in the hparam dict "
+                    "for forward simulations.")
+        else:
+            if not isinstance(model_or_hparam, dict) or "nspot" not in model_or_hparam:
+                raise ValueError("hparam must be a dict containing 'nspot' "
+                                 "(required for numerical simulations)")
+            self.hparam = resolve_hparam(model_or_hparam)
+            self.spot_model = SpotEvolutionModel.from_hparam(self.hparam)
 
-        # Validate, resolve envelope, and compute sigma_k
-        self.hparam = resolve_hparam(hparam)
-
-        self.peq       = self.hparam["peq"]
-        self.kappa     = self.hparam["kappa"]
-        self.inc       = self.hparam["inc"]
+        self.peq       = self.spot_model.peq
+        self.kappa     = self.spot_model.kappa
+        self.inc       = self.spot_model.inc
         self.nspot     = self.hparam["nspot"]
-        self.lspot     = self.hparam["lspot"]
-        self.tau       = self.hparam["tau"]
-        self.alpha_max = self.hparam.get("alpha_max", None)
-        self.sigma_k   = self.hparam["sigma_k"]
+        self.lspot     = self.spot_model.lspot
+        self.tau_spot  = self.spot_model.tau_spot
+        self.alpha_max = self.spot_model.alpha_max
+        self.sigma_k   = self.spot_model.sigma_k
 
         self.verbose   = verbose
         self.tsim      = tsim
@@ -139,12 +152,12 @@ class NumericalKernel(object):
         """
         if isinstance(theta, dict):
             peq, kappa, inc, nspot = theta["peq"], theta["kappa"], theta["inc"], theta["nspot"]
-            lspot, tau, alpha = theta["lspot"], theta["tau"], theta["alpha_max"]
+            lspot, tau_spot, alpha = theta["lspot"], theta["tau_spot"], theta["alpha_max"]
         else:
-            peq, kappa, inc, nspot, lspot, tau, alpha = theta
+            peq, kappa, inc, nspot, lspot, tau_spot, alpha = theta
 
         fluxes = generate_sims(np.array([peq, kappa, inc, nspot]),
-                               nsim, tem=tau, tdec=tau, alpha_max=alpha,
+                               nsim, tem=tau_spot, tdec=tau_spot, alpha_max=alpha,
                                lspot=lspot, tsim=tsim, tsamp=tsamp)
         return fluxes
 
