@@ -8,7 +8,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Intro &#8212; spotgp 0.1.0 documentation</title>
+    <title>Introduction &#8212; spotgp 0.1.0 documentation</title>
   
   
   
@@ -45,11 +45,13 @@
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
     <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
     <script>DOCUMENTATION_OPTIONS.pagename = 'index';</script>
     <script src="_static/notebook_download.js?v=2428894a"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Conceptual Introduction" href="tutorials/conceptual_intro.html" />
+    <link rel="next" title="Model Concepts" href="tutorials/conceptual_intro.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="0.1.0" />
@@ -149,8 +151,8 @@
     <div class="bd-toc-item navbar-nav active">
         <p aria-level="2" class="caption" role="heading"><span class="caption-text">Basics</span></p>
 <ul class="current nav bd-sidenav">
-<li class="toctree-l1 current active"><a class="current reference internal" href="#">Intro</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/conceptual_intro.html">Conceptual Introduction</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/conceptual_intro.html">Model Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="overview.html">Code Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/lightcurve_demo.html">Lightcurve Animations</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/trapezoid_symmetric_tutorial.html">Spot Evolution Model</a></li>
@@ -381,7 +383,7 @@
               
 
 <div id="jb-print-docs-body" class="onlyprint">
-    <h1>Intro</h1>
+    <h1>Introduction</h1>
     <!-- Table of contents -->
     <div id="print-main-content">
         <div id="jb-print-toc">
@@ -407,12 +409,9 @@
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="intro">
-<h1>Intro<a class="headerlink" href="#intro" title="Link to this heading">#</a></h1>
-<p>Gaussian Process kernels for stellar variability from starspot models.</p>
-<p><strong>spotgp</strong> provides analytic and numerical GP kernels derived from physically
-motivated starspot models, along with GP solvers for fitting stellar
-lightcurves. Both NumPy and JAX backends are available.</p>
+  <section id="introduction">
+<h1>Introduction<a class="headerlink" href="#introduction" title="Link to this heading">#</a></h1>
+<p><strong>spotgp</strong> Gaussian Process kernels for stellar starspot variability implemented in <code class="docutils literal notranslate"><span class="pre">JAX</span></code>.</p>
 <br>
 <p><img alt="Lightcurve animation" src="_images/lightcurve_animation.gif" /></p>
 <section id="installation">
@@ -437,12 +436,40 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <div class="toctree-wrapper compound">
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Basics</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Intro</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/conceptual_intro.html">Conceptual Introduction</a></li>
-<li class="toctree-l1"><a class="reference internal" href="overview.html">Code Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/lightcurve_demo.html">Lightcurve Animations</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/trapezoid_symmetric_tutorial.html">Spot Evolution Model</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/gp_optimization.html">GP Solver</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/conceptual_intro.html">Model Concepts</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/conceptual_intro.html#1.-Envelope-Model-\Gamma(t):-spot-growth-and-decay">1. Envelope Model <span class="math notranslate nohighlight">\(\Gamma(t)\)</span>: spot growth and decay</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/conceptual_intro.html#2.-Visibility-Function-\Pi(t):-rotational-modulation">2. Visibility Function <span class="math notranslate nohighlight">\(\Pi(t)\)</span>: rotational modulation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/conceptual_intro.html#3.-Putting-the-Envelope-and-Visibility-Components-Together">3. Putting the Envelope and Visibility Components Together</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="overview.html">Code Overview</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="overview.html#module-architecture">Module architecture</a></li>
+<li class="toctree-l2"><a class="reference internal" href="overview.html#module-descriptions">Module descriptions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="overview.html#data-flow-fitting-a-lightcurve">Data flow: fitting a lightcurve</a></li>
+<li class="toctree-l2"><a class="reference internal" href="overview.html#extending-the-library">Extending the library</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/lightcurve_demo.html">Lightcurve Animations</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/lightcurve_demo.html#Build-a-SpotEvolutionModel">Build a <code class="docutils literal notranslate"><span class="pre">SpotEvolutionModel</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/lightcurve_demo.html#Simulate-a-lightcurve">Simulate a lightcurve</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/lightcurve_demo.html#Create-an-animation-of-the-star-rotation-and-lightcurve">Create an animation of the star rotation and lightcurve</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/trapezoid_symmetric_tutorial.html">Spot Evolution Model</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/trapezoid_symmetric_tutorial.html#1.-Inspect-the-envelope">1. Inspect the envelope</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/trapezoid_symmetric_tutorial.html#2.-Build-a-SpotEvolutionModel">2. Build a <code class="docutils literal notranslate"><span class="pre">SpotEvolutionModel</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/trapezoid_symmetric_tutorial.html#3.-Simulate-a-stellar-lightcurve">3. Simulate a stellar lightcurve</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/trapezoid_symmetric_tutorial.html#4.-Warm-up-JAX-with-build_jax()">4. Warm up JAX with <code class="docutils literal notranslate"><span class="pre">build_jax()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/gp_optimization.html">GP Solver</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_optimization.html#1.-Model-setup-and-lightcurve-simulation">1. Model setup and lightcurve simulation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_optimization.html#2.-Warm-up-JAX-with-build_jax()">2. Warm up JAX with <code class="docutils literal notranslate"><span class="pre">build_jax()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_optimization.html#3.-GP-hyperparameter-fit-—-MAP-solution">3. GP hyperparameter fit — MAP solution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_optimization.html#4.-Multi-start-MAP-(optional)">4. Multi-start MAP (optional)</a></li>
+</ul>
+</li>
 </ul>
 </div>
 <div class="toctree-wrapper compound">
@@ -508,7 +535,7 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Conceptual Introduction</p>
+        <p class="prev-next-title">Model Concepts</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>

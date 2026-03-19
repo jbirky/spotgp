@@ -83,7 +83,20 @@ html_theme_options = {
 # Python syntax highlighting regardless of whether outputs are present.
 nbsphinx_execute = "never"
 nbsphinx_kernel_name = "python3"
+
+# Force Python syntax highlighting for all notebook code cells.
+# This applies even when notebook metadata is incomplete or absent.
 nbsphinx_codecell_lexer = "ipython3"
+
+# Ensure the default highlight language for any inline code blocks in
+# notebook markdown cells also falls back to Python.
+nbsphinx_source_suffix = {
+    ".ipynb": None,
+}
+
+highlight_options = {
+    "python3": {"stripnl": False},
+}
 
 # Embed the notebook filename as a hidden meta tag so JS can build the
 # download link without hard-coding paths.

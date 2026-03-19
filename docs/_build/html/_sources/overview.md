@@ -67,8 +67,8 @@ flowchart TD
 
 | Module | Key exports | Role |
 |---|---|---|
-| `params.py` | `resolve_hparam`, `KERNEL_HPARAM_KEYS` | Validates and normalises raw hyperparameter dicts. Single source of truth for parameter names, envelope detection, and amplitude modes. |
-| `banded_cholesky.py` | `banded_cholesky_compact`, `banded_solve_compact` | O(n·b) memory Cholesky factorisation and solve for banded symmetric positive-definite matrices. Used internally by `GPSolver`. |
+| `params.py` | `resolve_hparam`, `KERNEL_HPARAM_KEYS` | Validates and normalizes raw hyperparameter dicts. Single source of truth for parameter names, envelope detection, and amplitude modes. |
+| `banded_cholesky.py` | `banded_cholesky_compact`, `banded_solve_compact` | O(n·b) memory Cholesky factorization and solve for banded symmetric positive-definite matrices. Used internally by `GPSolver`. |
 | `psd.py` | `compute_psd` | Lomb–Scargle PSD of unevenly sampled time series via `astropy`. |
 
 ---
@@ -87,7 +87,7 @@ else has working defaults:
 
 | Method | Default | Purpose |
 |---|---|---|
-| `Gamma(t)` | **required** | Normalised spot-size envelope, peak = 1 |
+| `Gamma(t)` | **required** | Normalized spot-size envelope, peak = 1 |
 | `tau_spot` | **required** | Characteristic timescale [days] |
 | `R_Gamma(lag)` | FFT interpolation | Autocorrelation ∫ Γ(t) Γ(t+lag) dt |
 | `Gamma_hat(omega)` | FFT interpolation | Fourier transform magnitude \|FT[Γ]\|(ω) |
@@ -123,7 +123,7 @@ override `__call__` and/or `lat_range` to define a custom distribution.
 | Attribute / method | Purpose |
 |---|---|
 | `lat_range` | `(min, max)` latitude bounds used for spot placement and kernel integration |
-| `__call__(phi)` | Unnormalized PDF evaluated at φ; normalisation is handled internally |
+| `__call__(phi)` | Unnormalized PDF evaluated at φ; normalization is handled internally |
 
 The PDF weights the latitude integral inside `AnalyticKernel`, and `lat_range`
 sets the uniform sampling bounds for spot placement in `LightcurveModel`.
@@ -188,7 +188,7 @@ Spot positions rotate at the latitude-dependent rate ω₀(φ) = 2π(1 − κ si
 lc = LightcurveModel.from_spot_model(model, nspot=30, tsim=150, tsamp=0.5)
 ```
 
-Includes `plot_lightcurve()` and `animate_lightcurve()` for visualisation.
+Includes `plot_lightcurve()` and `animate_lightcurve()` for visualization.
 
 ---
 
@@ -214,7 +214,7 @@ Key methods:
 
 | Method | Purpose |
 |---|---|
-| `fit_map(nopt=N)` | L-BFGS-B MAP optimisation, N random restarts |
+| `fit_map(nopt=N)` | L-BFGS-B MAP optimization, N random restarts |
 | `predict()` | GP posterior mean and variance at new times |
 | `plot_prediction()` | Posterior mean ± σ bands over the data |
 | `plot_acf()` | Empirical ACF vs analytic kernel |
@@ -261,7 +261,7 @@ Three extension points allow custom physics without modifying core code:
 |---|---|---|
 | Custom spot shape | `EnvelopeFunction` | `tau_spot`, `Gamma(t)` |
 | Custom latitude distribution | `LatitudeDistributionFunction` | `__call__(phi)` |
-| Custom amplitude parameterisation | pass `sigma_k` directly | — |
+| Custom amplitude parameterization | pass `sigma_k` directly | — |
 
 See the tutorials for worked examples:
 

@@ -50,7 +50,7 @@
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="Lightcurve Animations" href="tutorials/lightcurve_demo.html" />
-    <link rel="prev" title="Conceptual Introduction" href="tutorials/conceptual_intro.html" />
+    <link rel="prev" title="Model Concepts" href="tutorials/conceptual_intro.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="0.1.0" />
@@ -148,8 +148,8 @@
     <div class="bd-toc-item navbar-nav active">
         <p aria-level="2" class="caption" role="heading"><span class="caption-text">Basics</span></p>
 <ul class="current nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="index.html">Intro</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/conceptual_intro.html">Conceptual Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="index.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/conceptual_intro.html">Model Concepts</a></li>
 <li class="toctree-l1 current active"><a class="current reference internal" href="#">Code Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/lightcurve_demo.html">Lightcurve Animations</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/trapezoid_symmetric_tutorial.html">Spot Evolution Model</a></li>
@@ -452,11 +452,11 @@ rotation periods, differential rotation, spot lifetimes, and inclination.</p>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">params.py</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">resolve_hparam</span></code>, <code class="docutils literal notranslate"><span class="pre">KERNEL_HPARAM_KEYS</span></code></p></td>
-<td><p>Validates and normalises raw hyperparameter dicts. Single source of truth for parameter names, envelope detection, and amplitude modes.</p></td>
+<td><p>Validates and normalizes raw hyperparameter dicts. Single source of truth for parameter names, envelope detection, and amplitude modes.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">banded_cholesky.py</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">banded_cholesky_compact</span></code>, <code class="docutils literal notranslate"><span class="pre">banded_solve_compact</span></code></p></td>
-<td><p>O(n·b) memory Cholesky factorisation and solve for banded symmetric positive-definite matrices. Used internally by <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code>.</p></td>
+<td><p>O(n·b) memory Cholesky factorization and solve for banded symmetric positive-definite matrices. Used internally by <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code>.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">psd.py</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">compute_psd</span></code></p></td>
@@ -487,7 +487,7 @@ else has working defaults:</p>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Gamma(t)</span></code></p></td>
 <td><p><strong>required</strong></p></td>
-<td><p>Normalised spot-size envelope, peak = 1</p></td>
+<td><p>Normalized spot-size envelope, peak = 1</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">tau_spot</span></code></p></td>
 <td><p><strong>required</strong></p></td>
@@ -568,7 +568,7 @@ override <code class="docutils literal notranslate"><span class="pre">__call__</
 <td><p><code class="docutils literal notranslate"><span class="pre">(min,</span> <span class="pre">max)</span></code> latitude bounds used for spot placement and kernel integration</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">__call__(phi)</span></code></p></td>
-<td><p>Unnormalized PDF evaluated at φ; normalisation is handled internally</p></td>
+<td><p>Unnormalized PDF evaluated at φ; normalization is handled internally</p></td>
 </tr>
 </tbody>
 </table>
@@ -626,7 +626,7 @@ angular size follows the envelope <code class="docutils literal notranslate"><sp
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">lc</span> <span class="o">=</span> <span class="n">LightcurveModel</span><span class="o">.</span><span class="n">from_spot_model</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">nspot</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">tsim</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">tsamp</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>Includes <code class="docutils literal notranslate"><span class="pre">plot_lightcurve()</span></code> and <code class="docutils literal notranslate"><span class="pre">animate_lightcurve()</span></code> for visualisation.</p>
+<p>Includes <code class="docutils literal notranslate"><span class="pre">plot_lightcurve()</span></code> and <code class="docutils literal notranslate"><span class="pre">animate_lightcurve()</span></code> for visualization.</p>
 </section>
 </section>
 <hr class="docutils" />
@@ -654,7 +654,7 @@ achieves O(n·b) memory and O(n·b²) time.</p>
 </thead>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">fit_map(nopt=N)</span></code></p></td>
-<td><p>L-BFGS-B MAP optimisation, N random restarts</p></td>
+<td><p>L-BFGS-B MAP optimization, N random restarts</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">predict()</span></code></p></td>
 <td><p>GP posterior mean and variance at new times</p></td>
@@ -728,7 +728,7 @@ summaries, corner plots, convergence diagnostics, and checkpointing.</p>
 <td><p><code class="docutils literal notranslate"><span class="pre">LatitudeDistributionFunction</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">__call__(phi)</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p>Custom amplitude parameterisation</p></td>
+<tr class="row-even"><td><p>Custom amplitude parameterization</p></td>
 <td><p>pass <code class="docutils literal notranslate"><span class="pre">sigma_k</span></code> directly</p></td>
 <td><p>—</p></td>
 </tr>
@@ -760,7 +760,7 @@ summaries, corner plots, convergence diagnostics, and checkpointing.</p>
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Conceptual Introduction</p>
+        <p class="prev-next-title">Model Concepts</p>
       </div>
     </a>
     <a class="right-next"
