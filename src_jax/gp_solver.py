@@ -1173,6 +1173,10 @@ class GPSolver:
 
         vg_fn = jax.jit(jax.value_and_grad(loss_u))
 
+        # Warm up the JIT-compiled function before the optimizer starts so
+        # the CUDA kernel is compiled and timed accurately from the first call.
+        jax.block_until_ready(vg_fn(jnp.array(u0, dtype=jnp.float64)))
+
         n_free = len(free_idx)
         _gradient_free = method.lower() in ("nelder-mead", "cobyla", "powell")
 
@@ -2093,6 +2097,10 @@ class GPSolver:
 
         vg_fn = jax.jit(jax.value_and_grad(neg_logpost_u))
 
+        # Warm up the JIT-compiled function before the optimizer starts so
+        # the CUDA kernel is compiled and timed accurately from the first call.
+        jax.block_until_ready(vg_fn(jnp.array(u0, dtype=jnp.float64)))
+
         n_free = len(free_idx)
         _gradient_free = method.lower() in ("nelder-mead", "cobyla", "powell")
 
@@ -2300,7 +2308,8 @@ class GPSolver:
 
         neg_log_lik = self._build_neg_log_lik()
 
-        H = jax.hessian(neg_log_lik)(theta_map)
+        hessian_fn = jax.jit(jax.hessian(neg_log_lik))
+        H = jax.block_until_ready(hessian_fn(theta_map))
 
         # Regularize: ensure positive-definite
         eigvals, eigvecs = jnp.linalg.eigh(H)
@@ -2352,7 +2361,8 @@ class GPSolver:
         # Banded path: approximate Fisher via Hessian of banded log-likelihood
         if self.matrix_solver == "cholesky_banded":
             neg_log_lik = self._build_neg_log_lik()
-            H = jax.hessian(neg_log_lik)(theta_map)
+            hessian_fn = jax.jit(jax.hessian(neg_log_lik))
+            H = jax.block_until_ready(hessian_fn(theta_map))
 
             eigvals, eigvecs = jnp.linalg.eigh(H)
             eigvals = jnp.maximum(eigvals, 1e-6)
@@ -2394,7 +2404,8 @@ class GPSolver:
             K_noise = K + jnp.diag(noise_var) + 1e-8 * jnp.eye(N)
             return K_noise.ravel()
 
-        dK_flat_dtheta = jax.jacfwd(K_noise_flat_from_theta)(theta_map)
+        jacfwd_fn = jax.jit(jax.jacfwd(K_noise_flat_from_theta))
+        dK_flat_dtheta = jax.block_until_ready(jacfwd_fn(theta_map))
         dK_dtheta = dK_flat_dtheta.reshape(N, N, n_params)
 
         K_noise_flat = K_noise_flat_from_theta(theta_map)
@@ -2444,7 +2455,8 @@ class GPSolver:
 
         neg_log_lik = self._build_neg_log_lik()
 
-        H = jax.hessian(neg_log_lik)(theta_map)
+        hessian_fn = jax.jit(jax.hessian(neg_log_lik))
+        H = jax.block_until_ready(hessian_fn(theta_map))
 
         # Regularize
         eigvals, eigvecs = jnp.linalg.eigh(H)
@@ -2494,7 +2506,8 @@ class GPSolver:
         elif method == "laplace":
             self.mass_matrix_laplace(theta_ref)
         elif method == "diagonal":
-            H = jax.hessian(self.neg_log_posterior)(theta_ref)
+            hessian_fn = jax.jit(jax.hessian(self.neg_log_posterior))
+            H = jax.block_until_ready(hessian_fn(theta_ref))
             diag = jnp.maximum(jnp.diag(H), 1e-6)
             self.inverse_mass_matrix = jnp.diag(1.0 / diag)
         else:
