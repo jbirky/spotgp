@@ -83,6 +83,7 @@ html_theme_options = {
 # Python syntax highlighting regardless of whether outputs are present.
 nbsphinx_execute = "never"
 nbsphinx_kernel_name = "python3"
+nbsphinx_codecell_lexer = "ipython3"
 
 # Embed the notebook filename as a hidden meta tag so JS can build the
 # download link without hard-coding paths.
