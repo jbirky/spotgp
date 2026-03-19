@@ -1038,7 +1038,7 @@ class GPSolver:
 
     def fit_acf(self, theta0=None, keys=None, tlags=None, n_bins=50,
                 method="L-BFGS-B", maxiter=500, ftol=0, gtol=1e-8,
-                disp=False, nopt=1, ncore=None, rng=None):
+                disp=False, nopt=1, ncore=None, rng=None, _save=True):
         """
         Fit the analytic kernel to the empirical ACF via least-squares.
 
@@ -1221,7 +1221,8 @@ class GPSolver:
 
         theta_dict = {k: float(theta_full[i])
                       for i, k in enumerate(kernel_keys)}
-        self._autosave("acf_fit_results.npz", theta_acf=theta_dict)
+        if _save:
+            self._autosave("acf_fit_results.npz", theta_acf=theta_dict)
         return theta_dict, result
 
     def fit_acf_parallel(self, nopt=10, ncore=None, keys=None,
@@ -1287,11 +1288,13 @@ class GPSolver:
         blo = free_bounds_np[:, 0]
         bhi = free_bounds_np[:, 1]
 
-        # Generate random starting points (uniform within bounds)
+        # Generate random starting points using independent child RNGs
+        seeds = rng.integers(0, 2**31, size=nopt)
         starts = []
-        for _ in range(nopt):
+        for i in range(nopt):
+            child_rng = np.random.default_rng(int(seeds[i]))
             theta0_dict = {}
-            u = rng.uniform(size=len(free_keys))
+            u = child_rng.uniform(size=len(free_keys))
             for j, k in enumerate(free_keys):
                 theta0_dict[k] = float(blo[j] + u[j] * (bhi[j] - blo[j]))
             starts.append(theta0_dict)
@@ -1300,7 +1303,8 @@ class GPSolver:
             return self.fit_acf(theta0=theta0_dict, keys=keys,
                                 tlags=tlags, n_bins=n_bins,
                                 method=method, maxiter=maxiter,
-                                ftol=ftol, gtol=gtol, disp=disp)
+                                ftol=ftol, gtol=gtol, disp=disp,
+                                _save=False)
 
         with ThreadPoolExecutor(max_workers=ncore) as pool:
             futures = [pool.submit(_run_one, s) for s in starts]
@@ -1318,7 +1322,10 @@ class GPSolver:
             [float(best_theta[k]) for k in kernel_keys],
             dtype=jnp.float64)
         self._acf_fit_result = best_result
-        self._autosave("acf_fit_results.npz", theta_acf=best_theta)
+        theta_all = np.array(
+            [[float(r[0][k]) for k in kernel_keys] for r in results])
+        self._autosave("acf_fit_results.npz",
+                       theta_acf=best_theta, theta_all=theta_all)
         return best_theta, best_result
 
     def fit_acf_psd(self, theta0=None, keys=None,
@@ -1967,7 +1974,7 @@ class GPSolver:
 
     def fit_map(self, theta0=None, keys=None, method="L-BFGS-B",
                  maxiter=500, ftol=0, gtol=1e-8, disp=False, nopt=1,
-                 ncore=None, rng=None):
+                 ncore=None, rng=None, _save=True):
         """
         Find the maximum a posteriori (MAP) estimate.
 
@@ -2129,7 +2136,8 @@ class GPSolver:
         self.map_estimate = theta_full
         self._map_result = result
         theta_dict = self._result_dict(theta_full)
-        self._autosave("map_fit_results.npz", theta_map=theta_dict)
+        if _save:
+            self._autosave("map_fit_results.npz", theta_map=theta_dict)
         return theta_dict, result
 
     def fit_map_parallel(self, nopt=10, ncore=None, keys=None,
@@ -2182,11 +2190,13 @@ class GPSolver:
         blo = free_bounds[:, 0]
         bhi = free_bounds[:, 1]
 
-        # Generate random starting points (uniform within bounds)
+        # Generate random starting points using independent child RNGs
+        seeds = rng.integers(0, 2**31, size=nopt)
         starts = []
-        for _ in range(nopt):
+        for i in range(nopt):
+            child_rng = np.random.default_rng(int(seeds[i]))
             theta0_dict = {}
-            u = rng.uniform(size=len(free_keys))
+            u = child_rng.uniform(size=len(free_keys))
             for j, k in enumerate(free_keys):
                 theta0_dict[k] = float(blo[j] + u[j] * (bhi[j] - blo[j]))
             starts.append(theta0_dict)
@@ -2196,7 +2206,8 @@ class GPSolver:
         def _run_one(theta0_dict):
             return self.fit_map(theta0=theta0_dict, keys=keys,
                                  method=method, maxiter=maxiter,
-                                 ftol=ftol, gtol=gtol, disp=disp)
+                                 ftol=ftol, gtol=gtol, disp=disp,
+                                 _save=False)
 
         # Run in parallel using threads (JAX releases the GIL during
         # compiled computation, so threads give real parallelism here
@@ -2217,7 +2228,10 @@ class GPSolver:
             [float(best_theta[k]) for k in self.param_keys],
             dtype=jnp.float64)
         self._map_result = best_result
-        self._autosave("map_fit_results.npz", theta_map=best_theta)
+        theta_all = np.array(
+            [[float(r[0][k]) for k in self.param_keys] for r in results])
+        self._autosave("map_fit_results.npz",
+                       theta_map=best_theta, theta_all=theta_all)
         return best_theta, best_result
 
     # =================================================================
