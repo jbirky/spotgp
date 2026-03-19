@@ -1,4 +1,4 @@
-# `spotgp`
+# Intro
 
 Gaussian Process kernels for stellar variability from starspot models.
 
@@ -24,7 +24,10 @@ For JAX acceleration:
 pip install -e ".[jax]"
 ```
 
-<br>
+## Development 
+
+This project is build and maintained by [Jess Birky](https://github.com/jbirky)--keep an eye out for the paper (coming soon). If you are interested in contributing, feel free to reach out or make a pull request! 
+
 <br>
 
 ## Documentation Contents
@@ -33,6 +36,8 @@ pip install -e ".[jax]"
 :maxdepth: 1
 :caption: Basics
 
+self
+tutorials/conceptual_intro
 overview
 tutorials/lightcurve_demo
 tutorials/trapezoid_symmetric_tutorial
@@ -52,5 +57,5 @@ tutorials/mcmc_sampling
 :maxdepth: 2
 :caption: API Reference
 
-api/src_jax
+api/src
 ```

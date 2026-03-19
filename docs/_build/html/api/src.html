@@ -49,6 +49,7 @@
     <script src="../_static/notebook_download.js?v=2428894a"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
+    <link rel="prev" title="MCMC Sampling with BlackJAX" href="../tutorials/mcmc_sampling.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="0.1.0" />
@@ -100,8 +101,6 @@
       
       
       
-        
-      
       <dialog id="pst-primary-sidebar-modal"></dialog>
       <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
         
@@ -148,6 +147,8 @@
     <div class="bd-toc-item navbar-nav active">
         <p aria-level="2" class="caption" role="heading"><span class="caption-text">Basics</span></p>
 <ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Intro</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/conceptual_intro.html">Conceptual Introduction</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../overview.html">Code Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/lightcurve_demo.html">Lightcurve Animations</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/trapezoid_symmetric_tutorial.html">Spot Evolution Model</a></li>
@@ -160,8 +161,8 @@
 <li class="toctree-l1"><a class="reference internal" href="../tutorials/mcmc_sampling.html">MCMC Sampling with BlackJAX</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">API Reference</span></p>
-<ul class="nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="src_jax.html">API Reference (<code class="docutils literal notranslate"><span class="pre">src_jax</span></code>)</a></li>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">API Reference (<code class="docutils literal notranslate"><span class="pre">src</span></code>)</a></li>
 </ul>
 
     </div>
@@ -388,12 +389,84 @@
             </div>
             <nav aria-label="Page">
                 <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#analytic-kernel">Analytic Kernel</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#numerical-kernel">Numerical Kernel</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#lightcurve-model">Lightcurve Model</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#gp-solver">GP Solver</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#power-spectral-density">Power Spectral Density</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#mcmc-sampler">MCMC Sampler</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#analytic-kernel">Analytic Kernel</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel.omega0"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.omega0()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel.R_Gamma"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.R_Gamma()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel.cn_squared"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.cn_squared()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel.kernel_single_latitude"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.kernel_single_latitude()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel.kernel"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.kernel()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel.kernel_solid_body"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.kernel_solid_body()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel.compute_psd"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.compute_psd()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel.build_jax"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.build_jax()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#numerical-kernel">Numerical Kernel</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.numerical_kernel.NumericalKernel"><code class="docutils literal notranslate"><span class="pre">NumericalKernel</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.numerical_kernel.NumericalKernel.get_acf"><code class="docutils literal notranslate"><span class="pre">NumericalKernel.get_acf()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.numerical_kernel.NumericalKernel.compute_psd"><code class="docutils literal notranslate"><span class="pre">NumericalKernel.compute_psd()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.numerical_kernel.NumericalKernel.plot_autocorrelation"><code class="docutils literal notranslate"><span class="pre">NumericalKernel.plot_autocorrelation()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.numerical_kernel.generate_sims"><code class="docutils literal notranslate"><span class="pre">generate_sims()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.numerical_kernel.avg_covariance_tlag"><code class="docutils literal notranslate"><span class="pre">avg_covariance_tlag()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#gp-solver">GP Solver</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver"><code class="docutils literal notranslate"><span class="pre">GPSolver</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.DEFAULT_BOUNDS"><code class="docutils literal notranslate"><span class="pre">GPSolver.DEFAULT_BOUNDS</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.build_jax"><code class="docutils literal notranslate"><span class="pre">GPSolver.build_jax()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.log_likelihood"><code class="docutils literal notranslate"><span class="pre">GPSolver.log_likelihood()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.predict"><code class="docutils literal notranslate"><span class="pre">GPSolver.predict()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.plot_prediction"><code class="docutils literal notranslate"><span class="pre">GPSolver.plot_prediction()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.sample_prior"><code class="docutils literal notranslate"><span class="pre">GPSolver.sample_prior()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.sample_posterior"><code class="docutils literal notranslate"><span class="pre">GPSolver.sample_posterior()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.compute_acf"><code class="docutils literal notranslate"><span class="pre">GPSolver.compute_acf()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.compute_kernel"><code class="docutils literal notranslate"><span class="pre">GPSolver.compute_kernel()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.fit_acf"><code class="docutils literal notranslate"><span class="pre">GPSolver.fit_acf()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.fit_acf_parallel"><code class="docutils literal notranslate"><span class="pre">GPSolver.fit_acf_parallel()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.fit_acf_psd"><code class="docutils literal notranslate"><span class="pre">GPSolver.fit_acf_psd()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.plot_acf"><code class="docutils literal notranslate"><span class="pre">GPSolver.plot_acf()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.plot_psd"><code class="docutils literal notranslate"><span class="pre">GPSolver.plot_psd()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.plot_covariance_matrix"><code class="docutils literal notranslate"><span class="pre">GPSolver.plot_covariance_matrix()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.get_theta"><code class="docutils literal notranslate"><span class="pre">GPSolver.get_theta()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.update_hparam"><code class="docutils literal notranslate"><span class="pre">GPSolver.update_hparam()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.fit_map"><code class="docutils literal notranslate"><span class="pre">GPSolver.fit_map()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.fit_map_parallel"><code class="docutils literal notranslate"><span class="pre">GPSolver.fit_map_parallel()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.mass_matrix_hessian_map"><code class="docutils literal notranslate"><span class="pre">GPSolver.mass_matrix_hessian_map()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.mass_matrix_fisher"><code class="docutils literal notranslate"><span class="pre">GPSolver.mass_matrix_fisher()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.mass_matrix_laplace"><code class="docutils literal notranslate"><span class="pre">GPSolver.mass_matrix_laplace()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.laplace_samples"><code class="docutils literal notranslate"><span class="pre">GPSolver.laplace_samples()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#power-spectral-density">Power Spectral Density</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.psd.compute_psd"><code class="docutils literal notranslate"><span class="pre">compute_psd()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#mcmc-sampler">MCMC Sampler</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.MCMCSampler"><code class="docutils literal notranslate"><span class="pre">MCMCSampler</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.MCMCSampler.param_keys"><code class="docutils literal notranslate"><span class="pre">MCMCSampler.param_keys</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.MCMCSampler.n_params"><code class="docutils literal notranslate"><span class="pre">MCMCSampler.n_params</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.MCMCSampler.summary"><code class="docutils literal notranslate"><span class="pre">MCMCSampler.summary()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.MCMCSampler.plot_covariance"><code class="docutils literal notranslate"><span class="pre">MCMCSampler.plot_covariance()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.MCMCSampler.to_dict"><code class="docutils literal notranslate"><span class="pre">MCMCSampler.to_dict()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.BlackJAXSampler"><code class="docutils literal notranslate"><span class="pre">BlackJAXSampler</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.BlackJAXSampler.run_nuts"><code class="docutils literal notranslate"><span class="pre">BlackJAXSampler.run_nuts()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.BlackJAXSampler.save_checkpoint"><code class="docutils literal notranslate"><span class="pre">BlackJAXSampler.save_checkpoint()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.BlackJAXSampler.load_checkpoint"><code class="docutils literal notranslate"><span class="pre">BlackJAXSampler.load_checkpoint()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.BlackJAXSampler.load_samples"><code class="docutils literal notranslate"><span class="pre">BlackJAXSampler.load_samples()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.BlackJAXSampler.resume_nuts"><code class="docutils literal notranslate"><span class="pre">BlackJAXSampler.resume_nuts()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
 </ul>
             </nav>
         </div>
@@ -407,23 +480,1127 @@
                   
   <section id="module-src">
 <span id="api-reference-src"></span><h1>API Reference (<code class="docutils literal notranslate"><span class="pre">src</span></code>)<a class="headerlink" href="#module-src" title="Link to this heading">#</a></h1>
-<section id="analytic-kernel">
-<h2>Analytic Kernel<a class="headerlink" href="#analytic-kernel" title="Link to this heading">#</a></h2>
-</section>
-<section id="numerical-kernel">
-<h2>Numerical Kernel<a class="headerlink" href="#numerical-kernel" title="Link to this heading">#</a></h2>
-</section>
 <section id="lightcurve-model">
 <h2>Lightcurve Model<a class="headerlink" href="#lightcurve-model" title="Link to this heading">#</a></h2>
 </section>
+<section id="analytic-kernel">
+<h2>Analytic Kernel<a class="headerlink" href="#analytic-kernel" title="Link to this heading">#</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.analytic_kernel.AnalyticKernel">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">src.analytic_kernel.</span></span><span class="sig-name descname"><span class="pre">AnalyticKernel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_or_hparam</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_harmonics</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_lat</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">64</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lat_range</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">quadrature</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'trapezoid'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/analytic_kernel.html#AnalyticKernel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.analytic_kernel.AnalyticKernel" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>JAX-accelerated analytic GP kernel for stellar rotation variability.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>model_or_hparam</strong> (<em>SpotEvolutionModel</em><em> or </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a>) – Either a SpotEvolutionModel instance (new API) or a raw hparam dict
+(backward-compatible old API).</p></li>
+<li><p><strong>n_harmonics</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of Fourier harmonics for the visibility function (default 3).</p></li>
+<li><p><strong>n_lat</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of latitude quadrature points (default 64).</p></li>
+<li><p><strong>lat_range</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><em>tuple</em></a>) – (min, max) latitude in radians (default (-pi/2, pi/2)).</p></li>
+<li><p><strong>quadrature</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Latitude integration method: “trapezoid” or “gauss-legendre”.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.analytic_kernel.AnalyticKernel.omega0">
+<span class="sig-name descname"><span class="pre">omega0</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">phi</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/analytic_kernel.html#AnalyticKernel.omega0"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.analytic_kernel.AnalyticKernel.omega0" title="Link to this definition">#</a></dt>
+<dd><p>Latitude-dependent rotation angular frequency [rad/day].</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.analytic_kernel.AnalyticKernel.R_Gamma">
+<span class="sig-name descname"><span class="pre">R_Gamma</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lag</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/analytic_kernel.html#AnalyticKernel.R_Gamma"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.analytic_kernel.AnalyticKernel.R_Gamma" title="Link to this definition">#</a></dt>
+<dd><p>Autocorrelation of the squared envelope (delegates to envelope).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.analytic_kernel.AnalyticKernel.cn_squared">
+<span class="sig-name descname"><span class="pre">cn_squared</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">phi</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/analytic_kernel.html#AnalyticKernel.cn_squared"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.analytic_kernel.AnalyticKernel.cn_squared" title="Link to this definition">#</a></dt>
+<dd><p>Squared Fourier visibility coefficients at latitude phi.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.analytic_kernel.AnalyticKernel.kernel_single_latitude">
+<span class="sig-name descname"><span class="pre">kernel_single_latitude</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lag</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">phi</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/analytic_kernel.html#AnalyticKernel.kernel_single_latitude"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.analytic_kernel.AnalyticKernel.kernel_single_latitude" title="Link to this definition">#</a></dt>
+<dd><p>Single-spot kernel at a fixed latitude.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.analytic_kernel.AnalyticKernel.kernel">
+<span class="sig-name descname"><span class="pre">kernel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lag</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lat_dist</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/analytic_kernel.html#AnalyticKernel.kernel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.analytic_kernel.AnalyticKernel.kernel" title="Link to this definition">#</a></dt>
+<dd><p>Full GP kernel averaged over latitude.</p>
+<p>Uses jax.lax.scan for memory-efficient accumulation: only one
+lag-sized buffer is live at a time — O(M) instead of O(n_lat·M).</p>
+<p>When the visibility function is an EdgeOnVisibilityFunction, the
+latitude-averaged <a href="#id1"><span class="problematic" id="id2">|</span></a>c_n|^2 are known constants and the latitude
+loop is bypassed entirely.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>lag</strong> (<em>array_like</em>) – Time lags [days]. Can be 1D or 2D.</p></li>
+<li><p><strong>lat_dist</strong> (<em>callable</em><em> or </em><em>None</em>) – Latitude probability density. If None, uniform.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>K</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, same shape as lag input.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.analytic_kernel.AnalyticKernel.kernel_solid_body">
+<span class="sig-name descname"><span class="pre">kernel_solid_body</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lag</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lat_dist</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/analytic_kernel.html#AnalyticKernel.kernel_solid_body"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.analytic_kernel.AnalyticKernel.kernel_solid_body" title="Link to this definition">#</a></dt>
+<dd><p>Kernel for solid-body rotation (kappa=0).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.analytic_kernel.AnalyticKernel.compute_psd">
+<span class="sig-name descname"><span class="pre">compute_psd</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">omega</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lat_dist</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/analytic_kernel.html#AnalyticKernel.compute_psd"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.analytic_kernel.AnalyticKernel.compute_psd" title="Link to this definition">#</a></dt>
+<dd><p>Analytic power spectral density.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>omega</strong> (<em>array_like</em>) – Angular frequencies [rad/day].</p></li>
+<li><p><strong>lat_dist</strong> (<em>callable</em><em> or </em><em>None</em>) – Latitude probability density.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>freq</strong> (<em>ndarray   [cycles/day]</em>)</p></li>
+<li><p><strong>power</strong> (<em>ndarray</em>)</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.analytic_kernel.AnalyticKernel.build_jax">
+<span class="sig-name descname"><span class="pre">build_jax</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_lag</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">256</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/analytic_kernel.html#AnalyticKernel.build_jax"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.analytic_kernel.AnalyticKernel.build_jax" title="Link to this definition">#</a></dt>
+<dd><p>Pre-compile and warm up JAX JIT computation for this kernel.</p>
+<p><code class="docutils literal notranslate"><span class="pre">jax.lax.scan</span></code> (used inside <code class="docutils literal notranslate"><span class="pre">kernel()</span></code>) triggers XLA compilation
+on its first call for a given array shape.  That compilation can take
+several seconds and is easy to mistake for slow runtime.  Call
+<code class="docutils literal notranslate"><span class="pre">build_jax()</span></code> once after constructing the kernel to pay that cost
+upfront — subsequent calls to <code class="docutils literal notranslate"><span class="pre">kernel()</span></code> and <code class="docutils literal notranslate"><span class="pre">compute_psd()</span></code> with
+the same shape will be fast.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>n_lag</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Length of the dummy lag array used to drive compilation (default
+256).  The actual value does not matter as long as it is
+representative of the sizes you will use at runtime.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>self</strong> – Returns <code class="docutils literal notranslate"><span class="pre">self</span></code> so the call can be chained:
+<code class="docutils literal notranslate"><span class="pre">ak</span> <span class="pre">=</span> <span class="pre">AnalyticKernel(model).build_jax()</span></code>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#src.analytic_kernel.AnalyticKernel" title="src.analytic_kernel.AnalyticKernel">AnalyticKernel</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="numerical-kernel">
+<h2>Numerical Kernel<a class="headerlink" href="#numerical-kernel" title="Link to this heading">#</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.numerical_kernel.NumericalKernel">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">src.numerical_kernel.</span></span><span class="sig-name descname"><span class="pre">NumericalKernel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_or_hparam</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tsim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tsamp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nsim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/numerical_kernel.html#NumericalKernel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.numerical_kernel.NumericalKernel" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>Gaussian Process for Stellar Rotation</p>
+<p>Parameters:
+- hparam: dict of hyperparameters.</p>
+<blockquote>
+<div><p>Required keys: peq, kappa, inc, lspot, tau_spot, alpha_max.
+For the kernel amplitude, provide EITHER:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>sigma_k : overall amplitude prefactor, OR</p></li>
+<li><p>nspot + fspot : number of spots and spot contrast, from which
+sigma_k is computed as sqrt(N_spot) * (1 - f_spot) / pi.</p></li>
+</ul>
+</div></blockquote>
+<p>Note: nspot is always required for the numerical simulations.</p>
+</div></blockquote>
+<ul class="simple">
+<li><p>tsim: simulation time (default: 20)</p></li>
+<li><p>tsamp: time sampling (default: 0.05)</p></li>
+<li><p>nsim: number of simulations (default: 1e3)</p></li>
+<li><p>verbose: whether to print verbose output (default: True)</p></li>
+</ul>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.numerical_kernel.NumericalKernel.get_acf">
+<span class="sig-name descname"><span class="pre">get_acf</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/numerical_kernel.html#NumericalKernel.get_acf"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.numerical_kernel.NumericalKernel.get_acf" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.numerical_kernel.NumericalKernel.compute_psd">
+<span class="sig-name descname"><span class="pre">compute_psd</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tarr</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_min</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_max</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalization</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'psd'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nsims</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/numerical_kernel.html#NumericalKernel.compute_psd"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.numerical_kernel.NumericalKernel.compute_psd" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.numerical_kernel.NumericalKernel.plot_autocorrelation">
+<span class="sig-name descname"><span class="pre">plot_autocorrelation</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/numerical_kernel.html#NumericalKernel.plot_autocorrelation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.numerical_kernel.NumericalKernel.plot_autocorrelation" title="Link to this definition">#</a></dt>
+<dd><p>Plot the autocorrelation function.</p>
+<p>Returns:
+- fig: matplotlib Figure object</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.numerical_kernel.generate_sims">
+<span class="sig-prename descclassname"><span class="pre">src.numerical_kernel.</span></span><span class="sig-name descname"><span class="pre">generate_sims</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nsim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000.0</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/numerical_kernel.html#generate_sims"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.numerical_kernel.generate_sims" title="Link to this definition">#</a></dt>
+<dd><p>Generate synthetic lightcurves for a given set of parameters.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>theta</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><em>tuple</em></a>) – Tuple containing peq, kappa, inc, and nspot parameters.</p></li>
+<li><p><strong>nsim</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>optional</em>) – Number of simulations. Defaults to 1000.</p></li>
+<li><p><strong>**kwargs</strong> – Additional arguments for the StarSpot class.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Array of synthetic lightcurves.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.4)">numpy.ndarray</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.numerical_kernel.avg_covariance_tlag">
+<span class="sig-prename descclassname"><span class="pre">src.numerical_kernel.</span></span><span class="sig-name descname"><span class="pre">avg_covariance_tlag</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">K</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/numerical_kernel.html#avg_covariance_tlag"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.numerical_kernel.avg_covariance_tlag" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+</section>
 <section id="gp-solver">
 <h2>GP Solver<a class="headerlink" href="#gp-solver" title="Link to this heading">#</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">src.gp_solver.</span></span><span class="sig-name descname"><span class="pre">GPSolver</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">yerr</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_or_hparam</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kernel_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'analytic'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mean</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fit_sigma_n</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bounds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log_prior</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">matrix_solver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'cholesky_banded'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kernel_kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>JAX-accelerated Gaussian Process solver for stellar lightcurves.</p>
+<p>Handles covariance matrix construction, Cholesky factorization,
+log-likelihood evaluation, prediction, MAP estimation, and mass
+matrix computation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>N</em><em>,</em><em>)</em>) – Observation times [days].</p></li>
+<li><p><strong>y</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>N</em><em>,</em><em>)</em>) – Observed flux values.</p></li>
+<li><p><strong>yerr</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>N</em><em>,</em><em>) or </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Measurement uncertainties (1-sigma).</p></li>
+<li><p><strong>hparam</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a>) – Kernel hyperparameters. Required keys: peq, kappa, inc, lspot,
+tau_spot. For amplitude, provide either sigma_k directly or all of
+nspot, fspot, and alpha_max (sigma_k computed automatically).</p></li>
+<li><p><strong>kernel_type</strong> (<em>{&quot;analytic&quot;}</em>) – Which kernel to use (default: “analytic”).</p></li>
+<li><p><strong>mean</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em> or </em><em>callable</em><em> or </em><em>None</em>) – Mean function.</p></li>
+<li><p><strong>fit_sigma_n</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, include white noise amplitude sigma_n as a free
+parameter for optimization/sampling (default False).</p></li>
+<li><p><strong>bounds</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> or </em><em>None</em>) – Parameter bounds for optimization. If None, uses defaults.</p></li>
+<li><p><strong>log_prior</strong> (<em>callable</em><em> or </em><em>None</em>) – Custom log-prior function f(theta_arr) -&gt; scalar.
+If None, uses soft uniform within bounds.</p></li>
+<li><p><strong>kernel_kwargs</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a>) – Extra kwargs forwarded to the kernel constructor.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.DEFAULT_BOUNDS">
+<span class="sig-name descname"><span class="pre">DEFAULT_BOUNDS</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'inc':</span> <span class="pre">(0.01,</span> <span class="pre">3.1315926535897933),</span> <span class="pre">'kappa':</span> <span class="pre">(0.001,</span> <span class="pre">0.999),</span> <span class="pre">'lspot':</span> <span class="pre">(0.1,</span> <span class="pre">20.0),</span> <span class="pre">'n_sn':</span> <span class="pre">(-10.0,</span> <span class="pre">10.0),</span> <span class="pre">'peq':</span> <span class="pre">(0.5,</span> <span class="pre">50.0),</span> <span class="pre">'sigma_k':</span> <span class="pre">(1e-06,</span> <span class="pre">1.0),</span> <span class="pre">'sigma_n':</span> <span class="pre">(1e-06,</span> <span class="pre">0.1),</span> <span class="pre">'sigma_sn':</span> <span class="pre">(0.05,</span> <span class="pre">10.0),</span> <span class="pre">'tau_dec':</span> <span class="pre">(0.05,</span> <span class="pre">10.0),</span> <span class="pre">'tau_em':</span> <span class="pre">(0.05,</span> <span class="pre">10.0),</span> <span class="pre">'tau_spot':</span> <span class="pre">(0.05,</span> <span class="pre">10.0)}</span></span><a class="headerlink" href="#src.gp_solver.GPSolver.DEFAULT_BOUNDS" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.build_jax">
+<span class="sig-name descname"><span class="pre">build_jax</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.build_jax"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.build_jax" title="Link to this definition">#</a></dt>
+<dd><p>Pre-compile and warm up all JAX JIT functions for this solver.</p>
+<p><code class="docutils literal notranslate"><span class="pre">_build_logposterior()</span></code> creates four <code class="docutils literal notranslate"><span class="pre">&#64;jax.jit</span></code>-decorated
+functions (<code class="docutils literal notranslate"><span class="pre">log_posterior</span></code>, <code class="docutils literal notranslate"><span class="pre">neg_log_posterior</span></code>,
+<code class="docutils literal notranslate"><span class="pre">grad_log_posterior</span></code>, <code class="docutils literal notranslate"><span class="pre">grad_neg_log_posterior</span></code>) that each
+trigger a separate XLA compilation on their first call.  Combined
+with the banded Cholesky solver, that can add up to 10–30 s of
+invisible overhead before a fit or MCMC run starts.</p>
+<p>Call <code class="docutils literal notranslate"><span class="pre">build_jax()</span></code> once after constructing the solver to pay
+that cost upfront.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>self</strong> – Returns <code class="docutils literal notranslate"><span class="pre">self</span></code> so the call can be chained:
+<code class="docutils literal notranslate"><span class="pre">gp</span> <span class="pre">=</span> <span class="pre">GPSolver(...).build_jax()</span></code>.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="#src.gp_solver.GPSolver" title="src.gp_solver.GPSolver">GPSolver</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.log_likelihood">
+<span class="sig-name descname"><span class="pre">log_likelihood</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.log_likelihood"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.log_likelihood" title="Link to this definition">#</a></dt>
+<dd><p>Marginal log-likelihood of the data under the GP.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>logL</strong> – log p(y | X, theta)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)">float</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.predict">
+<span class="sig-name descname"><span class="pre">predict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">xpred</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_cov</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.predict"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.predict" title="Link to this definition">#</a></dt>
+<dd><p>Predictive distribution at new input locations.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>xpred</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>M</em><em>,</em><em>)</em>) – Prediction times.</p></li>
+<li><p><strong>return_cov</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, return full predictive covariance.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>mu_pred</strong> (<em>ndarray, shape (M,)</em>)</p></li>
+<li><p><strong>var_pred</strong> (<em>ndarray, shape (M,) or (M, M)</em>)</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.plot_prediction">
+<span class="sig-name descname"><span class="pre">plot_prediction</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_points</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_sigma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(1,</span> <span class="pre">2)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ax</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'k'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'r'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_legend</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xlim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ylim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_label</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'GP</span> <span class="pre">mean'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_label</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'Data'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.plot_prediction"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.plot_prediction" title="Link to this definition">#</a></dt>
+<dd><p>Plot the GP posterior mean and uncertainty bands over the data.</p>
+<p>If <code class="docutils literal notranslate"><span class="pre">theta</span></code> is provided the GP is temporarily updated to those
+hyperparameters before predicting, so the prediction reflects the
+given parameter values rather than whatever was last set internally.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>theta</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> or </em><em>array_like</em><em>, </em><em>shape</em><em> (</em><em>6</em><em>,</em><em>)</em><em>, </em><em>optional</em>) – Kernel parameters.  Accepts a physical dict with keys from
+<code class="docutils literal notranslate"><span class="pre">KERNEL_HPARAM_KEYS</span></code>, a sampling-space dict with <code class="docutils literal notranslate"><span class="pre">log_</span></code>-
+prefixed keys (e.g. <code class="docutils literal notranslate"><span class="pre">log_sigma_k</span></code>), or a length-6 array.
+If None, uses the current internal hyperparameters.</p></li>
+<li><p><strong>n_points</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of prediction points spanning the data baseline.</p></li>
+<li><p><strong>n_sigma</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em> or </em><em>sequence</em><em> of </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Which sigma levels to shade.  E.g. <code class="docutils literal notranslate"><span class="pre">(1,</span> <span class="pre">2)</span></code> draws both
+±1σ and ±2σ bands (default).  Pass a single int for one band.</p></li>
+<li><p><strong>ax</strong> (<em>matplotlib Axes</em><em>, </em><em>optional</em>) – Axes to plot on. If None, creates a new figure.</p></li>
+<li><p><strong>data_color</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Colors for data points and model curve/bands.</p></li>
+<li><p><strong>model_color</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Colors for data points and model curve/bands.</p></li>
+<li><p><strong>show_legend</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – Whether to draw a legend.</p></li>
+<li><p><strong>xlim</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><em>tuple</em></a><em>, </em><em>optional</em>) – Limits for the x-axis. If None, defaults to the data range.</p></li>
+<li><p><strong>ylim</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><em>tuple</em></a><em>, </em><em>optional</em>) – Limits for the y-axis. If None, defaults to the data range.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ax</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>matplotlib Axes</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.sample_prior">
+<span class="sig-name descname"><span class="pre">sample_prior</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">xpred</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_samples</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.sample_prior"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.sample_prior" title="Link to this definition">#</a></dt>
+<dd><p>Draw samples from the GP prior.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.sample_posterior">
+<span class="sig-name descname"><span class="pre">sample_posterior</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">xpred</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_samples</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.sample_posterior"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.sample_posterior" title="Link to this definition">#</a></dt>
+<dd><p>Draw samples from the GP posterior.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.compute_acf">
+<span class="sig-name descname"><span class="pre">compute_acf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tlags</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.compute_acf"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.compute_acf" title="Link to this definition">#</a></dt>
+<dd><p>Compute the empirical autocorrelation function of (x, y, yerr)
+by binning data pairs into time-lag bins.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>tlags</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>M</em><em>,</em><em>)</em>) – Bin edges for time lags [days]. The ACF is evaluated at
+bin centers: 0.5*(tlags[:-1] + tlags[1:]).</p></li>
+<li><p><strong>normalize</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True (default), normalize so ACF(0) = variance of y.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>lag_centers</strong> (<em>ndarray, shape (M-1,)</em>) – Bin centers.</p></li>
+<li><p><strong>acf</strong> (<em>ndarray, shape (M-1,)</em>) – Empirical ACF at each bin center.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.compute_kernel">
+<span class="sig-name descname"><span class="pre">compute_kernel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tlags</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.compute_kernel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.compute_kernel" title="Link to this definition">#</a></dt>
+<dd><p>Evaluate the analytic kernel at the given time lags.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>tlags</strong> (<em>array_like</em><em>, </em><em>shape</em><em> (</em><em>M</em><em>,</em><em>)</em>) – Time lags [days].</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>K</strong> – Kernel values at each lag.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, shape (M,)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.fit_acf">
+<span class="sig-name descname"><span class="pre">fit_acf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta0</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">keys</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tlags</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bins</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'L-BFGS-B'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">maxiter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">500</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ftol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gtol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-08</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">disp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nopt</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ncore</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_save</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.fit_acf"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.fit_acf" title="Link to this definition">#</a></dt>
+<dd><p>Fit the analytic kernel to the empirical ACF via least-squares.</p>
+<p>Minimizes sum_i (ACF_data(lag_i) - K(lag_i; theta))^2 over the
+kernel hyperparameters, using JAX gradients and scipy.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>theta0</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> or </em><em>array_like</em><em>, </em><em>optional</em>) – <dl class="simple">
+<dt>Starting point. Can be:</dt><dd><ul>
+<li><p>None: uses self.theta0 (kernel params only, no sigma_n).</p></li>
+<li><p>dict: values for any subset of kernel keys set the
+starting point. If <code class="docutils literal notranslate"><span class="pre">keys</span></code> is not given, the dict
+keys that overlap with <code class="docutils literal notranslate"><span class="pre">KERNEL_HPARAM_KEYS</span></code> are
+treated as the free variables; the rest are held fixed.
+Extra keys not in <code class="docutils literal notranslate"><span class="pre">KERNEL_HPARAM_KEYS</span></code> are ignored.</p></li>
+<li><p>array_like: full kernel theta vector (6 elements).</p></li>
+</ul>
+</dd>
+</dl>
+</p></li>
+<li><p><strong>keys</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em> of </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – Which parameters to vary during optimization. Overrides
+the automatic inference from a dict <code class="docutils literal notranslate"><span class="pre">theta0</span></code>. Parameters
+not listed are held fixed at their current values. If None
+and theta0 is not a dict, all kernel parameters are varied.</p></li>
+<li><p><strong>tlags</strong> (<em>array_like</em><em>, </em><em>optional</em>) – Bin edges for compute_acf. If None, linearly spaced from 0 to
+half the baseline with n_bins+1 edges.</p></li>
+<li><p><strong>n_bins</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of lag bins (used when tlags is None).</p></li>
+<li><p><strong>method</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Scipy optimizer method.</p></li>
+<li><p><strong>maxiter</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Maximum iterations.</p></li>
+<li><p><strong>ftol</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Function-value convergence tolerance (default 0, disabled).</p></li>
+<li><p><strong>gtol</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Gradient-norm convergence tolerance (default 1e-8).</p></li>
+<li><p><strong>disp</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, print optimizer convergence messages (default False).</p></li>
+<li><p><strong>nopt</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of independent optimisation trials (default 1).
+When &gt; 1, <code class="docutils literal notranslate"><span class="pre">fit_acf_parallel</span></code> is called and the best
+result across all trials is returned.</p></li>
+<li><p><strong>ncore</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em> or </em><em>None</em>) – Number of parallel workers. Only used when <code class="docutils literal notranslate"><span class="pre">nopt</span> <span class="pre">&gt;</span> <span class="pre">1</span></code>.</p></li>
+<li><p><strong>rng</strong> (<a class="reference external" href="https://numpy.org/doc/stable/reference/random/generator.html#numpy.random.Generator" title="(in NumPy v2.4)"><em>numpy.random.Generator</em></a><em>, </em><em>optional</em>) – RNG for random starting points. Only used when <code class="docutils literal notranslate"><span class="pre">nopt</span> <span class="pre">&gt;</span> <span class="pre">1</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>theta_dict</strong> (<em>dict</em>) – Full dictionary of all kernel hyperparameters (fixed + optimized).</p></li>
+<li><p><strong>result</strong> (<em>scipy.optimize.OptimizeResult</em>) – Full optimizer output.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.fit_acf_parallel">
+<span class="sig-name descname"><span class="pre">fit_acf_parallel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">nopt</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ncore</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">keys</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tlags</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bins</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'nelder-mead'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">maxiter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">500</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ftol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gtol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-08</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">disp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.fit_acf_parallel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.fit_acf_parallel" title="Link to this definition">#</a></dt>
+<dd><p>Run <code class="docutils literal notranslate"><span class="pre">fit_acf</span></code> from multiple random starting points in parallel.</p>
+<p>Starting points are drawn uniformly within the kernel parameter
+bounds.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>nopt</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of independent optimization trials (default 10).</p></li>
+<li><p><strong>ncore</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em> or </em><em>None</em>) – Number of parallel workers. If None, uses <code class="docutils literal notranslate"><span class="pre">nopt</span></code> or the
+number of available CPUs, whichever is smaller.</p></li>
+<li><p><strong>keys</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em> of </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – Free parameters (forwarded to <code class="docutils literal notranslate"><span class="pre">fit_acf</span></code>).</p></li>
+<li><p><strong>tlags</strong> – Forwarded to <code class="docutils literal notranslate"><span class="pre">fit_acf</span></code>.</p></li>
+<li><p><strong>n_bins</strong> – Forwarded to <code class="docutils literal notranslate"><span class="pre">fit_acf</span></code>.</p></li>
+<li><p><strong>method</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Optimizer method (default “nelder-mead”).</p></li>
+<li><p><strong>maxiter</strong> – Forwarded to <code class="docutils literal notranslate"><span class="pre">fit_acf</span></code>.</p></li>
+<li><p><strong>ftol</strong> – Forwarded to <code class="docutils literal notranslate"><span class="pre">fit_acf</span></code>.</p></li>
+<li><p><strong>gtol</strong> – Forwarded to <code class="docutils literal notranslate"><span class="pre">fit_acf</span></code>.</p></li>
+<li><p><strong>disp</strong> – Forwarded to <code class="docutils literal notranslate"><span class="pre">fit_acf</span></code>.</p></li>
+<li><p><strong>return_all</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, return all solutions sorted by objective value.
+If False (default), return only the best solution.</p></li>
+<li><p><strong>rng</strong> (<a class="reference external" href="https://numpy.org/doc/stable/reference/random/generator.html#numpy.random.Generator" title="(in NumPy v2.4)"><em>numpy.random.Generator</em></a><em>, </em><em>optional</em>) – Random number generator for reproducibility.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>theta_best</strong> (dict  (or list of dict if <code class="docutils literal notranslate"><span class="pre">return_all=True</span></code>)) – Best-fit kernel hyperparameters.</p></li>
+<li><p><strong>result_best</strong> (<em>scipy.optimize.OptimizeResult</em>) – (or list of OptimizeResult if <code class="docutils literal notranslate"><span class="pre">return_all=True</span></code>)</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.fit_acf_psd">
+<span class="sig-name descname"><span class="pre">fit_acf_psd</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta0</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">keys</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tlags</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bins</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_freq</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">200</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dt_kernel</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">acf_weight</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psd_weight</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'L-BFGS-B'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">maxiter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">500</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ftol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gtol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-08</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">disp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.fit_acf_psd"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.fit_acf_psd" title="Link to this definition">#</a></dt>
+<dd><p>Fit kernel parameters jointly to the empirical ACF and PSD.</p>
+<p>Minimizes a weighted sum of two normalized mean-squared-error terms:</p>
+<blockquote>
+<div><p>loss = acf_weight * acf_loss + psd_weight * psd_loss</p>
+</div></blockquote>
+<p>where</p>
+<blockquote>
+<div><p>acf_loss = mean((ACF_data - K_model)^2) / mean(ACF_data^2)</p>
+</div></blockquote>
+<p>is the relative MSE of the kernel against the empirical ACF
+(unnormalized autocovariance), and</p>
+<blockquote>
+<div><p>psd_loss = mean((PSD_data_norm - PSD_model_norm)^2)</p>
+</div></blockquote>
+<p>is the MSE between the Lomb-Scargle periodogram and the analytic
+kernel PSD, both normalized to unit integral so the comparison is
+independent of overall amplitude.</p>
+<p>The model PSD is computed via a direct cosine transform of the kernel
+evaluated on a uniform lag grid, making it fully differentiable with
+respect to the kernel parameters.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>theta0</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> or </em><em>array_like</em><em>, </em><em>optional</em>) – Starting point in <code class="docutils literal notranslate"><span class="pre">self.param_keys</span></code> space (sampling space,
+with <code class="docutils literal notranslate"><span class="pre">log_</span></code>-prefixed keys where applicable).  Follows the same
+convention as <code class="docutils literal notranslate"><span class="pre">fit_map</span></code>: None uses <code class="docutils literal notranslate"><span class="pre">self.theta0</span></code>, a dict
+overrides named entries and infers free keys, an array is used
+directly.</p></li>
+<li><p><strong>keys</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em> of </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – Parameters to vary during optimization (names from
+<code class="docutils literal notranslate"><span class="pre">self.param_keys</span></code>).  Defaults to all kernel parameters
+(first 6 entries of <code class="docutils literal notranslate"><span class="pre">self.param_keys</span></code>, i.e. excluding
+<code class="docutils literal notranslate"><span class="pre">sigma_n</span></code> if present).</p></li>
+<li><p><strong>tlags</strong> (<em>array_like</em><em>, </em><em>optional</em>) – Bin edges for the empirical ACF. If None, <code class="docutils literal notranslate"><span class="pre">n_bins+1</span></code> edges
+linearly spaced from 0 to half the baseline.</p></li>
+<li><p><strong>n_bins</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of ACF lag bins when <code class="docutils literal notranslate"><span class="pre">tlags</span></code> is None (default 50).</p></li>
+<li><p><strong>n_freq</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of frequency points for the Lomb-Scargle periodogram
+(default 200).</p></li>
+<li><p><strong>dt_kernel</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Uniform lag spacing [days] for evaluating the analytic kernel
+before the direct cosine transform.  Defaults to one-fifth of
+the median data spacing.</p></li>
+<li><p><strong>acf_weight</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Weight for the ACF loss term (default 1.0).</p></li>
+<li><p><strong>psd_weight</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Weight for the PSD loss term (default 1.0).</p></li>
+<li><p><strong>method</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Scipy optimizer method (default <code class="docutils literal notranslate"><span class="pre">&quot;L-BFGS-B&quot;</span></code>).</p></li>
+<li><p><strong>maxiter</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Maximum optimizer iterations (default 500).</p></li>
+<li><p><strong>ftol</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Convergence tolerances forwarded to scipy.</p></li>
+<li><p><strong>gtol</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Convergence tolerances forwarded to scipy.</p></li>
+<li><p><strong>disp</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – Print optimizer messages if True.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>theta_dict</strong> (<em>dict</em>) – Best-fit parameters in <code class="docutils literal notranslate"><span class="pre">self.param_keys</span></code> space.</p></li>
+<li><p><strong>result</strong> (<em>scipy.optimize.OptimizeResult</em>)</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.plot_acf">
+<span class="sig-name descname"><span class="pre">plot_acf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tlags</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_bins</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ax</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'k'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'r'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_legend</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xlim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ylim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_label</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'Analytic</span> <span class="pre">ACF'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_label</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'Data</span> <span class="pre">ACF'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.plot_acf"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.plot_acf" title="Link to this definition">#</a></dt>
+<dd><p>Plot the empirical ACF and optionally the analytic kernel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>theta</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> or </em><em>array_like</em><em>, </em><em>shape</em><em> (</em><em>6</em><em>,</em><em>)</em><em>, </em><em>optional</em>) – Kernel parameters.  Accepts a physical dict with keys from
+<code class="docutils literal notranslate"><span class="pre">KERNEL_HPARAM_KEYS</span></code>, a sampling-space dict with <code class="docutils literal notranslate"><span class="pre">log_</span></code>-
+prefixed keys (e.g. <code class="docutils literal notranslate"><span class="pre">log_sigma_k</span></code>), or a length-6 array.
+If provided, the analytic kernel is overplotted.</p></li>
+<li><p><strong>tlags</strong> (<em>array_like</em><em>, </em><em>optional</em>) – Bin edges for compute_acf. If None, linearly spaced from 0 to
+half the baseline with n_bins+1 edges.</p></li>
+<li><p><strong>n_bins</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of lag bins (used when tlags is None).</p></li>
+<li><p><strong>ax</strong> (<em>matplotlib Axes</em><em>, </em><em>optional</em>) – Axes to plot on. If None, creates a new figure.</p></li>
+<li><p><strong>normalize</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True (default), normalize both curves by the data variance
+so ACF(0) ≈ 1.</p></li>
+<li><p><strong>xlim</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><em>tuple</em></a><em>, </em><em>optional</em>) – Limits for the x-axis. If None, defaults to the data range.</p></li>
+<li><p><strong>ylim</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><em>tuple</em></a><em>, </em><em>optional</em>) – Limits for the y-axis. If None, defaults to the data range.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ax</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>matplotlib Axes</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.plot_psd">
+<span class="sig-name descname"><span class="pre">plot_psd</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_freq</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">500</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dt_kernel</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ax</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'k'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'r'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_legend</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xlim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ylim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_label</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'Analytic</span> <span class="pre">PSD'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_label</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'Data</span> <span class="pre">Lomb-Scargle'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.plot_psd"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.plot_psd" title="Link to this definition">#</a></dt>
+<dd><p>Plot the empirical PSD (Lomb-Scargle) and optionally the analytic
+kernel PSD (FFT of the autocovariance function).</p>
+<p>Both curves are normalized so their integral over positive frequencies
+equals the data variance, making them directly comparable.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>theta</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> or </em><em>array_like</em><em>, </em><em>shape</em><em> (</em><em>6</em><em>,</em><em>)</em><em>, </em><em>optional</em>) – Kernel parameters.  Accepts a physical dict with keys from
+<code class="docutils literal notranslate"><span class="pre">KERNEL_HPARAM_KEYS</span></code>, a sampling-space dict with <code class="docutils literal notranslate"><span class="pre">log_</span></code>-
+prefixed keys (e.g. <code class="docutils literal notranslate"><span class="pre">log_sigma_k</span></code>), or a length-6 array.
+If provided, the analytic kernel PSD is overplotted.</p></li>
+<li><p><strong>n_freq</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of frequency points for the Lomb-Scargle periodogram.</p></li>
+<li><p><strong>dt_kernel</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Time step [days] for evaluating the analytic kernel on a uniform
+grid before FFT.  Defaults to one-fifth of the median data spacing.</p></li>
+<li><p><strong>ax</strong> (<em>matplotlib Axes</em><em>, </em><em>optional</em>) – Axes to plot on. If None, creates a new figure.</p></li>
+<li><p><strong>data_color</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Colors for the data and model curves.</p></li>
+<li><p><strong>model_color</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Colors for the data and model curves.</p></li>
+<li><p><strong>show_legend</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – Whether to draw a legend.</p></li>
+<li><p><strong>xlim</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><em>tuple</em></a><em>, </em><em>optional</em>) – Limits for the x-axis. If None, defaults to the data range.</p></li>
+<li><p><strong>ylim</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><em>tuple</em></a><em>, </em><em>optional</em>) – Limits for the y-axis. If None, defaults to the data range.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ax</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>matplotlib Axes</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.plot_covariance_matrix">
+<span class="sig-name descname"><span class="pre">plot_covariance_matrix</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ax</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cmap</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'RdBu_r'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_colorbar</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vmax</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nbins</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filename</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'covariance_matrix.png'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.plot_covariance_matrix"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.plot_covariance_matrix" title="Link to this definition">#</a></dt>
+<dd><p>Plot the GP covariance matrix K (signal only, no noise).</p>
+<p>Entries outside the banded support are set to zero, matching the
+<code class="docutils literal notranslate"><span class="pre">cholesky_banded</span></code> approximation.  The matrix is binned to
+<code class="docutils literal notranslate"><span class="pre">nbins</span> <span class="pre">x</span> <span class="pre">nbins</span></code> before plotting.  The bandwidth boundary is drawn
+as dashed lines, and band width plus matrix sparsity are annotated.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>theta</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> or </em><em>array_like</em><em>, </em><em>optional</em>) – Kernel hyperparameters.  Accepts a physical dict with keys from
+<code class="docutils literal notranslate"><span class="pre">param_keys</span></code>, a sampling-space dict with <code class="docutils literal notranslate"><span class="pre">log_</span></code>-prefixed keys,
+or a raw array.  If None, uses the current <code class="docutils literal notranslate"><span class="pre">self.hparam</span></code> values.</p></li>
+<li><p><strong>ax</strong> (<em>matplotlib Axes</em><em>, </em><em>optional</em>) – Axes to plot on.  If None, a new figure is created.</p></li>
+<li><p><strong>cmap</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – Colormap name.  Defaults to <code class="docutils literal notranslate"><span class="pre">&quot;RdBu_r&quot;</span></code> (diverging, centred at
+zero).</p></li>
+<li><p><strong>show_colorbar</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>optional</em>) – Whether to add a colorbar.  Default True.</p></li>
+<li><p><strong>vmax</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Symmetric color scale limit <code class="docutils literal notranslate"><span class="pre">[-vmax,</span> <span class="pre">vmax]</span></code>.  If None, uses the
+maximum absolute value of the banded matrix.</p></li>
+<li><p><strong>nbins</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>optional</em>) – Bin the N x N matrix down to <code class="docutils literal notranslate"><span class="pre">nbins</span> <span class="pre">x</span> <span class="pre">nbins</span></code> by averaging
+non-overlapping blocks before plotting.  Default 50.</p></li>
+<li><p><strong>show</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>optional</em>) – If True, call <code class="docutils literal notranslate"><span class="pre">plt.show()</span></code>.  Default False.</p></li>
+<li><p><strong>filename</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – Filename used when saving to <code class="docutils literal notranslate"><span class="pre">save_dir</span></code>.
+Default <code class="docutils literal notranslate"><span class="pre">&quot;covariance_matrix.png&quot;</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ax</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>matplotlib Axes</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.get_theta">
+<span class="sig-name descname"><span class="pre">get_theta</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.get_theta"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.get_theta" title="Link to this definition">#</a></dt>
+<dd><p>Return the current kernel hyperparameters as a dictionary.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>theta</strong> – Keys and values for all kernel (and optionally noise)
+hyperparameters, e.g. {“peq”: 5.0, “kappa”: 0.2, …}.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)">dict</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.update_hparam">
+<span class="sig-name descname"><span class="pre">update_hparam</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hparam</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.update_hparam"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.update_hparam" title="Link to this definition">#</a></dt>
+<dd><p>Update hyperparameters and rebuild kernel and covariance.</p>
+<p>Accepts either a SpotEvolutionModel or a hparam dict.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.fit_map">
+<span class="sig-name descname"><span class="pre">fit_map</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta0</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">keys</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'L-BFGS-B'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">maxiter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">500</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ftol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gtol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-08</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">disp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nopt</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ncore</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_save</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.fit_map"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.fit_map" title="Link to this definition">#</a></dt>
+<dd><p>Find the maximum a posteriori (MAP) estimate.</p>
+<p>Uses scipy.optimize.minimize with JAX-computed gradients.
+When <code class="docutils literal notranslate"><span class="pre">nopt</span> <span class="pre">&gt;</span> <span class="pre">1</span></code>, delegates to <code class="docutils literal notranslate"><span class="pre">fit_map_parallel</span></code> which
+runs <code class="docutils literal notranslate"><span class="pre">nopt</span></code> independent trials from random starting points
+(drawn uniformly within the bounds) and returns the best result.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>theta0</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> or </em><em>array_like</em><em>, </em><em>optional</em>) – <dl class="simple">
+<dt>Starting point. Can be:</dt><dd><ul>
+<li><p>None: uses self.theta0 (current hyperparameters).</p></li>
+<li><p>dict: values for any subset of param_keys set the
+starting point. If <code class="docutils literal notranslate"><span class="pre">keys</span></code> is not given, the dict
+keys that overlap with <code class="docutils literal notranslate"><span class="pre">self.param_keys</span></code> are treated
+as the free variables to optimize; the rest are held
+fixed. Extra keys not in <code class="docutils literal notranslate"><span class="pre">param_keys</span></code> are ignored.</p></li>
+<li><p>array_like: full theta vector (length <code class="docutils literal notranslate"><span class="pre">n_params</span></code>).</p></li>
+</ul>
+</dd>
+</dl>
+<p>Ignored when <code class="docutils literal notranslate"><span class="pre">nopt</span> <span class="pre">&gt;</span> <span class="pre">1</span></code> (starting points are randomised).</p>
+</p></li>
+<li><p><strong>keys</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em> of </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – Which parameters to vary during optimization. Overrides
+the automatic inference from a dict <code class="docutils literal notranslate"><span class="pre">theta0</span></code>. Parameters
+not listed are held fixed at their current values. If None
+and theta0 is not a dict, all parameters are varied.</p></li>
+<li><p><strong>method</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Scipy optimizer method (default “L-BFGS-B”).</p></li>
+<li><p><strong>maxiter</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Maximum iterations.</p></li>
+<li><p><strong>ftol</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Function-value convergence tolerance for L-BFGS-B
+(default 0, i.e. disabled so that convergence is
+controlled by <code class="docutils literal notranslate"><span class="pre">gtol</span></code>).</p></li>
+<li><p><strong>gtol</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Gradient-norm convergence tolerance (default 1e-8).</p></li>
+<li><p><strong>disp</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, print optimizer convergence messages (default False).</p></li>
+<li><p><strong>nopt</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of independent optimisation trials (default 1).
+When &gt; 1, <code class="docutils literal notranslate"><span class="pre">fit_map_parallel</span></code> is called and the best
+result across all trials is returned.</p></li>
+<li><p><strong>ncore</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em> or </em><em>None</em>) – Number of parallel workers for multi-start runs. If None,
+uses <code class="docutils literal notranslate"><span class="pre">nopt</span></code> or the number of available CPUs, whichever is
+smaller. Only used when <code class="docutils literal notranslate"><span class="pre">nopt</span> <span class="pre">&gt;</span> <span class="pre">1</span></code>.</p></li>
+<li><p><strong>rng</strong> (<a class="reference external" href="https://numpy.org/doc/stable/reference/random/generator.html#numpy.random.Generator" title="(in NumPy v2.4)"><em>numpy.random.Generator</em></a><em>, </em><em>optional</em>) – RNG for random starting points. Only used when <code class="docutils literal notranslate"><span class="pre">nopt</span> <span class="pre">&gt;</span> <span class="pre">1</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>theta_dict</strong> (<em>dict</em>) – Full dictionary of all hyperparameters (fixed + optimized).</p></li>
+<li><p><strong>result</strong> (<em>scipy OptimizeResult</em>) – Full optimizer output.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.fit_map_parallel">
+<span class="sig-name descname"><span class="pre">fit_map_parallel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">nopt</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ncore</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">keys</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'nelder-mead'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">maxiter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">500</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ftol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gtol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-08</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">disp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.fit_map_parallel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.fit_map_parallel" title="Link to this definition">#</a></dt>
+<dd><p>Run <code class="docutils literal notranslate"><span class="pre">fit_map</span></code> from multiple random starting points in parallel.</p>
+<p>Starting points are drawn uniformly within the parameter bounds.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>nopt</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of independent optimization trials (default 10).</p></li>
+<li><p><strong>ncore</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em> or </em><em>None</em>) – Number of parallel workers. If None, uses <code class="docutils literal notranslate"><span class="pre">nopt</span></code> or the
+number of available CPUs, whichever is smaller.</p></li>
+<li><p><strong>keys</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a><em> of </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – Free parameters (forwarded to <code class="docutils literal notranslate"><span class="pre">fit_map</span></code>).</p></li>
+<li><p><strong>method</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Optimizer method (default “nelder-mead”).</p></li>
+<li><p><strong>maxiter</strong> – Forwarded to <code class="docutils literal notranslate"><span class="pre">fit_map</span></code>.</p></li>
+<li><p><strong>ftol</strong> – Forwarded to <code class="docutils literal notranslate"><span class="pre">fit_map</span></code>.</p></li>
+<li><p><strong>gtol</strong> – Forwarded to <code class="docutils literal notranslate"><span class="pre">fit_map</span></code>.</p></li>
+<li><p><strong>disp</strong> – Forwarded to <code class="docutils literal notranslate"><span class="pre">fit_map</span></code>.</p></li>
+<li><p><strong>return_all</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, return all solutions sorted by objective value.
+If False (default), return only the best solution.</p></li>
+<li><p><strong>rng</strong> (<a class="reference external" href="https://numpy.org/doc/stable/reference/random/generator.html#numpy.random.Generator" title="(in NumPy v2.4)"><em>numpy.random.Generator</em></a><em>, </em><em>optional</em>) – Random number generator for reproducibility.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>theta_best</strong> (dict  (or list of dict if <code class="docutils literal notranslate"><span class="pre">return_all=True</span></code>)) – Best-fit hyperparameters.</p></li>
+<li><p><strong>result_best</strong> (<em>scipy.optimize.OptimizeResult</em>) – (or list of OptimizeResult if <code class="docutils literal notranslate"><span class="pre">return_all=True</span></code>)</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.mass_matrix_hessian_map">
+<span class="sig-name descname"><span class="pre">mass_matrix_hessian_map</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta_map</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.mass_matrix_hessian_map"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.mass_matrix_hessian_map" title="Link to this definition">#</a></dt>
+<dd><p>Estimate the inverse mass matrix from the Hessian of the
+negative log-likelihood at the MAP.</p>
+<p>M^{-1} = H^{-1}  where  H = d^2(-log L)/d theta^2 <a href="#id3"><span class="problematic" id="id4">|</span></a>_{MAP}</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>theta_map</strong> (<em>array_like</em><em>, </em><em>optional</em>) – MAP estimate. If None, calls fit_map() first.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>inv_mass_matrix</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>jnp.ndarray, shape (<a class="reference internal" href="#src.mcmc.MCMCSampler.n_params" title="src.mcmc.MCMCSampler.n_params">n_params</a>, <a class="reference internal" href="#src.mcmc.MCMCSampler.n_params" title="src.mcmc.MCMCSampler.n_params">n_params</a>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.mass_matrix_fisher">
+<span class="sig-name descname"><span class="pre">mass_matrix_fisher</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta_map</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.mass_matrix_fisher"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.mass_matrix_fisher" title="Link to this definition">#</a></dt>
+<dd><p>Estimate the inverse mass matrix from the Fisher information.</p>
+<p>For the GP log-likelihood:</p>
+<blockquote>
+<div><p>I_{ij} = (1/2) tr(K^{-1} dK/dtheta_i  K^{-1} dK/dtheta_j)</p>
+</div></blockquote>
+<p>When <code class="docutils literal notranslate"><span class="pre">matrix_solver=&quot;cholesky_full&quot;</span></code>, the kernel derivatives
+dK/dtheta_i are computed via JAX forward-mode autodiff (jacfwd)
+on the full N×N covariance matrix.</p>
+<p>When <code class="docutils literal notranslate"><span class="pre">matrix_solver=&quot;cholesky_banded&quot;</span></code>, the exact Fisher requires
+the dense N×N kernel and its inverse, which would defeat the purpose
+of banded storage.  Instead, the Fisher is approximated by the
+Hessian of the banded negative log-likelihood at the MAP
+(Fisher ≈ observed information at the MLE).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>theta_map</strong> (<em>array_like</em><em>, </em><em>optional</em>) – Point at which to evaluate Fisher. If None, uses MAP.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>inv_mass_matrix</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>jnp.ndarray, shape (<a class="reference internal" href="#src.mcmc.MCMCSampler.n_params" title="src.mcmc.MCMCSampler.n_params">n_params</a>, <a class="reference internal" href="#src.mcmc.MCMCSampler.n_params" title="src.mcmc.MCMCSampler.n_params">n_params</a>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.mass_matrix_laplace">
+<span class="sig-name descname"><span class="pre">mass_matrix_laplace</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta_map</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.mass_matrix_laplace"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.mass_matrix_laplace" title="Link to this definition">#</a></dt>
+<dd><p>Laplace approximation: inverse mass matrix = inverse Hessian
+of the negative log-likelihood at the MAP.</p>
+<p>The posterior is approximated as:</p>
+<blockquote>
+<div><p>p(theta | data) ~ N(theta_MAP, H^{-1})</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>theta_map</strong> (<em>array_like</em><em>, </em><em>optional</em>) – MAP estimate. If None, calls fit_map() first.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>inv_mass_matrix</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>jnp.ndarray, shape (<a class="reference internal" href="#src.mcmc.MCMCSampler.n_params" title="src.mcmc.MCMCSampler.n_params">n_params</a>, <a class="reference internal" href="#src.mcmc.MCMCSampler.n_params" title="src.mcmc.MCMCSampler.n_params">n_params</a>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.gp_solver.GPSolver.laplace_samples">
+<span class="sig-name descname"><span class="pre">laplace_samples</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_samples</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/gp_solver.html#GPSolver.laplace_samples"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.gp_solver.GPSolver.laplace_samples" title="Link to this definition">#</a></dt>
+<dd><p>Draw samples from the Laplace (Gaussian) approximation
+to the posterior.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n_samples</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>)</p></li>
+<li><p><strong>rng_key</strong> (<em>jax.random.PRNGKey</em><em>, </em><em>optional</em>)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>samples</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>jnp.ndarray, shape (n_samples, <a class="reference internal" href="#src.mcmc.MCMCSampler.n_params" title="src.mcmc.MCMCSampler.n_params">n_params</a>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
 </section>
 <section id="power-spectral-density">
 <h2>Power Spectral Density<a class="headerlink" href="#power-spectral-density" title="Link to this heading">#</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="src.psd.compute_psd">
+<span class="sig-prename descclassname"><span class="pre">src.psd.</span></span><span class="sig-name descname"><span class="pre">compute_psd</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">y</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">t</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dt</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normalization</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'psd'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_min</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_max</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_freq</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">samples_per_peak</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/psd.html#compute_psd"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.psd.compute_psd" title="Link to this definition">#</a></dt>
+<dd><p>Compute the Power Spectral Density of a time series using
+astropy.timeseries.LombScargle.</p>
+<p>Works for both evenly and unevenly sampled data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>y</strong> (<em>array-like</em><em>, </em><em>shape</em><em> (</em><em>N</em><em>,</em><em>)</em>) – Time series values.</p></li>
+<li><p><strong>t</strong> (<em>array-like</em><em>, </em><em>shape</em><em> (</em><em>N</em><em>,</em><em>)</em><em>, </em><em>optional</em>) – Sample times.  If None, integer indices scaled by <code class="docutils literal notranslate"><span class="pre">dt</span></code> are used.</p></li>
+<li><p><strong>dt</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Sampling interval.  Used only when <code class="docutils literal notranslate"><span class="pre">t</span></code> is None (default: 1).</p></li>
+<li><p><strong>normalization</strong> (<em>{&quot;psd&quot;</em><em>, </em><em>&quot;standard&quot;</em><em>, </em><em>&quot;model&quot;</em><em>, </em><em>&quot;log&quot;}</em>) – Passed directly to LombScargle.autopower / power.</p></li>
+<li><p><strong>freq_min</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Minimum frequency to evaluate.</p></li>
+<li><p><strong>freq_max</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Maximum frequency to evaluate.</p></li>
+<li><p><strong>n_freq</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>optional</em>) – Number of frequency grid points.</p></li>
+<li><p><strong>samples_per_peak</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Controls the frequency grid density (default 5).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>freq</strong> (<em>ndarray</em>) – Frequencies in cycles per unit time.</p></li>
+<li><p><strong>power</strong> (<em>ndarray</em>) – PSD evaluated at each frequency.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
 </section>
 <section id="mcmc-sampler">
 <h2>MCMC Sampler<a class="headerlink" href="#mcmc-sampler" title="Link to this heading">#</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="src.mcmc.MCMCSampler">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">src.mcmc.</span></span><span class="sig-name descname"><span class="pre">MCMCSampler</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gp</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/mcmc.html#MCMCSampler"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.mcmc.MCMCSampler" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>Base MCMC sampler for GP hyperparameters.</p>
+<p>Wraps a GPSolver object and provides shared storage, diagnostics,
+summary statistics, corner plots, and dict conversion.  Subclasses
+implement specific sampling algorithms (e.g. NUTS).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>gp</strong> (<a class="reference internal" href="#src.gp_solver.GPSolver" title="src.gp_solver.GPSolver"><em>GPSolver</em></a>) – A configured GPSolver instance.</p>
+</dd>
+</dl>
+<dl class="py property">
+<dt class="sig sig-object py" id="src.mcmc.MCMCSampler.param_keys">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">param_keys</span></span><a class="headerlink" href="#src.mcmc.MCMCSampler.param_keys" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="src.mcmc.MCMCSampler.n_params">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">n_params</span></span><a class="headerlink" href="#src.mcmc.MCMCSampler.n_params" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.mcmc.MCMCSampler.summary">
+<span class="sig-name descname"><span class="pre">summary</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/mcmc.html#MCMCSampler.summary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.mcmc.MCMCSampler.summary" title="Link to this definition">#</a></dt>
+<dd><p>Print summary statistics of the posterior samples.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>stats</strong> – Parameter names mapped to (mean, std, 16%, 50%, 84%).</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)">dict</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.mcmc.MCMCSampler.plot_covariance">
+<span class="sig-name descname"><span class="pre">plot_covariance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'fisher'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta_map</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_sigma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_grid</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">200</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">samples</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">figsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'C0'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">true_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">savefig</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">corner_kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/mcmc.html#MCMCSampler.plot_covariance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.mcmc.MCMCSampler.plot_covariance" title="Link to this definition">#</a></dt>
+<dd><p>Corner plot of 2D covariance ellipses from the Hessian or Fisher
+matrix, with 1D marginal Gaussians on the diagonal.</p>
+<p>Uses <code class="docutils literal notranslate"><span class="pre">corner.corner</span></code> to lay out the figure when MCMC samples
+are provided, and overlays the Laplace/Fisher Gaussian
+approximation (ellipses + 1D marginals).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>method</strong> (<em>{&quot;fisher&quot;</em><em>, </em><em>&quot;hessian_map&quot;</em><em>, </em><em>&quot;laplace&quot;}</em>) – Which matrix to use for the Gaussian approximation.</p></li>
+<li><p><strong>theta_map</strong> (<em>array_like</em><em>, </em><em>optional</em>) – Center of the ellipses. If None, uses MAP estimate.</p></li>
+<li><p><strong>n_sigma</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Number of sigma for the ellipse contours (default 2).</p></li>
+<li><p><strong>n_grid</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Grid resolution for the ellipse curves (default 200).</p></li>
+<li><p><strong>samples</strong> (<em>array_like</em><em>, </em><em>optional</em>) – If provided, plotted as the corner histogram/contours.
+If None, the figure is created with empty axes and only
+the Gaussian approximation is drawn.</p></li>
+<li><p><strong>figsize</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.14)"><em>tuple</em></a><em>, </em><em>optional</em>) – Figure size.</p></li>
+<li><p><strong>color</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Color for Gaussian ellipses and marginals (default “C0”).</p></li>
+<li><p><strong>alpha</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Fill alpha for the ellipse interiors (default 0.3).</p></li>
+<li><p><strong>true_params</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> or </em><em>array_like</em><em>, </em><em>optional</em>) – True parameter values to mark with crosshairs.</p></li>
+<li><p><strong>savefig</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – If provided, save figure to this path.</p></li>
+<li><p><strong>**corner_kwargs</strong> – Extra keyword arguments forwarded to <code class="docutils literal notranslate"><span class="pre">corner.corner</span></code>
+(e.g. <code class="docutils literal notranslate"><span class="pre">quantiles</span></code>, <code class="docutils literal notranslate"><span class="pre">show_titles</span></code>, <code class="docutils literal notranslate"><span class="pre">hist_kwargs</span></code>).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>fig, axes</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>matplotlib Figure and 2D array of Axes.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.mcmc.MCMCSampler.to_dict">
+<span class="sig-name descname"><span class="pre">to_dict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">samples</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/mcmc.html#MCMCSampler.to_dict"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.mcmc.MCMCSampler.to_dict" title="Link to this definition">#</a></dt>
+<dd><p>Convert samples array to a dict keyed by parameter name.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>samples</strong> (<em>jnp.ndarray</em><em>, </em><em>optional</em>) – Shape (n_samples, n_params). If None, uses self.samples.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>d</strong> – {param_name: array of shape (n_samples,)}</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)">dict</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="src.mcmc.BlackJAXSampler">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">src.mcmc.</span></span><span class="sig-name descname"><span class="pre">BlackJAXSampler</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gp</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/mcmc.html#BlackJAXSampler"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.mcmc.BlackJAXSampler" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#src.mcmc.MCMCSampler" title="src.mcmc.MCMCSampler"><code class="xref py py-class docutils literal notranslate"><span class="pre">MCMCSampler</span></code></a></p>
+<p>NUTS sampler using the BlackJAX library.</p>
+<p>Inherits diagnostics, summary, plotting, and dict conversion from
+MCMCSampler.  Adds <code class="docutils literal notranslate"><span class="pre">run_nuts</span></code> for gradient-based No-U-Turn
+sampling with dual-averaging step-size adaptation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>gp</strong> (<a class="reference internal" href="#src.gp_solver.GPSolver" title="src.gp_solver.GPSolver"><em>GPSolver</em></a>) – A configured GPSolver instance.</p></li>
+<li><p><strong>save_dir</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – Directory for all outputs produced by this sampler (corner
+plots, covariance plots, etc.).  Created automatically if it
+does not exist.  When set, <code class="docutils literal notranslate"><span class="pre">save_checkpoint</span></code> will default to
+saving the checkpoint inside this directory.</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="src.mcmc.BlackJAXSampler.run_nuts">
+<span class="sig-name descname"><span class="pre">run_nuts</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_samples</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_warmup</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">500</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">theta_init</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mass_matrix_method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'hessian_map'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">step_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_accept</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.8</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">progress_bar</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_chains</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">checkpoint_file</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/mcmc.html#BlackJAXSampler.run_nuts"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.mcmc.BlackJAXSampler.run_nuts" title="Link to this definition">#</a></dt>
+<dd><p>Run BlackJAX NUTS sampler.</p>
+<p>Uses <code class="docutils literal notranslate"><span class="pre">blackjax.window_adaptation</span></code> for JIT-compiled warmup
+(step-size and mass-matrix adaptation), then <code class="docutils literal notranslate"><span class="pre">jax.lax.scan</span></code>
+for the sampling loop.  Both paths avoid Python-level loops,
+minimizing retracing overhead and memory from accumulated
+intermediates.</p>
+<p>Warmup always runs a single chain to adapt the step size and
+mass matrix.  When <code class="docutils literal notranslate"><span class="pre">n_chains</span> <span class="pre">&gt;</span> <span class="pre">1</span></code>, the adapted parameters
+are shared across all chains, which are initialized with
+jittered copies of the warmup endpoint and sampled in parallel
+via <code class="docutils literal notranslate"><span class="pre">jax.vmap</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n_samples</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of post-warmup samples per chain (default 1000).</p></li>
+<li><p><strong>n_warmup</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of warmup steps for step-size adaptation (default 500).</p></li>
+<li><p><strong>theta_init</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><em>dict</em></a><em> or </em><em>array_like</em><em>, </em><em>optional</em>) – Initial position. If None, uses GPSolver’s MAP estimate.</p></li>
+<li><p><strong>mass_matrix_method</strong> (<em>{&quot;hessian_map&quot;</em><em>, </em><em>&quot;fisher&quot;</em><em>, </em><em>&quot;laplace&quot;</em><em>, </em><em>&quot;diagonal&quot;</em><em>, </em><em>None}</em>) – Method to estimate the mass matrix (delegated to GPSolver).</p></li>
+<li><p><strong>step_size</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Initial NUTS step size before adaptation. If None, a
+heuristic based on the mass matrix scale is used.</p></li>
+<li><p><strong>rng_key</strong> (<em>jax.random.PRNGKey</em><em>, </em><em>optional</em>) – Random key. Default: PRNGKey(0).</p></li>
+<li><p><strong>target_accept</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – Target acceptance rate for dual averaging (default 0.8).</p></li>
+<li><p><strong>progress_bar</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, print periodic progress updates during the
+lax.scan sampling loop (default False).</p></li>
+<li><p><strong>n_chains</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of independent chains to run in parallel via
+<code class="docutils literal notranslate"><span class="pre">jax.vmap</span></code> (default 1).  All chains share the same
+adapted step size and mass matrix from a single warmup.</p></li>
+<li><p><strong>checkpoint_file</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – Default file path for <code class="docutils literal notranslate"><span class="pre">save_checkpoint</span></code>.  When set,
+calling <code class="docutils literal notranslate"><span class="pre">save_checkpoint()</span></code> with no arguments will
+use this path.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>samples</strong> (<em>jnp.ndarray</em>) – Shape <code class="docutils literal notranslate"><span class="pre">(n_samples,</span> <span class="pre">n_params)</span></code> when <code class="docutils literal notranslate"><span class="pre">n_chains=1</span></code>, or
+<code class="docutils literal notranslate"><span class="pre">(n_chains,</span> <span class="pre">n_samples,</span> <span class="pre">n_params)</span></code> when <code class="docutils literal notranslate"><span class="pre">n_chains</span> <span class="pre">&gt;</span> <span class="pre">1</span></code>.</p></li>
+<li><p><strong>info</strong> (<em>dict</em>) – Sampling diagnostics (arrays have a leading chain
+dimension when <code class="docutils literal notranslate"><span class="pre">n_chains</span> <span class="pre">&gt;</span> <span class="pre">1</span></code>).</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.mcmc.BlackJAXSampler.save_checkpoint">
+<span class="sig-name descname"><span class="pre">save_checkpoint</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">append_samples</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plot_corner</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/mcmc.html#BlackJAXSampler.save_checkpoint"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.mcmc.BlackJAXSampler.save_checkpoint" title="Link to this definition">#</a></dt>
+<dd><p>Save sampler state to disk for later resumption.</p>
+<p>When <code class="docutils literal notranslate"><span class="pre">append_samples=True</span></code> (the default), new samples are
+appended to any existing samples already stored in <code class="docutils literal notranslate"><span class="pre">path</span></code>,
+and <code class="docutils literal notranslate"><span class="pre">self.samples</span></code> is cleared from memory.  This enables a
+sample-checkpoint-clear loop that keeps memory usage constant.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>path</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>optional</em>) – File path (saved as <code class="docutils literal notranslate"><span class="pre">.npz</span></code>).  If None, uses the
+<code class="docutils literal notranslate"><span class="pre">checkpoint_file</span></code> set in <code class="docutils literal notranslate"><span class="pre">run_nuts</span></code>, or
+<code class="docutils literal notranslate"><span class="pre">save_dir/checkpoint.npz</span></code> if <code class="docutils literal notranslate"><span class="pre">save_dir</span></code> was set.</p></li>
+<li><p><strong>append_samples</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, append current <code class="docutils literal notranslate"><span class="pre">self.samples</span></code> to any samples
+already on disk, then clear <code class="docutils literal notranslate"><span class="pre">self.samples</span></code> from memory.
+If False, overwrite with only the current in-memory samples.</p></li>
+<li><p><strong>plot_corner</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, load all samples currently on disk after saving
+and write a corner plot to <code class="docutils literal notranslate"><span class="pre">save_dir/corner_plot.png</span></code>
+(or alongside the checkpoint file if <code class="docutils literal notranslate"><span class="pre">save_dir</span></code> is not
+set).</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.mcmc.BlackJAXSampler.load_checkpoint">
+<span class="sig-name descname"><span class="pre">load_checkpoint</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/mcmc.html#BlackJAXSampler.load_checkpoint"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.mcmc.BlackJAXSampler.load_checkpoint" title="Link to this definition">#</a></dt>
+<dd><p>Restore sampler state from a checkpoint file.</p>
+<p>Loads only the NUTS state and adapted kernel parameters needed
+to resume sampling.  Samples stored in the file are <strong>not</strong>
+loaded into memory — use <code class="docutils literal notranslate"><span class="pre">load_samples</span></code> to read them later.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>path</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Path to a <code class="docutils literal notranslate"><span class="pre">.npz</span></code> checkpoint file.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.mcmc.BlackJAXSampler.load_samples">
+<span class="property"><span class="k"><span class="pre">static</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">load_samples</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flatten_chains</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/mcmc.html#BlackJAXSampler.load_samples"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.mcmc.BlackJAXSampler.load_samples" title="Link to this definition">#</a></dt>
+<dd><p>Read all samples from a checkpoint file without loading
+the sampler state.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>path</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Path to a <code class="docutils literal notranslate"><span class="pre">.npz</span></code> checkpoint file.</p></li>
+<li><p><strong>flatten_chains</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True (default), collapse the chain dimension so the
+returned array is always <code class="docutils literal notranslate"><span class="pre">(n_total,</span> <span class="pre">n_params)</span></code>.  Set to
+False to get the raw <code class="docutils literal notranslate"><span class="pre">(n_chains,</span> <span class="pre">n_samples,</span> <span class="pre">n_params)</span></code>
+array for per-chain diagnostics (e.g. R-hat).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>samples</strong> – Shape <code class="docutils literal notranslate"><span class="pre">(n_total,</span> <span class="pre">n_params)</span></code> when <code class="docutils literal notranslate"><span class="pre">flatten_chains=True</span></code>,
+or <code class="docutils literal notranslate"><span class="pre">(n_chains,</span> <span class="pre">n_samples,</span> <span class="pre">n_params)</span></code> otherwise.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="src.mcmc.BlackJAXSampler.resume_nuts">
+<span class="sig-name descname"><span class="pre">resume_nuts</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_samples</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_chains</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">progress_bar</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/src/mcmc.html#BlackJAXSampler.resume_nuts"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#src.mcmc.BlackJAXSampler.resume_nuts" title="Link to this definition">#</a></dt>
+<dd><p>Continue NUTS sampling from a previous run or loaded checkpoint.</p>
+<p>Skips warmup entirely and uses the previously adapted step size
+and mass matrix (shared across all chains).  Returns only the
+new batch of samples.  Call <code class="docutils literal notranslate"><span class="pre">save_checkpoint</span></code> afterward to
+append the batch to disk and free memory.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n_samples</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a>) – Number of additional samples per chain (default 1000).</p></li>
+<li><p><strong>n_chains</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>optional</em>) – Number of chains to run.  If None (default), uses the value
+stored in the sampler state (from <code class="docutils literal notranslate"><span class="pre">run_nuts</span></code> or
+<code class="docutils literal notranslate"><span class="pre">load_checkpoint</span></code>).</p></li>
+<li><p><strong>rng_key</strong> (<em>jax.random.PRNGKey</em><em>, </em><em>optional</em>) – Random key.  If None, advances from the last key used.</p></li>
+<li><p><strong>progress_bar</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – If True, print periodic progress updates (default False).
+Only supported for single-chain runs.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>samples</strong> (<em>jnp.ndarray</em>) – Shape <code class="docutils literal notranslate"><span class="pre">(n_samples,</span> <span class="pre">n_params)</span></code> for single chain, or
+<code class="docutils literal notranslate"><span class="pre">(n_chains,</span> <span class="pre">n_samples,</span> <span class="pre">n_params)</span></code> for multiple chains.</p></li>
+<li><p><strong>info</strong> (<em>dict</em>) – Diagnostics for this batch.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
 </section>
 </section>
 
@@ -438,6 +1615,15 @@
                 <footer class="prev-next-footer d-print-none">
                   
 <div class="prev-next-area">
+    <a class="left-prev"
+       href="../tutorials/mcmc_sampling.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">MCMC Sampling with BlackJAX</p>
+      </div>
+    </a>
 </div>
                 </footer>
               
@@ -456,12 +1642,84 @@
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#analytic-kernel">Analytic Kernel</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#numerical-kernel">Numerical Kernel</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#lightcurve-model">Lightcurve Model</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#gp-solver">GP Solver</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#power-spectral-density">Power Spectral Density</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#mcmc-sampler">MCMC Sampler</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#analytic-kernel">Analytic Kernel</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel.omega0"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.omega0()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel.R_Gamma"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.R_Gamma()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel.cn_squared"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.cn_squared()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel.kernel_single_latitude"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.kernel_single_latitude()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel.kernel"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.kernel()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel.kernel_solid_body"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.kernel_solid_body()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel.compute_psd"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.compute_psd()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.analytic_kernel.AnalyticKernel.build_jax"><code class="docutils literal notranslate"><span class="pre">AnalyticKernel.build_jax()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#numerical-kernel">Numerical Kernel</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.numerical_kernel.NumericalKernel"><code class="docutils literal notranslate"><span class="pre">NumericalKernel</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.numerical_kernel.NumericalKernel.get_acf"><code class="docutils literal notranslate"><span class="pre">NumericalKernel.get_acf()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.numerical_kernel.NumericalKernel.compute_psd"><code class="docutils literal notranslate"><span class="pre">NumericalKernel.compute_psd()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.numerical_kernel.NumericalKernel.plot_autocorrelation"><code class="docutils literal notranslate"><span class="pre">NumericalKernel.plot_autocorrelation()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.numerical_kernel.generate_sims"><code class="docutils literal notranslate"><span class="pre">generate_sims()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.numerical_kernel.avg_covariance_tlag"><code class="docutils literal notranslate"><span class="pre">avg_covariance_tlag()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#gp-solver">GP Solver</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver"><code class="docutils literal notranslate"><span class="pre">GPSolver</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.DEFAULT_BOUNDS"><code class="docutils literal notranslate"><span class="pre">GPSolver.DEFAULT_BOUNDS</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.build_jax"><code class="docutils literal notranslate"><span class="pre">GPSolver.build_jax()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.log_likelihood"><code class="docutils literal notranslate"><span class="pre">GPSolver.log_likelihood()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.predict"><code class="docutils literal notranslate"><span class="pre">GPSolver.predict()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.plot_prediction"><code class="docutils literal notranslate"><span class="pre">GPSolver.plot_prediction()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.sample_prior"><code class="docutils literal notranslate"><span class="pre">GPSolver.sample_prior()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.sample_posterior"><code class="docutils literal notranslate"><span class="pre">GPSolver.sample_posterior()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.compute_acf"><code class="docutils literal notranslate"><span class="pre">GPSolver.compute_acf()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.compute_kernel"><code class="docutils literal notranslate"><span class="pre">GPSolver.compute_kernel()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.fit_acf"><code class="docutils literal notranslate"><span class="pre">GPSolver.fit_acf()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.fit_acf_parallel"><code class="docutils literal notranslate"><span class="pre">GPSolver.fit_acf_parallel()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.fit_acf_psd"><code class="docutils literal notranslate"><span class="pre">GPSolver.fit_acf_psd()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.plot_acf"><code class="docutils literal notranslate"><span class="pre">GPSolver.plot_acf()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.plot_psd"><code class="docutils literal notranslate"><span class="pre">GPSolver.plot_psd()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.plot_covariance_matrix"><code class="docutils literal notranslate"><span class="pre">GPSolver.plot_covariance_matrix()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.get_theta"><code class="docutils literal notranslate"><span class="pre">GPSolver.get_theta()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.update_hparam"><code class="docutils literal notranslate"><span class="pre">GPSolver.update_hparam()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.fit_map"><code class="docutils literal notranslate"><span class="pre">GPSolver.fit_map()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.fit_map_parallel"><code class="docutils literal notranslate"><span class="pre">GPSolver.fit_map_parallel()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.mass_matrix_hessian_map"><code class="docutils literal notranslate"><span class="pre">GPSolver.mass_matrix_hessian_map()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.mass_matrix_fisher"><code class="docutils literal notranslate"><span class="pre">GPSolver.mass_matrix_fisher()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.mass_matrix_laplace"><code class="docutils literal notranslate"><span class="pre">GPSolver.mass_matrix_laplace()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.gp_solver.GPSolver.laplace_samples"><code class="docutils literal notranslate"><span class="pre">GPSolver.laplace_samples()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#power-spectral-density">Power Spectral Density</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.psd.compute_psd"><code class="docutils literal notranslate"><span class="pre">compute_psd()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#mcmc-sampler">MCMC Sampler</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.MCMCSampler"><code class="docutils literal notranslate"><span class="pre">MCMCSampler</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.MCMCSampler.param_keys"><code class="docutils literal notranslate"><span class="pre">MCMCSampler.param_keys</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.MCMCSampler.n_params"><code class="docutils literal notranslate"><span class="pre">MCMCSampler.n_params</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.MCMCSampler.summary"><code class="docutils literal notranslate"><span class="pre">MCMCSampler.summary()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.MCMCSampler.plot_covariance"><code class="docutils literal notranslate"><span class="pre">MCMCSampler.plot_covariance()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.MCMCSampler.to_dict"><code class="docutils literal notranslate"><span class="pre">MCMCSampler.to_dict()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.BlackJAXSampler"><code class="docutils literal notranslate"><span class="pre">BlackJAXSampler</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.BlackJAXSampler.run_nuts"><code class="docutils literal notranslate"><span class="pre">BlackJAXSampler.run_nuts()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.BlackJAXSampler.save_checkpoint"><code class="docutils literal notranslate"><span class="pre">BlackJAXSampler.save_checkpoint()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.BlackJAXSampler.load_checkpoint"><code class="docutils literal notranslate"><span class="pre">BlackJAXSampler.load_checkpoint()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.BlackJAXSampler.load_samples"><code class="docutils literal notranslate"><span class="pre">BlackJAXSampler.load_samples()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#src.mcmc.BlackJAXSampler.resume_nuts"><code class="docutils literal notranslate"><span class="pre">BlackJAXSampler.resume_nuts()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
 </ul>
   </nav></div>
 
