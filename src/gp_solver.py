@@ -451,7 +451,7 @@ class GPSolver:
     def __init__(self, x, y, yerr, model_or_hparam, kernel_type="analytic",
                  mean=None, fit_sigma_n=False, bounds=None,
                  log_prior=None, matrix_solver="cholesky_banded",
-                 save_dir=None, **kernel_kwargs):
+                 bandwidth=None, save_dir=None, **kernel_kwargs):
         """
         Parameters
         ----------
@@ -547,10 +547,15 @@ class GPSolver:
         else:
             self.bounds = jnp.asarray(bounds, dtype=jnp.float64)
 
-        # Bandwidth for banded solver (compile-time constant derived from
-        # prior upper bounds so it is sufficient for any sampled parameters).
+        # Bandwidth for banded solver (compile-time constant).
+        # Can be set explicitly via the bandwidth argument; otherwise derived
+        # from the upper bounds of envelope parameters so that the banded
+        # approximation is valid for any parameters within the prior.
         if self.matrix_solver == "cholesky_banded":
-            self.bandwidth = self._compute_bandwidth()
+            if bandwidth is not None:
+                self.bandwidth = min(int(bandwidth), self.N - 1)
+            else:
+                self.bandwidth = self._compute_bandwidth()
             _n_banded = (self.bandwidth + 1) * self.N
             _n_full   = self.N * self.N
             _sparsity = 100.0 * (1.0 - _n_banded / _n_full)
@@ -2313,12 +2318,16 @@ class GPSolver:
     # Mass matrix helpers
     # =================================================================
 
-    def _build_neg_log_lik(self):
+    def _build_neg_log_lik(self, force_dense=False):
         """Return a JIT-compiled negative log-likelihood function.
 
-        Respects ``self.matrix_solver``: when ``"cholesky_banded"`` the
-        returned function uses ``_gp_log_likelihood_banded`` (O(Nb) memory),
-        otherwise it falls back to the dense ``_gp_log_likelihood`` (O(N^2)).
+        Parameters
+        ----------
+        force_dense : bool
+            If True, always use the dense ``_gp_log_likelihood`` regardless of
+            ``self.matrix_solver``.  Required for second-order autodiff (Hessian):
+            the banded compact storage format does not differentiate cleanly
+            through JAX's AD and produces NaNs in the Hessian.
         """
         x, y, yerr = self.x, self.y, self.yerr
         mean_val = self.mean_val
@@ -2327,7 +2336,7 @@ class GPSolver:
         qn, qw = self._quad_nodes, self._quad_weights
         to_phys = self._to_physical
 
-        if self.matrix_solver == "cholesky_banded":
+        if self.matrix_solver == "cholesky_banded" and not force_dense:
             b = self.bandwidth
 
             @jax.jit
@@ -2373,7 +2382,9 @@ class GPSolver:
         else:
             theta_map = jnp.asarray(theta_map, dtype=jnp.float64)
 
-        neg_log_lik = self._build_neg_log_lik()
+        # Always use dense solver: banded compact storage does not differentiate
+        # cleanly through JAX's second-order AD and produces NaNs in the Hessian.
+        neg_log_lik = self._build_neg_log_lik(force_dense=True)
 
         hessian_fn = jax.jit(jax.hessian(neg_log_lik))
         H = jax.block_until_ready(hessian_fn(theta_map))
@@ -2388,7 +2399,7 @@ class GPSolver:
         return self.inverse_mass_matrix
 
     # =================================================================
-    # Mass matrix estimation: Method 2 -- Fisher information
+    # Mass matrix estimation: Method 2 -- Fisher information (analytic)
     # =================================================================
 
     def mass_matrix_fisher(self, theta_map=None):
@@ -2425,9 +2436,11 @@ class GPSolver:
         else:
             theta_map = jnp.asarray(theta_map, dtype=jnp.float64)
 
-        # Banded path: approximate Fisher via Hessian of banded log-likelihood
+        # Banded path: approximate Fisher via Hessian of dense log-likelihood.
+        # Must use force_dense=True — banded compact storage does not differentiate
+        # cleanly through JAX's second-order AD and produces NaNs in the Hessian.
         if self.matrix_solver == "cholesky_banded":
-            neg_log_lik = self._build_neg_log_lik()
+            neg_log_lik = self._build_neg_log_lik(force_dense=True)
             hessian_fn = jax.jit(jax.hessian(neg_log_lik))
             H = jax.block_until_ready(hessian_fn(theta_map))
 

@@ -319,11 +319,11 @@ class LightcurveModel(object):
         tsamp (float, optional): Sampling cadence. Defaults to 0.02.
         limb_darkening (bool, optional): Flag to enable limb darkening. Defaults to False.
     """
-    def __init__(self, peq=4.0, kappa=0.0, inc=np.pi/2, nspot=10,
+    def __init__(self, peq=4.0, kappa=0.0, inc=np.pi/2, nspot=None,
                  tau_spot=None, tem=2, tdec=2, alpha_max=0.1, fspot=0, lspot=5,
                  long=[0, 2*np.pi], lat=[-np.pi/2, np.pi/2],
                  tsim=28, tsamp=0.02, limb_darkening=False, tmax=None,
-                 rotate=True, grow=True):
+                 rotate=True, grow=True, nspot_rate=None):
 
         # simulation parameters
         self.tsim = tsim
@@ -335,7 +335,17 @@ class LightcurveModel(object):
         self.kappa = kappa
         self.inc = inc
         self.inc_deg = inc * 180/np.pi
-        self.nspot = int(nspot)
+
+        # resolve nspot from nspot_rate if needed
+        if nspot_rate is not None:
+            self.nspot_rate = float(nspot_rate)
+            self.nspot = max(1, int(nspot_rate * tsim))
+        elif nspot is not None:
+            self.nspot_rate = None
+            self.nspot = int(nspot)
+        else:
+            self.nspot_rate = None
+            self.nspot = 10
 
         # spot properties (scalars)
         if tau_spot is not None:
@@ -372,15 +382,20 @@ class LightcurveModel(object):
         self.flux = self.Flux(self.t)
 
     @classmethod
-    def from_spot_model(cls, spot_model: "SpotEvolutionModel", nspot: int, **kwargs):
+    def from_spot_model(cls, spot_model: "SpotEvolutionModel",
+                        nspot: int = None, *, nspot_rate: float = None, **kwargs):
         """Construct a LightcurveModel from a SpotEvolutionModel.
 
         Parameters
         ----------
         spot_model : SpotEvolutionModel
             Fully configured spot evolution model.
-        nspot : int
+        nspot : int, optional
             Total number of spots to simulate.
+        nspot_rate : float, optional
+            Spot emergence rate [spots/day]. The actual number of spots is
+            ``max(1, int(nspot_rate * tsim))``. Exactly one of ``nspot`` or
+            ``nspot_rate`` must be provided.
         **kwargs
             Forwarded to LightcurveModel.__init__ (e.g. tsim, tsamp, lat, long).
 
@@ -388,6 +403,10 @@ class LightcurveModel(object):
         -------
         LightcurveModel
         """
+        if nspot is None and nspot_rate is None:
+            raise ValueError("Provide either nspot or nspot_rate.")
+        if nspot is not None and nspot_rate is not None:
+            raise ValueError("Provide either nspot or nspot_rate, not both.")
         from .envelope import TrapezoidAsymmetricEnvelope
         env = spot_model.envelope
         if env is not None:
@@ -413,6 +432,7 @@ class LightcurveModel(object):
             kappa=vis.kappa if vis is not None else kwargs.pop("kappa", 0.0),
             inc=vis.inc if vis is not None else kwargs.pop("inc", np.pi / 2),
             nspot=nspot,
+            nspot_rate=nspot_rate,
             tem=tau_em,
             tdec=tau_dec,
             alpha_max=alpha_max,
@@ -424,7 +444,8 @@ class LightcurveModel(object):
         )
 
     @classmethod
-    def from_hparam(cls, hparam: dict, nspot: int, **kwargs):
+    def from_hparam(cls, hparam: dict, nspot: int = None, *,
+                    nspot_rate: float = None, **kwargs):
         """Construct a LightcurveModel from a GPSolver-compatible hparam dict.
 
         Accepts the same raw hparam dict that GPSolver/AnalyticKernel take,
@@ -437,8 +458,11 @@ class LightcurveModel(object):
         hparam : dict
             Raw hyperparameter dict.  Must contain peq, kappa, inc, lspot,
             tau_spot (or tau_em/tau_dec), and an amplitude specification.
-        nspot : int
-            Total number of spots to simulate (distinct from nspot_rate).
+        nspot : int, optional
+            Total number of spots to simulate.
+        nspot_rate : float, optional
+            Spot emergence rate [spots/day]. Exactly one of ``nspot`` or
+            ``nspot_rate`` must be provided.
         **kwargs
             Forwarded to LightcurveModel.__init__ (e.g. tsim, tsamp, lat, long).
 
@@ -446,13 +470,18 @@ class LightcurveModel(object):
         -------
         LightcurveModel
         """
+        if nspot is None and nspot_rate is None:
+            raise ValueError("Provide either nspot or nspot_rate.")
+        if nspot is not None and nspot_rate is not None:
+            raise ValueError("Provide either nspot or nspot_rate, not both.")
         p = resolve_hparam(hparam)
         tau_em  = p.get("tau_em",  p["tau_spot"])
         tau_dec = p.get("tau_dec", p["tau_spot"])
         alpha_max = p.get("alpha_max", kwargs.pop("alpha_max", 0.1))
         fspot     = p.get("fspot",     kwargs.pop("fspot", 0.0))
         return cls(
-            peq=p["peq"], kappa=p["kappa"], inc=p["inc"], nspot=nspot,
+            peq=p["peq"], kappa=p["kappa"], inc=p["inc"],
+            nspot=nspot, nspot_rate=nspot_rate,
             tem=tau_em, tdec=tau_dec,
             alpha_max=alpha_max, fspot=fspot, lspot=p["lspot"],
             **kwargs,
