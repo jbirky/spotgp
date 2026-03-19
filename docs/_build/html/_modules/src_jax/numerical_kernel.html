@@ -145,15 +145,17 @@
 </button></div>
         <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
     <div class="bd-toc-item navbar-nav active">
-        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Basics</span></p>
 <ul class="nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="../../tutorials/hparam_guide.html">Understanding the Hyperparameters</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../tutorials/lightcurve_demo.html">Starspot Lightcurve Model</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../tutorials/gp_solver_quickstart.html">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../tutorials/custom_envelope.html">Custom Envelope Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../overview.html">Code Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/lightcurve_demo.html">Lightcurve Animations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/trapezoid_symmetric_tutorial.html">Spot Evolution Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/gp_optimization.html">GPSolver and Hyperparameter Optimization</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Advanced</span></p>
+<ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../../tutorials/custom_latitude_distribution.html">Custom Latitude Distributions</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../tutorials/gp_optimization.html">GP Hyperparameter Optimization</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../tutorials/mcmc_blackjax.html">MCMC with BlackJAX</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tutorials/mcmc_sampling.html">MCMC Sampling with BlackJAX</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul class="nav bd-sidenav">
@@ -322,9 +324,10 @@
 <span class="k">except</span><span class="p">:</span>
     <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Unable to import matplotlib&quot;</span><span class="p">)</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">starspot</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">lightcurve</span> <span class="k">as</span> <span class="n">starspot</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.psd</span><span class="w"> </span><span class="kn">import</span> <span class="n">compute_psd</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.params</span><span class="w"> </span><span class="kn">import</span> <span class="n">resolve_hparam</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.spot_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpotEvolutionModel</span>
 
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;NumericalKernel&quot;</span><span class="p">,</span> <span class="s2">&quot;generate_sims&quot;</span><span class="p">,</span> <span class="s2">&quot;avg_covariance_tlag&quot;</span><span class="p">]</span>
 
@@ -396,7 +399,7 @@
 
 <span class="sd">    Parameters:</span>
 <span class="sd">    - hparam: dict of hyperparameters.</span>
-<span class="sd">              Required keys: peq, kappa, inc, lspot, tau, alpha_max.</span>
+<span class="sd">              Required keys: peq, kappa, inc, lspot, tau_spot, alpha_max.</span>
 <span class="sd">              For the kernel amplitude, provide EITHER:</span>
 <span class="sd">                - sigma_k : overall amplitude prefactor, OR</span>
 <span class="sd">                - nspot + fspot : number of spots and spot contrast, from which</span>
@@ -408,27 +411,39 @@
 <span class="sd">    - verbose: whether to print verbose output (default: True)</span>
 
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hparam</span><span class="p">,</span> <span class="n">tsim</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">tsamp</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">nsim</span><span class="o">=</span><span class="mf">1e3</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
-
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model_or_hparam</span><span class="p">,</span> <span class="n">tsim</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">tsamp</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">nsim</span><span class="o">=</span><span class="mf">1e3</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        model_or_hparam : SpotEvolutionModel or dict</span>
+<span class="sd">            Either a SpotEvolutionModel (new API) or a raw hparam dict</span>
+<span class="sd">            (backward-compatible old API). The dict must contain &#39;nspot&#39;.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">t0</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
 
-        <span class="c1"># NumericalKernel always requires nspot for the forward simulations,</span>
-        <span class="c1"># regardless of which amplitude mode is used.</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">hparam</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;nspot&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">hparam</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;hparam must be a dict containing &#39;nspot&#39; &quot;</span>
-                             <span class="s2">&quot;(required for numerical simulations)&quot;</span><span class="p">)</span>
+        <span class="c1"># Accept SpotEvolutionModel or legacy hparam dict</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">model_or_hparam</span><span class="p">,</span> <span class="n">SpotEvolutionModel</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">spot_model</span> <span class="o">=</span> <span class="n">model_or_hparam</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span> <span class="o">=</span> <span class="n">model_or_hparam</span><span class="o">.</span><span class="n">to_hparam</span><span class="p">()</span>
+            <span class="k">if</span> <span class="s2">&quot;nspot&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;NumericalKernel requires &#39;nspot&#39; in the hparam dict &quot;</span>
+                    <span class="s2">&quot;for forward simulations.&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">model_or_hparam</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;nspot&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">model_or_hparam</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;hparam must be a dict containing &#39;nspot&#39; &quot;</span>
+                                 <span class="s2">&quot;(required for numerical simulations)&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span> <span class="o">=</span> <span class="n">resolve_hparam</span><span class="p">(</span><span class="n">model_or_hparam</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">spot_model</span> <span class="o">=</span> <span class="n">SpotEvolutionModel</span><span class="o">.</span><span class="n">from_hparam</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">)</span>
 
-        <span class="c1"># Validate, resolve envelope, and compute sigma_k</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span> <span class="o">=</span> <span class="n">resolve_hparam</span><span class="p">(</span><span class="n">hparam</span><span class="p">)</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">peq</span>       <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;peq&quot;</span><span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">kappa</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;kappa&quot;</span><span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">inc</span>       <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;inc&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">peq</span>       <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spot_model</span><span class="o">.</span><span class="n">peq</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">kappa</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spot_model</span><span class="o">.</span><span class="n">kappa</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inc</span>       <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spot_model</span><span class="o">.</span><span class="n">inc</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">nspot</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;nspot&quot;</span><span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">lspot</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;lspot&quot;</span><span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">tau</span>       <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;tau&quot;</span><span class="p">]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">alpha_max</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;alpha_max&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">sigma_k</span>   <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;sigma_k&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lspot</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spot_model</span><span class="o">.</span><span class="n">lspot</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tau_spot</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spot_model</span><span class="o">.</span><span class="n">tau_spot</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">alpha_max</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spot_model</span><span class="o">.</span><span class="n">alpha_max</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sigma_k</span>   <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spot_model</span><span class="o">.</span><span class="n">sigma_k</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span>   <span class="o">=</span> <span class="n">verbose</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">tsim</span>      <span class="o">=</span> <span class="n">tsim</span>
@@ -455,12 +470,12 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">theta</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
             <span class="n">peq</span><span class="p">,</span> <span class="n">kappa</span><span class="p">,</span> <span class="n">inc</span><span class="p">,</span> <span class="n">nspot</span> <span class="o">=</span> <span class="n">theta</span><span class="p">[</span><span class="s2">&quot;peq&quot;</span><span class="p">],</span> <span class="n">theta</span><span class="p">[</span><span class="s2">&quot;kappa&quot;</span><span class="p">],</span> <span class="n">theta</span><span class="p">[</span><span class="s2">&quot;inc&quot;</span><span class="p">],</span> <span class="n">theta</span><span class="p">[</span><span class="s2">&quot;nspot&quot;</span><span class="p">]</span>
-            <span class="n">lspot</span><span class="p">,</span> <span class="n">tau</span><span class="p">,</span> <span class="n">alpha</span> <span class="o">=</span> <span class="n">theta</span><span class="p">[</span><span class="s2">&quot;lspot&quot;</span><span class="p">],</span> <span class="n">theta</span><span class="p">[</span><span class="s2">&quot;tau&quot;</span><span class="p">],</span> <span class="n">theta</span><span class="p">[</span><span class="s2">&quot;alpha_max&quot;</span><span class="p">]</span>
+            <span class="n">lspot</span><span class="p">,</span> <span class="n">tau_spot</span><span class="p">,</span> <span class="n">alpha</span> <span class="o">=</span> <span class="n">theta</span><span class="p">[</span><span class="s2">&quot;lspot&quot;</span><span class="p">],</span> <span class="n">theta</span><span class="p">[</span><span class="s2">&quot;tau_spot&quot;</span><span class="p">],</span> <span class="n">theta</span><span class="p">[</span><span class="s2">&quot;alpha_max&quot;</span><span class="p">]</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">peq</span><span class="p">,</span> <span class="n">kappa</span><span class="p">,</span> <span class="n">inc</span><span class="p">,</span> <span class="n">nspot</span><span class="p">,</span> <span class="n">lspot</span><span class="p">,</span> <span class="n">tau</span><span class="p">,</span> <span class="n">alpha</span> <span class="o">=</span> <span class="n">theta</span>
+            <span class="n">peq</span><span class="p">,</span> <span class="n">kappa</span><span class="p">,</span> <span class="n">inc</span><span class="p">,</span> <span class="n">nspot</span><span class="p">,</span> <span class="n">lspot</span><span class="p">,</span> <span class="n">tau_spot</span><span class="p">,</span> <span class="n">alpha</span> <span class="o">=</span> <span class="n">theta</span>
 
         <span class="n">fluxes</span> <span class="o">=</span> <span class="n">generate_sims</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">peq</span><span class="p">,</span> <span class="n">kappa</span><span class="p">,</span> <span class="n">inc</span><span class="p">,</span> <span class="n">nspot</span><span class="p">]),</span>
-                               <span class="n">nsim</span><span class="p">,</span> <span class="n">tem</span><span class="o">=</span><span class="n">tau</span><span class="p">,</span> <span class="n">tdec</span><span class="o">=</span><span class="n">tau</span><span class="p">,</span> <span class="n">alpha_max</span><span class="o">=</span><span class="n">alpha</span><span class="p">,</span>
+                               <span class="n">nsim</span><span class="p">,</span> <span class="n">tem</span><span class="o">=</span><span class="n">tau_spot</span><span class="p">,</span> <span class="n">tdec</span><span class="o">=</span><span class="n">tau_spot</span><span class="p">,</span> <span class="n">alpha_max</span><span class="o">=</span><span class="n">alpha</span><span class="p">,</span>
                                <span class="n">lspot</span><span class="o">=</span><span class="n">lspot</span><span class="p">,</span> <span class="n">tsim</span><span class="o">=</span><span class="n">tsim</span><span class="p">,</span> <span class="n">tsamp</span><span class="o">=</span><span class="n">tsamp</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">fluxes</span>
 

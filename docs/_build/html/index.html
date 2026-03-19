@@ -45,13 +45,11 @@
     <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
     <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
-    <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
-    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
     <script>DOCUMENTATION_OPTIONS.pagename = 'index';</script>
     <script src="_static/notebook_download.js?v=2428894a"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Understanding the Hyperparameters" href="tutorials/hparam_guide.html" />
+    <link rel="next" title="Code Overview" href="overview.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="0.1.0" />
@@ -149,15 +147,17 @@
 </button></div>
         <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
     <div class="bd-toc-item navbar-nav active">
-        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Basics</span></p>
 <ul class="nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="tutorials/hparam_guide.html">Understanding the Hyperparameters</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/lightcurve_demo.html">Starspot Lightcurve Model</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/gp_solver_quickstart.html">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/custom_envelope.html">Custom Envelope Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="overview.html">Code Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/lightcurve_demo.html">Lightcurve Animations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/trapezoid_symmetric_tutorial.html">Spot Evolution Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/gp_optimization.html">GPSolver and Hyperparameter Optimization</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Advanced</span></p>
+<ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="tutorials/custom_latitude_distribution.html">Custom Latitude Distributions</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/gp_optimization.html">GP Hyperparameter Optimization</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/mcmc_blackjax.html">MCMC with BlackJAX</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/mcmc_sampling.html">MCMC Sampling with BlackJAX</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul class="nav bd-sidenav">
@@ -390,7 +390,6 @@
             <nav aria-label="Page">
                 <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#installation">Installation</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#modules">Modules</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#documentation-contents">Documentation Contents</a><ul class="nav section-nav flex-column">
 </ul>
 </li>
@@ -424,100 +423,38 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[jax]&quot;</span>
 </pre></div>
 </div>
-</section>
-<section id="modules">
-<h2>Modules<a class="headerlink" href="#modules" title="Link to this heading">#</a></h2>
-<p>Both <code class="docutils literal notranslate"><span class="pre">src_numpy</span></code> and <code class="docutils literal notranslate"><span class="pre">src_jax</span></code> expose the same interface. The JAX backend adds JIT compilation, <code class="docutils literal notranslate"><span class="pre">vmap</span></code>-vectorized latitude integration, and automatic differentiation (required for NUTS sampling). The main class modules for the package are:</p>
-<div class="pst-scrollable-table-container"><table class="table">
-<thead>
-<tr class="row-odd"><th class="head"><p>Module</p></th>
-<th class="head"><p>Description</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">starspot</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">LightcurveModel</span></code> — physical simulator for rotating spotted stars. Generates synthetic flux time series from spot parameters (size, contrast, lifetime, latitude). Includes animation utilities.</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">analytic_kernel</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code> — closed-form GP kernel derived from a trapezoidal spot envelope. Computes the autocorrelation $R_\Gamma(\tau)$ and power spectral density analytically via Fourier coefficients of the spot visibility function averaged over latitude.</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">numerical_kernel</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">NumericalKernel</span></code> — empirical kernel estimated by Monte Carlo averaging of synthetic lightcurve autocorrelations. Useful for validating the analytic kernel equations.</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">gp_solver</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">GPSolver</span></code> — Gaussian Process inference engine. Builds the covariance matrix from a kernel, evaluates the marginal log-likelihood via Cholesky decomposition, and finds the MAP estimate. The JAX version supports autodiff gradients.</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">mcmc</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">MCMCSampler</span></code>  — A class for analyzing and visualizing MCMC results. Sampling functions using specific packages are build in inheritance classes (e.g. <code class="docutils literal notranslate"><span class="pre">BlackJAXSampler</span></code>).</p></td>
-</tr>
-</tbody>
-</table>
-</div>
 <br>
 <br>
 </section>
 <section id="documentation-contents">
 <h2>Documentation Contents<a class="headerlink" href="#documentation-contents" title="Link to this heading">#</a></h2>
 <div class="toctree-wrapper compound">
-<p aria-level="2" class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Basics</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/hparam_guide.html">Understanding the Hyperparameters</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/hparam_guide.html#The-kernel-formula">The kernel formula</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/hparam_guide.html#resolve_hparam-—-validation-and-normalization"><code class="docutils literal notranslate"><span class="pre">resolve_hparam</span></code> — validation and normalization</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/hparam_guide.html#1-—-Rotation-geometry-parameters">1 — Rotation geometry parameters</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/hparam_guide.html#2-—-Amplitude-parameterizations">2 — Amplitude parameterizations</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/hparam_guide.html#3-—-Envelope-shape-parameters">3 — Envelope shape parameters</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/hparam_guide.html#4-—-Comparing-all-three-envelopes">4 — Comparing all three envelopes</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/hparam_guide.html#5-—-Computing-R_\Gamma-for-a-custom-envelope">5 — Computing <span class="math notranslate nohighlight">\(R_\Gamma\)</span> for a custom envelope</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/hparam_guide.html#Quick-reference">Quick reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="overview.html">Code Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/lightcurve_demo.html">Lightcurve Animations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/trapezoid_symmetric_tutorial.html">Spot Evolution Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/gp_optimization.html">GPSolver and Hyperparameter Optimization</a></li>
 </ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/lightcurve_demo.html">Starspot Lightcurve Model</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/lightcurve_demo.html#Generate-a-lightcurve-with-given-spot-parameters">Generate a lightcurve with given spot parameters</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/lightcurve_demo.html#LightcurveModel-Parameters"><code class="docutils literal notranslate"><span class="pre">LightcurveModel</span></code> Parameters</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/lightcurve_demo.html#Add-synthetic-noise-to-the-lightcurve">Add synthetic noise to the lightcurve</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/lightcurve_demo.html#Create-an-animation-of-the-star-rotation-and-lightcurve">Create an animation of the star rotation and lightcurve</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/gp_solver_quickstart.html">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a><ul>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_solver_quickstart.html#1.-Generate-Synthetic-Data">1. Generate Synthetic Data</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_solver_quickstart.html#2.-Fit-GP-with-src_numpy">2. Fit GP with <code class="docutils literal notranslate"><span class="pre">src_numpy</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_solver_quickstart.html#3.-Fit-GP-with-src_jax">3. Fit GP with <code class="docutils literal notranslate"><span class="pre">src_jax</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_solver_quickstart.html#4.-GP-Prediction">4. GP Prediction</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_solver_quickstart.html#5.-Kernel-/-ACF">5. Kernel / ACF</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_solver_quickstart.html#6.-Find-MAP-Estimate">6. Find MAP Estimate</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/custom_envelope.html">Custom Envelope Functions</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_envelope.html#Deriving-R_\Gamma-for-a-Gaussian-envelope">Deriving <span class="math notranslate nohighlight">\(R_\Gamma\)</span> for a Gaussian envelope</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_envelope.html#Define-the-Gaussian-envelope">Define the Gaussian envelope</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_envelope.html#Compare-envelope-shapes">Compare envelope shapes</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_envelope.html#Compare-GP-kernels">Compare GP kernels</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_envelope.html#Compare-power-spectral-densities">Compare power spectral densities</a></li>
-</ul>
-</li>
+</div>
+<div class="toctree-wrapper compound">
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Advanced</span></p>
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/custom_latitude_distribution.html">Custom Latitude Distributions</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#1.-Shared-kernel-parameters">1. Shared kernel parameters</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#2.-Define-latitude-distributions">2. Define latitude distributions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#3.-Visualize-the-distributions">3. Visualize the distributions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#4.-Compute-kernels-with-each-distribution">4. Compute kernels with each distribution</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#5.-Compare-kernel-shapes">5. Compare kernel shapes</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#6.-Effect-on-the-power-spectral-density">6. Effect on the power spectral density</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#7.-Latitude-distributions-and-differential-rotation">7. Latitude distributions and differential rotation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#8.-Using-a-custom-lat_dist-with-GPSolver">8. Using a custom <code class="docutils literal notranslate"><span class="pre">lat_dist</span></code> with <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#Tips:">Tips:</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#1.-Default-uniform-distribution">1. Default uniform distribution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#2.-Equatorial-band">2. Equatorial band</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#3.-Gaussian-weighted-distribution">3. Gaussian-weighted distribution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#4.-Polar-band">4. Polar band</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/custom_latitude_distribution.html#5.-Kernel-and-lightcurve-comparison">5. Kernel and lightcurve comparison</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/gp_optimization.html">GP Hyperparameter Optimization</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_optimization.html#Generate-synthetic-lightcurve-data">Generate synthetic lightcurve data</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_optimization.html#Set-up-optimization-bounds-and-initialize-GP">Set up optimization bounds and initialize GP</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_optimization.html#Example-1:-MAP-solution">Example 1: MAP solution</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/gp_optimization.html#Example-2:-ACF-fit">Example 2: ACF fit</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/mcmc_blackjax.html">MCMC with BlackJAX</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/mcmc_blackjax.html#Initialize-the-GP-and-parameter-bounds">Initialize the GP and parameter bounds</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/mcmc_blackjax.html#Run-MCMC-with-BlackJAX">Run MCMC with BlackJAX</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/mcmc_sampling.html">MCMC Sampling with BlackJAX</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/mcmc_sampling.html#1.-Build-the-spot-model-and-simulate-a-lightcurve">1. Build the spot model and simulate a lightcurve</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/mcmc_sampling.html#2.-Find-the-MAP-estimate">2. Find the MAP estimate</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/mcmc_sampling.html#3.-Run-NUTS-warmup-and-sampling">3. Run NUTS warmup and sampling</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/mcmc_sampling.html#4.-Diagnostics-and-posterior-summary">4. Diagnostics and posterior summary</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/mcmc_sampling.html#5.-Resume-sampling-in-batches">5. Resume sampling in batches</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorials/mcmc_sampling.html#6.-Visualize-the-posterior">6. Visualize the posterior</a></li>
 </ul>
 </li>
 </ul>
@@ -560,11 +497,11 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
                   
 <div class="prev-next-area">
     <a class="right-next"
-       href="tutorials/hparam_guide.html"
+       href="overview.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Understanding the Hyperparameters</p>
+        <p class="prev-next-title">Code Overview</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -587,7 +524,6 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#installation">Installation</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#modules">Modules</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#documentation-contents">Documentation Contents</a><ul class="nav section-nav flex-column">
 </ul>
 </li>

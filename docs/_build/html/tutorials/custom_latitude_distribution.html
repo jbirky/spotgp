@@ -52,8 +52,8 @@
     <script src="../_static/notebook_download.js?v=2428894a"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="GP Hyperparameter Optimization" href="gp_optimization.html" />
-    <link rel="prev" title="Custom Envelope Functions" href="custom_envelope.html" />
+    <link rel="next" title="MCMC Sampling with BlackJAX" href="mcmc_sampling.html" />
+    <link rel="prev" title="GPSolver and Hyperparameter Optimization" href="gp_optimization.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="0.1.0" />
@@ -149,15 +149,17 @@
 </button></div>
         <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
     <div class="bd-toc-item navbar-nav active">
-        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Basics</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../overview.html">Code Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="lightcurve_demo.html">Lightcurve Animations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="trapezoid_symmetric_tutorial.html">Spot Evolution Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="gp_optimization.html">GPSolver and Hyperparameter Optimization</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Advanced</span></p>
 <ul class="current nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="hparam_guide.html">Understanding the Hyperparameters</a></li>
-<li class="toctree-l1"><a class="reference internal" href="lightcurve_demo.html">Starspot Lightcurve Model</a></li>
-<li class="toctree-l1"><a class="reference internal" href="gp_solver_quickstart.html">GP Solver with <code class="docutils literal notranslate"><span class="pre">JAX</span></code> or <code class="docutils literal notranslate"><span class="pre">numpy</span></code></a></li>
-<li class="toctree-l1"><a class="reference internal" href="custom_envelope.html">Custom Envelope Functions</a></li>
 <li class="toctree-l1 current active"><a class="current reference internal" href="#">Custom Latitude Distributions</a></li>
-<li class="toctree-l1"><a class="reference internal" href="gp_optimization.html">GP Hyperparameter Optimization</a></li>
-<li class="toctree-l1"><a class="reference internal" href="mcmc_blackjax.html">MCMC with BlackJAX</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mcmc_sampling.html">MCMC Sampling with BlackJAX</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul class="nav bd-sidenav">
@@ -389,15 +391,16 @@
             </div>
             <nav aria-label="Page">
                 <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#1.-Shared-kernel-parameters">1. Shared kernel parameters</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#2.-Define-latitude-distributions">2. Define latitude distributions</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#3.-Visualize-the-distributions">3. Visualize the distributions</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#4.-Compute-kernels-with-each-distribution">4. Compute kernels with each distribution</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#5.-Compare-kernel-shapes">5. Compare kernel shapes</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#6.-Effect-on-the-power-spectral-density">6. Effect on the power spectral density</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#7.-Latitude-distributions-and-differential-rotation">7. Latitude distributions and differential rotation</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#8.-Using-a-custom-lat_dist-with-GPSolver">8. Using a custom <code class="docutils literal notranslate"><span class="pre">lat_dist</span></code> with <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code></a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Tips:">Tips:</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#1.-Default-uniform-distribution">1. Default uniform distribution</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#2.-Equatorial-band">2. Equatorial band</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#3.-Gaussian-weighted-distribution">3. Gaussian-weighted distribution</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#4.-Polar-band">4. Polar band</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#5.-Kernel-and-lightcurve-comparison">5. Kernel and lightcurve comparison</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#5a.-GP-kernel-shapes">5a. GP kernel shapes</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#5b.-Lightcurve-comparison">5b. Lightcurve comparison</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#5c.-Spot-latitude-placement">5c. Spot latitude placement</a></li>
+</ul>
+</li>
 </ul>
             </nav>
         </div>
@@ -411,33 +414,34 @@
                   
   <meta name="notebook-source" content="custom_latitude_distribution.ipynb"><section id="Custom-Latitude-Distributions">
 <h1>Custom Latitude Distributions<a class="headerlink" href="#Custom-Latitude-Distributions" title="Link to this heading">#</a></h1>
-<p>The GP kernel is an average of single-latitude contributions weighted by how spots are distributed across the stellar surface:</p>
-<div class="math notranslate nohighlight">
-\[K(\tau) = \sigma_k^2\, R_\Gamma(\tau) \int_{-\pi/2}^{\pi/2} p(\phi)\left[|c_0(\phi)|^2 + 2\sum_{n=1}^{N} |c_n(\phi)|^2 \cos(n\,\omega_0(\phi)\,\tau)\right] d\phi\]</div>
-<p>where <span class="math notranslate nohighlight">\(p(\phi)\)</span> is the <strong>latitude probability density</strong> and <span class="math notranslate nohighlight">\(\phi \in [-\pi/2, \pi/2]\)</span> (south pole to north pole).</p>
-<p>By default the distribution is <strong>uniform</strong> — spots can emerge anywhere. Real stars, however, concentrate spot activity at preferred latitudes:</p>
+<p>This notebook shows how to define a custom starspot latitude distribution by subclassing <code class="docutils literal notranslate"><span class="pre">LatitudeDistributionFunction</span></code> and how it propagates through the <code class="docutils literal notranslate"><span class="pre">spotgp</span></code> pipeline.</p>
+<p><strong>Two roles of the latitude distribution:</strong></p>
 <div class="pst-scrollable-table-container"><table class="table">
 <thead>
-<tr class="row-odd"><th class="head"><p>Star type</p></th>
-<th class="head"><p>Typical spot distribution</p></th>
+<tr class="row-odd"><th class="head"><p>Component</p></th>
+<th class="head"><p>Role</p></th>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p>Sun-like</p></td>
-<td><p>Two activity bands ±15–30° (butterfly diagram)</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code></p></td>
+<td><p>PDF weights the latitude integral <span class="math notranslate nohighlight">\(\int p(\phi)\,K(\phi,\tau)\,d\phi\)</span></p></td>
 </tr>
-<tr class="row-odd"><td><p>Young active</p></td>
-<td><p>Polar caps above ±60°</p></td>
-</tr>
-<tr class="row-even"><td><p>Equatorial</p></td>
-<td><p>Belt around ±10°</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">LightcurveModel.from_spot_model</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">lat_range</span></code> sets the uniform sampling bounds for spot placement</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p>The <code class="docutils literal notranslate"><span class="pre">lat_dist</span></code> parameter of <code class="docutils literal notranslate"><span class="pre">kernel()</span></code>, <code class="docutils literal notranslate"><span class="pre">kernel_solid_body()</span></code>, and <code class="docutils literal notranslate"><span class="pre">compute_psd()</span></code> accepts any callable <code class="docutils literal notranslate"><span class="pre">p(phi)</span> <span class="pre">-&gt;</span> <span class="pre">float</span></code> to encode these priors. This notebook shows how to define and use several common distributions.</p>
+<p><strong>Sections</strong></p>
+<ol class="arabic simple">
+<li><p>Default uniform distribution</p></li>
+<li><p>Equatorial band — narrow <code class="docutils literal notranslate"><span class="pre">lat_range</span></code></p></li>
+<li><p>Gaussian-weighted distribution — custom PDF over latitude</p></li>
+<li><p>Polar band — spots at high latitudes</p></li>
+<li><p>Kernel and lightcurve comparison across all distributions</p></li>
+</ol>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
@@ -445,112 +449,146 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">matplotlib.gridspec</span><span class="w"> </span><span class="kn">import</span> <span class="n">GridSpec</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">src_numpy.analytic_kernel</span><span class="w"> </span><span class="kn">import</span> <span class="n">AnalyticKernel</span>
-</pre></div>
-</div>
-</div>
-<section id="1.-Shared-kernel-parameters">
-<h2>1. Shared kernel parameters<a class="headerlink" href="#1.-Shared-kernel-parameters" title="Link to this heading">#</a></h2>
-<p>All examples below use the same stellar and spot parameters so that differences in the kernel are due solely to the latitude distribution.</p>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">hparam</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
-    <span class="n">peq</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>       <span class="c1"># equatorial rotation period [days]</span>
-    <span class="n">kappa</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span>     <span class="c1"># differential rotation shear</span>
-    <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">3</span><span class="p">,</span>   <span class="c1"># inclination 60°</span>
-    <span class="n">lspot</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>    <span class="c1"># spot lifetime [days]</span>
-    <span class="n">tau</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span>       <span class="c1"># rise/decay timescale [days]</span>
-    <span class="n">sigma_k</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>  <span class="c1"># kernel amplitude</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src_jax</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">LatitudeDistributionFunction</span><span class="p">,</span>
+    <span class="n">TrapezoidSymmetricEnvelope</span><span class="p">,</span>
+    <span class="n">VisibilityFunction</span><span class="p">,</span>
+    <span class="n">SpotEvolutionModel</span><span class="p">,</span>
+    <span class="n">LightcurveModel</span><span class="p">,</span>
+    <span class="n">AnalyticKernel</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="n">ak</span> <span class="o">=</span> <span class="n">AnalyticKernel</span><span class="p">(</span><span class="n">hparam</span><span class="p">,</span> <span class="n">n_harmonics</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">n_lat</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
+<span class="n">label_fs</span> <span class="o">=</span> <span class="mi">18</span>
+<span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
 
-<span class="n">tlags</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">30</span><span class="p">,</span> <span class="mi">500</span><span class="p">)</span>
+<span class="c1"># Shared model components reused throughout</span>
+<span class="n">_envelope</span>   <span class="o">=</span> <span class="n">TrapezoidSymmetricEnvelope</span><span class="p">(</span><span class="n">lspot</span><span class="o">=</span><span class="mf">15.0</span><span class="p">,</span> <span class="n">tau_spot</span><span class="o">=</span><span class="mf">5.0</span><span class="p">)</span>
+<span class="n">_visibility</span> <span class="o">=</span> <span class="n">VisibilityFunction</span><span class="p">(</span><span class="n">peq</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">kappa</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">3</span><span class="p">)</span>
 </pre></div>
+</div>
+</div>
+<hr class="docutils" />
+<section id="1.-Default-uniform-distribution">
+<h2>1. Default uniform distribution<a class="headerlink" href="#1.-Default-uniform-distribution" title="Link to this heading">#</a></h2>
+<p>When no <code class="docutils literal notranslate"><span class="pre">latitude_distribution</span></code> is supplied to <code class="docutils literal notranslate"><span class="pre">SpotEvolutionModel</span></code>, a <code class="docutils literal notranslate"><span class="pre">LatitudeDistributionFunction()</span></code> is used — uniform over <span class="math notranslate nohighlight">\([-\pi/2,\, \pi/2]\)</span> (all latitudes with equal weight).</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">lat_uniform</span> <span class="o">=</span> <span class="n">LatitudeDistributionFunction</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">lat_uniform</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;lat_range :&quot;</span><span class="p">,</span> <span class="n">lat_uniform</span><span class="o">.</span><span class="n">lat_range</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;p(0)      :&quot;</span><span class="p">,</span> <span class="n">lat_uniform</span><span class="p">(</span><span class="mf">0.0</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;p(pi/4)   :&quot;</span><span class="p">,</span> <span class="n">lat_uniform</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">4</span><span class="p">))</span>
+
+<span class="n">model_uniform</span> <span class="o">=</span> <span class="n">SpotEvolutionModel</span><span class="p">(</span>
+    <span class="n">envelope</span><span class="o">=</span><span class="n">_envelope</span><span class="p">,</span>
+    <span class="n">visibility</span><span class="o">=</span><span class="n">_visibility</span><span class="p">,</span>
+    <span class="n">sigma_k</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+    <span class="c1"># latitude_distribution defaults to LatitudeDistributionFunction()</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+LatitudeDistributionFunction(lat_range=[-1.571, 1.571])
+lat_range : (-1.5707963267948966, 1.5707963267948966)
+p(0)      : 1.0
+p(pi/4)   : 1.0
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">phi</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">300</span><span class="p">)</span>
+<span class="n">pdf_vals</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">lat_uniform</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">phi</span><span class="p">])</span>
+
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">rad2deg</span><span class="p">(</span><span class="n">phi</span><span class="p">),</span> <span class="n">pdf_vals</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Latitude [deg]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;$p(\phi)$ [unnormalized]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s2">&quot;Uniform latitude distribution&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="o">-</span><span class="mi">90</span><span class="p">,</span> <span class="mi">90</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xticks</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="o">-</span><span class="mi">90</span><span class="p">,</span> <span class="mi">91</span><span class="p">,</span> <span class="mi">30</span><span class="p">))</span>
+<span class="n">fig</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_custom_latitude_distribution_4_0.png" src="../_images/tutorials_custom_latitude_distribution_4_0.png" />
 </div>
 </div>
 </section>
-<section id="2.-Define-latitude-distributions">
-<h2>2. Define latitude distributions<a class="headerlink" href="#2.-Define-latitude-distributions" title="Link to this heading">#</a></h2>
-<p>Each distribution is a plain Python function of latitude <span class="math notranslate nohighlight">\(\phi\)</span> in <strong>radians</strong>. It does not need to be normalized — the kernel automatically normalizes by <span class="math notranslate nohighlight">\(\int p(\phi)\,d\phi\)</span>.</p>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># --- 1. Uniform (default behavior) -------------------------------------------</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">uniform</span><span class="p">(</span><span class="n">phi</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Spots uniformly distributed across all latitudes.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="mf">1.0</span>
-
-
-<span class="c1"># --- 2. Equatorial belt ----------------------------------------------------------</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">equatorial_belt</span><span class="p">(</span><span class="n">phi</span><span class="p">,</span> <span class="n">phi0</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="mi">10</span><span class="p">),</span> <span class="n">sigma</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="mi">8</span><span class="p">)):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Spots concentrated in a single belt around the equator.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">phi</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span>
-
-
-<span class="c1"># --- 3. Butterfly diagram (two symmetric activity bands) -----------------------</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">butterfly</span><span class="p">(</span><span class="n">phi</span><span class="p">,</span> <span class="n">phi0</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="mi">20</span><span class="p">),</span> <span class="n">sigma</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="mi">8</span><span class="p">)):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Two Gaussian bands symmetric about the equator, mimicking the</span>
-<span class="sd">    solar butterfly diagram.  phi0 sets the band latitude.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="p">(</span>
-        <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">phi</span> <span class="o">-</span> <span class="n">phi0</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span>
-        <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">phi</span> <span class="o">+</span> <span class="n">phi0</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span>
-    <span class="p">)</span>
-
-
-<span class="c1"># --- 4. Polar cap ---------------------------------------------------------------</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">polar_cap</span><span class="p">(</span><span class="n">phi</span><span class="p">,</span> <span class="n">phi0</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="mi">60</span><span class="p">),</span> <span class="n">sigma</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="mi">15</span><span class="p">)):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Spots concentrated near both poles, as seen on young active stars.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="p">(</span>
-        <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">phi</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span>
-        <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">phi</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span>
-    <span class="p">)</span>
-
-
-<span class="n">distributions</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;Uniform (default)&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">uniform</span><span class="p">,</span>      <span class="s2">&quot;C0&quot;</span><span class="p">,</span> <span class="s2">&quot;-&quot;</span><span class="p">),</span>
-    <span class="s2">&quot;Equatorial belt&quot;</span><span class="p">:</span>   <span class="p">(</span><span class="n">equatorial_belt</span><span class="p">,</span> <span class="s2">&quot;C1&quot;</span><span class="p">,</span> <span class="s2">&quot;--&quot;</span><span class="p">),</span>
-    <span class="s2">&quot;Butterfly diagram&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">butterfly</span><span class="p">,</span>     <span class="s2">&quot;C2&quot;</span><span class="p">,</span> <span class="s2">&quot;-.&quot;</span><span class="p">),</span>
-    <span class="s2">&quot;Polar cap&quot;</span><span class="p">:</span>         <span class="p">(</span><span class="n">polar_cap</span><span class="p">,</span>     <span class="s2">&quot;C3&quot;</span><span class="p">,</span> <span class="s2">&quot;:&quot;</span><span class="p">),</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</div>
-</section>
-<section id="3.-Visualize-the-distributions">
-<h2>3. Visualize the distributions<a class="headerlink" href="#3.-Visualize-the-distributions" title="Link to this heading">#</a></h2>
-<p>It is useful to plot <span class="math notranslate nohighlight">\(p(\phi)\)</span> to confirm the distributions look as intended before passing them to the kernel.</p>
+<hr class="docutils" />
+<section id="2.-Equatorial-band">
+<h2>2. Equatorial band<a class="headerlink" href="#2.-Equatorial-band" title="Link to this heading">#</a></h2>
+<p>Restrict spots to low latitudes by overriding <code class="docutils literal notranslate"><span class="pre">lat_range</span></code>. The PDF itself remains uniform within the narrower range.</p>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">phi_deg</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">90</span><span class="p">,</span> <span class="mi">90</span><span class="p">,</span> <span class="mi">500</span><span class="p">)</span>
-<span class="n">phi_rad</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="n">phi_deg</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">EquatorialBand</span><span class="p">(</span><span class="n">LatitudeDistributionFunction</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Uniform distribution confined to |phi| &lt; max_lat.&quot;&quot;&quot;</span>
 
-<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">max_lat_deg</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">30.0</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_max_lat</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="n">max_lat_deg</span><span class="p">))</span>
 
-<span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="n">color</span><span class="p">,</span> <span class="n">ls</span><span class="p">)</span> <span class="ow">in</span> <span class="n">distributions</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-    <span class="n">p</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">dist</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">phi_rad</span><span class="p">])</span>
-    <span class="n">p</span> <span class="o">/=</span> <span class="n">p</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>   <span class="c1"># normalize to 1 for visual comparison</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">phi_deg</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">color</span><span class="p">,</span> <span class="n">ls</span><span class="o">=</span><span class="n">ls</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">)</span>
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">lat_range</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">_max_lat</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_max_lat</span><span class="p">)</span>
 
-<span class="n">ax</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;gray&quot;</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">ls</span><span class="o">=</span><span class="s2">&quot;-&quot;</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Latitude [deg]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">14</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s2">&quot;$p(</span><span class="se">\\</span><span class="s2">phi)$ (normalized)&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">14</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s2">&quot;Latitude probability distributions&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">14</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_xticks</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="o">-</span><span class="mi">90</span><span class="p">,</span> <span class="mi">91</span><span class="p">,</span> <span class="mi">30</span><span class="p">))</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">phi</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">1.0</span>
+
+
+<span class="n">lat_equatorial</span> <span class="o">=</span> <span class="n">EquatorialBand</span><span class="p">(</span><span class="n">max_lat_deg</span><span class="o">=</span><span class="mf">30.0</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">lat_equatorial</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;lat_range :&quot;</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">rad2deg</span><span class="p">(</span><span class="n">lat_equatorial</span><span class="o">.</span><span class="n">lat_range</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">1</span><span class="p">)),</span> <span class="s2">&quot;deg&quot;</span><span class="p">)</span>
+
+<span class="n">model_equatorial</span> <span class="o">=</span> <span class="n">SpotEvolutionModel</span><span class="p">(</span>
+    <span class="n">envelope</span><span class="o">=</span><span class="n">_envelope</span><span class="p">,</span>
+    <span class="n">visibility</span><span class="o">=</span><span class="n">_visibility</span><span class="p">,</span>
+    <span class="n">sigma_k</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+    <span class="n">latitude_distribution</span><span class="o">=</span><span class="n">lat_equatorial</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+EquatorialBand(lat_range=[-0.524, 0.524])
+lat_range : (np.float64(-30.0), np.float64(30.0)) deg
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">phi_eq</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">*</span><span class="n">lat_equatorial</span><span class="o">.</span><span class="n">lat_range</span><span class="p">,</span> <span class="mi">300</span><span class="p">)</span>
+<span class="n">pdf_eq</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">lat_equatorial</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">phi_eq</span><span class="p">])</span>
+
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">rad2deg</span><span class="p">(</span><span class="n">phi_eq</span><span class="p">),</span> <span class="n">pdf_eq</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;steelblue&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Latitude [deg]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;$p(\phi)$ [unnormalized]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;Equatorial band ($|\phi| &lt; 30^\circ$)&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
 <span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="o">-</span><span class="mi">90</span><span class="p">,</span> <span class="mi">90</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">fontsize</span><span class="o">=</span><span class="mi">12</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xticks</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="o">-</span><span class="mi">90</span><span class="p">,</span> <span class="mi">91</span><span class="p">,</span> <span class="mi">30</span><span class="p">))</span>
+<span class="n">fig</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 </pre></div>
 </div>
@@ -563,19 +601,47 @@
 </div>
 </div>
 </section>
-<section id="4.-Compute-kernels-with-each-distribution">
-<h2>4. Compute kernels with each distribution<a class="headerlink" href="#4.-Compute-kernels-with-each-distribution" title="Link to this heading">#</a></h2>
-<p>Pass any distribution to <code class="docutils literal notranslate"><span class="pre">kernel()</span></code> via the <code class="docutils literal notranslate"><span class="pre">lat_dist</span></code> keyword. Passing <code class="docutils literal notranslate"><span class="pre">None</span></code> (or omitting it) uses the uniform default.</p>
+<hr class="docutils" />
+<section id="3.-Gaussian-weighted-distribution">
+<h2>3. Gaussian-weighted distribution<a class="headerlink" href="#3.-Gaussian-weighted-distribution" title="Link to this heading">#</a></h2>
+<p>A Gaussian PDF smoothly down-weights high latitudes rather than cutting them off sharply. Both <code class="docutils literal notranslate"><span class="pre">lat_range</span></code> and <code class="docutils literal notranslate"><span class="pre">__call__</span></code> are overridden.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">kernels</span> <span class="o">=</span> <span class="p">{}</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">GaussianLatitude</span><span class="p">(</span><span class="n">LatitudeDistributionFunction</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Gaussian PDF centred at `center` with standard deviation `sigma`.</span>
 
-<span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="n">color</span><span class="p">,</span> <span class="n">ls</span><span class="p">)</span> <span class="ow">in</span> <span class="n">distributions</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-    <span class="n">K</span> <span class="o">=</span> <span class="n">ak</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">tlags</span><span class="p">,</span> <span class="n">lat_dist</span><span class="o">=</span><span class="n">dist</span><span class="p">)</span>
-    <span class="n">kernels</span><span class="p">[</span><span class="n">label</span><span class="p">]</span> <span class="o">=</span> <span class="n">K</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">label</span><span class="si">:</span><span class="s2">&lt;22</span><span class="si">}</span><span class="s2">  K(0) = </span><span class="si">{</span><span class="n">K</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="sd">    Spots can emerge anywhere within ±3σ of the center, but are weighted</span>
+<span class="sd">    toward the center of the distribution.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sigma_deg</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">20.0</span><span class="p">,</span> <span class="n">center_deg</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sigma</span>  <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="n">sigma_deg</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_center</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="n">center_deg</span><span class="p">))</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">lat_range</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_center</span> <span class="o">-</span> <span class="mi">3</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sigma</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_center</span> <span class="o">+</span> <span class="mi">3</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sigma</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">phi</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">((</span><span class="n">phi</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_center</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sigma</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">))</span>
+
+
+<span class="n">lat_gauss</span> <span class="o">=</span> <span class="n">GaussianLatitude</span><span class="p">(</span><span class="n">sigma_deg</span><span class="o">=</span><span class="mf">20.0</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">lat_gauss</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;lat_range :&quot;</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">rad2deg</span><span class="p">(</span><span class="n">lat_gauss</span><span class="o">.</span><span class="n">lat_range</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">1</span><span class="p">)),</span> <span class="s2">&quot;deg&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;p(0)      :&quot;</span><span class="p">,</span> <span class="n">lat_gauss</span><span class="p">(</span><span class="mf">0.0</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;p(30 deg) :&quot;</span><span class="p">,</span> <span class="n">lat_gauss</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="mf">30.0</span><span class="p">)))</span>
+
+<span class="n">model_gauss</span> <span class="o">=</span> <span class="n">SpotEvolutionModel</span><span class="p">(</span>
+    <span class="n">envelope</span><span class="o">=</span><span class="n">_envelope</span><span class="p">,</span>
+    <span class="n">visibility</span><span class="o">=</span><span class="n">_visibility</span><span class="p">,</span>
+    <span class="n">sigma_k</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+    <span class="n">latitude_distribution</span><span class="o">=</span><span class="n">lat_gauss</span><span class="p">,</span>
+<span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -584,49 +650,28 @@
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Uniform (default)       K(0) = 0.000181
-Equatorial belt         K(0) = 0.000208
-Butterfly diagram       K(0) = 0.000200
-Polar cap               K(0) = 0.000176
+GaussianLatitude(lat_range=[-1.047, 1.047])
+lat_range : (np.float64(-60.0), np.float64(60.0)) deg
+p(0)      : 1.0
+p(30 deg) : 0.32465246735834974
 </pre></div></div>
 </div>
-</section>
-<section id="5.-Compare-kernel-shapes">
-<h2>5. Compare kernel shapes<a class="headerlink" href="#5.-Compare-kernel-shapes" title="Link to this heading">#</a></h2>
-<p>Different latitude distributions shift power between harmonics and broaden or sharpen the rotational peaks. With differential rotation (<code class="docutils literal notranslate"><span class="pre">kappa</span> <span class="pre">&gt;</span> <span class="pre">0</span></code>) the latitude distribution also controls the effective spread of rotation periods.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">fig</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">7</span><span class="p">),</span> <span class="n">sharex</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">phi_g</span>   <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">300</span><span class="p">)</span>
+<span class="n">pdf_g</span>   <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">lat_gauss</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">phi_g</span><span class="p">])</span>
 
-<span class="c1"># Top panel: normalized kernel</span>
-<span class="n">ax</span> <span class="o">=</span> <span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-<span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="n">color</span><span class="p">,</span> <span class="n">ls</span><span class="p">)</span> <span class="ow">in</span> <span class="n">distributions</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-    <span class="n">K</span> <span class="o">=</span> <span class="n">kernels</span><span class="p">[</span><span class="n">label</span><span class="p">]</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">tlags</span><span class="p">,</span> <span class="n">K</span> <span class="o">/</span> <span class="n">K</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="n">color</span><span class="p">,</span> <span class="n">ls</span><span class="o">=</span><span class="n">ls</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">)</span>
-
-<span class="k">for</span> <span class="n">ii</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">7</span><span class="p">):</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">ii</span> <span class="o">*</span> <span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;peq&quot;</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;gray&quot;</span><span class="p">,</span> <span class="n">ls</span><span class="o">=</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.4</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">axhline</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;gray&quot;</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">0.8</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;$K(\tau)\,/\,K(0)$&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">14</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s2">&quot;Normalized GP kernel&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">14</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">fontsize</span><span class="o">=</span><span class="mi">11</span><span class="p">)</span>
-
-<span class="c1"># Bottom panel: absolute scale</span>
-<span class="n">ax</span> <span class="o">=</span> <span class="n">axes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
-<span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="n">color</span><span class="p">,</span> <span class="n">ls</span><span class="p">)</span> <span class="ow">in</span> <span class="n">distributions</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-    <span class="n">K</span> <span class="o">=</span> <span class="n">kernels</span><span class="p">[</span><span class="n">label</span><span class="p">]</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">tlags</span><span class="p">,</span> <span class="n">K</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">color</span><span class="p">,</span> <span class="n">ls</span><span class="o">=</span><span class="n">ls</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">)</span>
-
-<span class="k">for</span> <span class="n">ii</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">7</span><span class="p">):</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">ii</span> <span class="o">*</span> <span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;peq&quot;</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;gray&quot;</span><span class="p">,</span> <span class="n">ls</span><span class="o">=</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.4</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">axhline</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;gray&quot;</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">0.8</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Time lag [days]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">14</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;$K(\tau)$&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">14</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s2">&quot;Absolute GP kernel&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">14</span><span class="p">)</span>
-
-<span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">rad2deg</span><span class="p">(</span><span class="n">phi_g</span><span class="p">),</span> <span class="n">pdf_g</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;tomato&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;k&quot;</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">ls</span><span class="o">=</span><span class="s2">&quot;--&quot;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Latitude [deg]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;$p(\phi)$ [unnormalized]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;Gaussian latitude distribution ($\sigma = 20^\circ$)&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="o">-</span><span class="mi">90</span><span class="p">,</span> <span class="mi">90</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xticks</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="o">-</span><span class="mi">90</span><span class="p">,</span> <span class="mi">91</span><span class="p">,</span> <span class="mi">30</span><span class="p">))</span>
+<span class="n">fig</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 </pre></div>
 </div>
@@ -635,34 +680,76 @@ Polar cap               K(0) = 0.000176
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_custom_latitude_distribution_11_0.png" src="../_images/tutorials_custom_latitude_distribution_11_0.png" />
+<img alt="../_images/tutorials_custom_latitude_distribution_10_0.png" src="../_images/tutorials_custom_latitude_distribution_10_0.png" />
 </div>
 </div>
 </section>
-<section id="6.-Effect-on-the-power-spectral-density">
-<h2>6. Effect on the power spectral density<a class="headerlink" href="#6.-Effect-on-the-power-spectral-density" title="Link to this heading">#</a></h2>
-<p>The <code class="docutils literal notranslate"><span class="pre">compute_psd()</span></code> method also accepts <code class="docutils literal notranslate"><span class="pre">lat_dist</span></code>, so you can directly compare the PSD for each scenario. The latitude distribution determines how much power falls in each harmonic of the rotation frequency <span class="math notranslate nohighlight">\(f_n = n / P_{\rm eq}(\phi)\)</span>.</p>
+<hr class="docutils" />
+<section id="4.-Polar-band">
+<h2>4. Polar band<a class="headerlink" href="#4.-Polar-band" title="Link to this heading">#</a></h2>
+<p>Spots confined to high latitudes (like solar polar faculae). Implemented as two symmetric bands, one at each pole.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">omega</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">6</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;peq&quot;</span><span class="p">],</span> <span class="mi">2000</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">PolarBand</span><span class="p">(</span><span class="n">LatitudeDistributionFunction</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Two symmetric bands near the poles: |phi| in [min_lat, pi/2].</span>
+<span class="sd">    &quot;&quot;&quot;</span>
 
-<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">min_lat_deg</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">60.0</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_min_lat</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="n">min_lat_deg</span><span class="p">))</span>
 
-<span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="n">color</span><span class="p">,</span> <span class="n">ls</span><span class="p">)</span> <span class="ow">in</span> <span class="n">distributions</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-    <span class="n">freq</span><span class="p">,</span> <span class="n">psd</span> <span class="o">=</span> <span class="n">ak</span><span class="o">.</span><span class="n">compute_psd</span><span class="p">(</span><span class="n">omega</span><span class="p">,</span> <span class="n">lat_dist</span><span class="o">=</span><span class="n">dist</span><span class="p">)</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">semilogy</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">psd</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">color</span><span class="p">,</span> <span class="n">ls</span><span class="o">=</span><span class="n">ls</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">)</span>
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">lat_range</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+        <span class="c1"># Full range so spots can land at either pole</span>
+        <span class="k">return</span> <span class="p">(</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>
 
-<span class="k">for</span> <span class="n">ii</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">):</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">ii</span> <span class="o">/</span> <span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;peq&quot;</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;gray&quot;</span><span class="p">,</span> <span class="n">ls</span><span class="o">=</span><span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
-               <span class="n">label</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;$f=</span><span class="si">{</span><span class="n">ii</span><span class="si">}</span><span class="s2">/P_</span><span class="se">{{</span><span class="s2">eq</span><span class="se">}}</span><span class="s2">$&quot;</span> <span class="k">if</span> <span class="n">ii</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">phi</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="c1"># Non-zero weight only at high latitudes</span>
+        <span class="k">return</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">phi</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_min_lat</span> <span class="k">else</span> <span class="mf">0.0</span>
 
-<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Frequency [cycles/day]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">14</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s2">&quot;PSD&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">14</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s2">&quot;Power spectral density&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">14</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">fontsize</span><span class="o">=</span><span class="mi">11</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+
+<span class="n">lat_polar</span> <span class="o">=</span> <span class="n">PolarBand</span><span class="p">(</span><span class="n">min_lat_deg</span><span class="o">=</span><span class="mf">60.0</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">lat_polar</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;p(0)      :&quot;</span><span class="p">,</span> <span class="n">lat_polar</span><span class="p">(</span><span class="mf">0.0</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;p(70 deg) :&quot;</span><span class="p">,</span> <span class="n">lat_polar</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="mf">70.0</span><span class="p">)))</span>
+
+<span class="n">model_polar</span> <span class="o">=</span> <span class="n">SpotEvolutionModel</span><span class="p">(</span>
+    <span class="n">envelope</span><span class="o">=</span><span class="n">_envelope</span><span class="p">,</span>
+    <span class="n">visibility</span><span class="o">=</span><span class="n">_visibility</span><span class="p">,</span>
+    <span class="n">sigma_k</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+    <span class="n">latitude_distribution</span><span class="o">=</span><span class="n">lat_polar</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+PolarBand(lat_range=[-1.571, 1.571])
+p(0)      : 0.0
+p(70 deg) : 1.0
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">phi_p</span>   <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">300</span><span class="p">)</span>
+<span class="n">pdf_p</span>   <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">lat_polar</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">phi_p</span><span class="p">])</span>
+
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">fill_between</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">rad2deg</span><span class="p">(</span><span class="n">phi_p</span><span class="p">),</span> <span class="n">pdf_p</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.4</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;mediumpurple&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">rad2deg</span><span class="p">(</span><span class="n">phi_p</span><span class="p">),</span> <span class="n">pdf_p</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;mediumpurple&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Latitude [deg]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;$p(\phi)$ [unnormalized]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;Polar band ($|\phi| &gt; 60^\circ$)&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="o">-</span><span class="mi">90</span><span class="p">,</span> <span class="mi">90</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xticks</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="o">-</span><span class="mi">90</span><span class="p">,</span> <span class="mi">91</span><span class="p">,</span> <span class="mi">30</span><span class="p">))</span>
+<span class="n">fig</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 </pre></div>
 </div>
@@ -675,52 +762,47 @@ Polar cap               K(0) = 0.000176
 </div>
 </div>
 </section>
-<section id="7.-Latitude-distributions-and-differential-rotation">
-<h2>7. Latitude distributions and differential rotation<a class="headerlink" href="#7.-Latitude-distributions-and-differential-rotation" title="Link to this heading">#</a></h2>
-<p>With differential rotation (<code class="docutils literal notranslate"><span class="pre">kappa</span> <span class="pre">&gt;</span> <span class="pre">0</span></code>) each latitude rotates at a different period:</p>
-<div class="math notranslate nohighlight">
-\[P(\phi) = \frac{P_{\rm eq}}{1 - \kappa \sin^2\phi}\]</div>
-<p>The latitude distribution therefore controls the <strong>effective period spread</strong> sampled by the GP kernel. A narrow equatorial belt probes only the fast equatorial period; a polar cap probes the slow polar periods; a butterfly diagram samples intermediate values.</p>
-<p>The cell below shows this explicitly by plotting the effective rotation period weighted by each distribution.</p>
+<hr class="docutils" />
+<section id="5.-Kernel-and-lightcurve-comparison">
+<h2>5. Kernel and lightcurve comparison<a class="headerlink" href="#5.-Kernel-and-lightcurve-comparison" title="Link to this heading">#</a></h2>
+<section id="5a.-GP-kernel-shapes">
+<h3>5a. GP kernel shapes<a class="headerlink" href="#5a.-GP-kernel-shapes" title="Link to this heading">#</a></h3>
+<p>The latitude distribution modifies which latitudes contribute to the kernel integral. Spots at different latitudes rotate at different speeds (differential rotation), so the kernel shape — and in particular how quickly the periodic signal dephases — depends on the latitude distribution.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">phi_grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="mi">512</span><span class="p">)</span>
-<span class="n">P_phi</span> <span class="o">=</span> <span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;peq&quot;</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;kappa&quot;</span><span class="p">]</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">phi_grid</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">models</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;Uniform&quot;</span><span class="p">:</span>    <span class="n">model_uniform</span><span class="p">,</span>
+    <span class="s2">&quot;Equatorial&quot;</span><span class="p">:</span> <span class="n">model_equatorial</span><span class="p">,</span>
+    <span class="s2">&quot;Gaussian&quot;</span><span class="p">:</span>   <span class="n">model_gauss</span><span class="p">,</span>
+    <span class="s2">&quot;Polar&quot;</span><span class="p">:</span>      <span class="n">model_polar</span><span class="p">,</span>
+<span class="p">}</span>
+<span class="n">colors</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;Uniform&quot;</span><span class="p">:</span>    <span class="s2">&quot;k&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Equatorial&quot;</span><span class="p">:</span> <span class="s2">&quot;steelblue&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Gaussian&quot;</span><span class="p">:</span>   <span class="s2">&quot;tomato&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Polar&quot;</span><span class="p">:</span>      <span class="s2">&quot;mediumpurple&quot;</span><span class="p">,</span>
+<span class="p">}</span>
 
-<span class="n">fig</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
+<span class="n">lag</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">_visibility</span><span class="o">.</span><span class="n">peq</span><span class="p">,</span> <span class="mi">400</span><span class="p">)</span>
+<span class="n">kernels</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">mdl</span> <span class="ow">in</span> <span class="n">models</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">ak</span> <span class="o">=</span> <span class="n">AnalyticKernel</span><span class="p">(</span><span class="n">mdl</span><span class="p">)</span>
+    <span class="n">K</span>  <span class="o">=</span> <span class="n">ak</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">lag</span><span class="p">)</span>
+    <span class="n">kernels</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">K</span>
 
-<span class="n">ax</span> <span class="o">=</span> <span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-<span class="n">ax2</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">twinx</span><span class="p">()</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">rad2deg</span><span class="p">(</span><span class="n">phi_grid</span><span class="p">),</span> <span class="n">P_phi</span><span class="p">,</span> <span class="s2">&quot;k&quot;</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">1.5</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;$P(</span><span class="se">\\</span><span class="s2">phi)$&quot;</span><span class="p">)</span>
-<span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="n">color</span><span class="p">,</span> <span class="n">ls</span><span class="p">)</span> <span class="ow">in</span> <span class="n">distributions</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-    <span class="n">p</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">dist</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">phi_grid</span><span class="p">])</span>
-    <span class="n">p</span> <span class="o">/=</span> <span class="n">p</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
-    <span class="n">ax2</span><span class="o">.</span><span class="n">fill_between</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">rad2deg</span><span class="p">(</span><span class="n">phi_grid</span><span class="p">),</span> <span class="n">p</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.15</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">color</span><span class="p">)</span>
-    <span class="n">ax2</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">rad2deg</span><span class="p">(</span><span class="n">phi_grid</span><span class="p">),</span> <span class="n">p</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">color</span><span class="p">,</span> <span class="n">ls</span><span class="o">=</span><span class="n">ls</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">1.5</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Latitude [deg]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">13</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s2">&quot;$P(</span><span class="se">\\</span><span class="s2">phi)$ [days]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">13</span><span class="p">)</span>
-<span class="n">ax2</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s2">&quot;$p(</span><span class="se">\\</span><span class="s2">phi)$ (normalized)&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">13</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s2">&quot;Rotation period vs latitude&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">13</span><span class="p">)</span>
-<span class="n">ax2</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">fontsize</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">loc</span><span class="o">=</span><span class="s2">&quot;upper left&quot;</span><span class="p">)</span>
-
-<span class="c1"># Right panel: distribution of periods sampled by each lat_dist</span>
-<span class="n">ax</span> <span class="o">=</span> <span class="n">axes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
-<span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="n">color</span><span class="p">,</span> <span class="n">ls</span><span class="p">)</span> <span class="ow">in</span> <span class="n">distributions</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-    <span class="n">p</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">dist</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">phi_grid</span><span class="p">])</span>
-    <span class="n">norm</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">trapezoid</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">phi_grid</span><span class="p">)</span>
-    <span class="c1"># histogram of periods weighted by p(phi)</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">P_phi</span><span class="p">,</span> <span class="n">bins</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="n">p</span> <span class="o">/</span> <span class="n">norm</span><span class="p">,</span>
-            <span class="n">color</span><span class="o">=</span><span class="n">color</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.4</span><span class="p">,</span> <span class="n">density</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">)</span>
-
-<span class="n">ax</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">hparam</span><span class="p">[</span><span class="s2">&quot;peq&quot;</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;k&quot;</span><span class="p">,</span> <span class="n">ls</span><span class="o">=</span><span class="s2">&quot;--&quot;</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">1.5</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;$P_{</span><span class="se">\\</span><span class="s2">rm eq}$&quot;</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Rotation period [days]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">13</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s2">&quot;Probability density&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">13</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s2">&quot;Effective period distribution&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">13</span><span class="p">)</span>
-<span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">fontsize</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-
-<span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">5</span><span class="p">))</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">K</span> <span class="ow">in</span> <span class="n">kernels</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">lag</span><span class="p">,</span> <span class="n">K</span> <span class="o">/</span> <span class="n">K</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">label</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">colors</span><span class="p">[</span><span class="n">name</span><span class="p">],</span> <span class="n">lw</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">lag</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="n">_visibility</span><span class="o">.</span><span class="n">peq</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">axvline</span><span class="p">(</span><span class="n">n</span> <span class="o">*</span> <span class="n">_visibility</span><span class="o">.</span><span class="n">peq</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">&quot;k&quot;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Lag [days]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;$K(\tau) / K(0)$&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s2">&quot;GP kernel for different latitude distributions&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">fontsize</span><span class="o">=</span><span class="mi">14</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="n">lag</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">lag</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+<span class="n">fig</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 </pre></div>
 </div>
@@ -733,105 +815,35 @@ Polar cap               K(0) = 0.000176
 </div>
 </div>
 </section>
-<section id="8.-Using-a-custom-lat_dist-with-GPSolver">
-<h2>8. Using a custom <code class="docutils literal notranslate"><span class="pre">lat_dist</span></code> with <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code><a class="headerlink" href="#8.-Using-a-custom-lat_dist-with-GPSolver" title="Link to this heading">#</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">GPSolver</span></code> builds an <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code> internally and calls <code class="docutils literal notranslate"><span class="pre">kernel.kernel(tau)</span></code> without a <code class="docutils literal notranslate"><span class="pre">lat_dist</span></code> argument (i.e. it uses the uniform default). The cleanest way to inject a fixed latitude distribution is to subclass <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code> and override <code class="docutils literal notranslate"><span class="pre">kernel()</span></code> to bind your chosen distribution, then swap the internal kernel object after construction.</p>
+<section id="5b.-Lightcurve-comparison">
+<h3>5b. Lightcurve comparison<a class="headerlink" href="#5b.-Lightcurve-comparison" title="Link to this heading">#</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">LightcurveModel.from_spot_model</span></code> uses <code class="docutils literal notranslate"><span class="pre">lat_range</span></code> from the latitude distribution to set the bounds for <strong>uniform</strong> spot placement. The PDF shape (if non-uniform) affects only the kernel integration in <code class="docutils literal notranslate"><span class="pre">AnalyticKernel</span></code>; the forward simulation always samples uniformly within <code class="docutils literal notranslate"><span class="pre">lat_range</span></code>. For a non-uniform forward simulation you would need to implement rejection sampling from the PDF.</p>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">src_numpy.starspot</span><span class="w"> </span><span class="kn">import</span> <span class="n">LightcurveModel</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src_numpy.gp_solver</span><span class="w"> </span><span class="kn">import</span> <span class="n">GPSolver</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src_numpy.analytic_kernel</span><span class="w"> </span><span class="kn">import</span> <span class="n">AnalyticKernel</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">fig</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">models</span><span class="p">),</span> <span class="mi">1</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">13</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">models</span><span class="p">)),</span>
+                         <span class="n">sharex</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-<span class="c1"># Generate synthetic data with spots confined to activity bands</span>
-<span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">ax</span><span class="p">,</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">mdl</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">axes</span><span class="p">,</span> <span class="n">models</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+    <span class="n">lc</span> <span class="o">=</span> <span class="n">LightcurveModel</span><span class="o">.</span><span class="n">from_spot_model</span><span class="p">(</span>
+        <span class="n">mdl</span><span class="p">,</span> <span class="n">nspot</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">tsim</span><span class="o">=</span><span class="mi">120</span><span class="p">,</span> <span class="n">tsamp</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">sigma_n</span>  <span class="o">=</span> <span class="mf">0.3</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">lc</span><span class="o">.</span><span class="n">flux</span><span class="p">)</span>
+    <span class="n">flux_obs</span> <span class="o">=</span> <span class="n">lc</span><span class="o">.</span><span class="n">flux</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">sigma_n</span><span class="p">,</span> <span class="n">lc</span><span class="o">.</span><span class="n">flux</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
 
-<span class="n">theta_true</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span>
-    <span class="n">peq</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">kappa</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">3</span><span class="p">,</span>
-    <span class="n">nspot</span><span class="o">=</span><span class="mi">40</span><span class="p">,</span> <span class="n">lspot</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">tau</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span>
-    <span class="n">alpha_max</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">fspot</span><span class="o">=</span><span class="mf">0.</span><span class="p">,</span>
-    <span class="n">lat</span><span class="o">=</span><span class="p">[</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="mi">35</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="mi">35</span><span class="p">)],</span>
-    <span class="n">long</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">],</span>
-<span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">lc</span><span class="o">.</span><span class="n">t</span><span class="p">,</span> <span class="p">(</span><span class="n">lc</span><span class="o">.</span><span class="n">flux</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mi">100</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">colors</span><span class="p">[</span><span class="n">name</span><span class="p">],</span> <span class="n">lw</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="n">alpha</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> (true)&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">errorbar</span><span class="p">(</span><span class="n">lc</span><span class="o">.</span><span class="n">t</span><span class="p">[::</span><span class="mi">4</span><span class="p">],</span> <span class="p">(</span><span class="n">flux_obs</span><span class="p">[::</span><span class="mi">4</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mi">100</span><span class="p">,</span>
+                <span class="n">yerr</span><span class="o">=</span><span class="n">sigma_n</span> <span class="o">*</span> <span class="mi">100</span><span class="p">,</span>
+                <span class="n">fmt</span><span class="o">=</span><span class="s2">&quot;.k&quot;</span><span class="p">,</span> <span class="n">ms</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">capsize</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.4</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;$\Delta$Flux [\%]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="n">lc</span><span class="o">.</span><span class="n">t</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">lc</span><span class="o">.</span><span class="n">t</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">,</span> <span class="n">loc</span><span class="o">=</span><span class="s2">&quot;upper right&quot;</span><span class="p">)</span>
 
-<span class="n">lc</span> <span class="o">=</span> <span class="n">LightcurveModel</span><span class="p">(</span><span class="o">**</span><span class="n">theta_true</span><span class="p">,</span> <span class="n">tsim</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">tsamp</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
-<span class="n">tobs</span> <span class="o">=</span> <span class="n">lc</span><span class="o">.</span><span class="n">t</span>
-<span class="n">flux</span> <span class="o">=</span> <span class="n">lc</span><span class="o">.</span><span class="n">flux</span>
-<span class="n">flux_err</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mf">0.2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">flux</span><span class="p">),</span> <span class="n">flux</span><span class="o">.</span><span class="n">shape</span><span class="p">))</span>
-
-
-<span class="c1"># --- Helper: subclass that fixes lat_dist at construction time ---------------</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">make_fixed_lat_dist_kernel</span><span class="p">(</span><span class="n">lat_dist_fn</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return an AnalyticKernel subclass with lat_dist baked in.&quot;&quot;&quot;</span>
-
-    <span class="k">class</span><span class="w"> </span><span class="nc">FixedLatDistKernel</span><span class="p">(</span><span class="n">AnalyticKernel</span><span class="p">):</span>
-        <span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lag</span><span class="p">,</span> <span class="n">lat_dist</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-            <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">lag</span><span class="p">,</span> <span class="n">lat_dist</span><span class="o">=</span><span class="n">lat_dist_fn</span><span class="p">)</span>
-
-    <span class="k">return</span> <span class="n">FixedLatDistKernel</span>
-
-
-<span class="c1"># Hyperparameters for the GP kernel</span>
-<span class="n">hparam_gp</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">peq</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">kappa</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">inc</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">3</span><span class="p">,</span> <span class="n">lspot</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">tau</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span>
-                 <span class="n">nspot</span><span class="o">=</span><span class="mi">40</span><span class="p">,</span> <span class="n">alpha_max</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">fspot</span><span class="o">=</span><span class="mf">0.</span><span class="p">)</span>
-
-<span class="c1"># Uniform distribution (default)</span>
-<span class="n">gp_uniform</span> <span class="o">=</span> <span class="n">GPSolver</span><span class="p">(</span><span class="n">tobs</span><span class="p">,</span> <span class="n">flux</span><span class="p">,</span> <span class="n">flux_err</span><span class="p">,</span> <span class="n">hparam_gp</span><span class="p">)</span>
-
-<span class="c1"># Butterfly distribution: swap in our custom kernel then rebuild the covariance</span>
-<span class="n">ButterflyKernel</span> <span class="o">=</span> <span class="n">make_fixed_lat_dist_kernel</span><span class="p">(</span><span class="n">butterfly</span><span class="p">)</span>
-<span class="n">gp_butterfly</span> <span class="o">=</span> <span class="n">GPSolver</span><span class="p">(</span><span class="n">tobs</span><span class="p">,</span> <span class="n">flux</span><span class="p">,</span> <span class="n">flux_err</span><span class="p">,</span> <span class="n">hparam_gp</span><span class="p">)</span>
-<span class="n">gp_butterfly</span><span class="o">.</span><span class="n">kernel</span> <span class="o">=</span> <span class="n">ButterflyKernel</span><span class="p">(</span><span class="n">hparam_gp</span><span class="p">,</span> <span class="n">n_lat</span><span class="o">=</span><span class="mi">128</span><span class="p">)</span>
-<span class="n">gp_butterfly</span><span class="o">.</span><span class="n">_build_covariance</span><span class="p">()</span>
-
-<span class="n">ll_uniform</span>   <span class="o">=</span> <span class="n">gp_uniform</span><span class="o">.</span><span class="n">log_likelihood</span><span class="p">()</span>
-<span class="n">ll_butterfly</span> <span class="o">=</span> <span class="n">gp_butterfly</span><span class="o">.</span><span class="n">log_likelihood</span><span class="p">()</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;log-likelihood (uniform):   </span><span class="si">{</span><span class="n">ll_uniform</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;log-likelihood (butterfly): </span><span class="si">{</span><span class="n">ll_butterfly</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-log-likelihood (uniform):   1085.63
-log-likelihood (butterfly): 1062.26
-</pre></div></div>
-</div>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">xpred</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="n">tobs</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">tobs</span><span class="o">.</span><span class="n">max</span><span class="p">(),</span> <span class="mi">500</span><span class="p">)</span>
-
-<span class="n">mu_uni</span><span class="p">,</span>  <span class="n">var_uni</span>  <span class="o">=</span> <span class="n">gp_uniform</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">xpred</span><span class="p">,</span> <span class="n">return_cov</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="n">mu_but</span><span class="p">,</span>  <span class="n">var_but</span>  <span class="o">=</span> <span class="n">gp_butterfly</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">xpred</span><span class="p">,</span> <span class="n">return_cov</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-
-<span class="n">fig</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">7</span><span class="p">),</span> <span class="n">sharex</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-
-<span class="k">for</span> <span class="n">ax</span><span class="p">,</span> <span class="n">mu</span><span class="p">,</span> <span class="n">var</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="n">color</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
-        <span class="n">axes</span><span class="p">,</span>
-        <span class="p">[</span><span class="n">mu_uni</span><span class="p">,</span> <span class="n">mu_but</span><span class="p">],</span>
-        <span class="p">[</span><span class="n">var_uni</span><span class="p">,</span> <span class="n">var_but</span><span class="p">],</span>
-        <span class="p">[</span><span class="s2">&quot;Uniform lat_dist&quot;</span><span class="p">,</span> <span class="s2">&quot;Butterfly lat_dist&quot;</span><span class="p">],</span>
-        <span class="p">[</span><span class="s2">&quot;steelblue&quot;</span><span class="p">,</span> <span class="s2">&quot;C2&quot;</span><span class="p">]):</span>
-    <span class="n">std</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">var</span><span class="p">))</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">errorbar</span><span class="p">(</span><span class="n">tobs</span><span class="p">,</span> <span class="n">flux</span> <span class="o">*</span> <span class="mi">100</span> <span class="o">-</span> <span class="mi">100</span><span class="p">,</span> <span class="n">yerr</span><span class="o">=</span><span class="n">flux_err</span> <span class="o">*</span> <span class="mi">100</span><span class="p">,</span>
-                <span class="n">fmt</span><span class="o">=</span><span class="s2">&quot;.k&quot;</span><span class="p">,</span> <span class="n">capsize</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;data&quot;</span><span class="p">)</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">xpred</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">mu</span><span class="p">)</span> <span class="o">*</span> <span class="mi">100</span> <span class="o">-</span> <span class="mi">100</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">color</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">1.5</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">)</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">fill_between</span><span class="p">(</span><span class="n">xpred</span><span class="p">,</span>
-                    <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">mu</span><span class="p">)</span> <span class="o">-</span> <span class="n">std</span><span class="p">)</span> <span class="o">*</span> <span class="mi">100</span> <span class="o">-</span> <span class="mi">100</span><span class="p">,</span>
-                    <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">mu</span><span class="p">)</span> <span class="o">+</span> <span class="n">std</span><span class="p">)</span> <span class="o">*</span> <span class="mi">100</span> <span class="o">-</span> <span class="mi">100</span><span class="p">,</span>
-                    <span class="n">alpha</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">color</span><span class="p">)</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;$\Delta$Flux [\%]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">13</span><span class="p">)</span>
-    <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">fontsize</span><span class="o">=</span><span class="mi">12</span><span class="p">)</span>
-
-<span class="n">axes</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Time [days]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="mi">13</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+<span class="n">axes</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Time [days]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">fig</span><span class="o">.</span><span class="n">suptitle</span><span class="p">(</span><span class="s2">&quot;Simulated lightcurves by latitude distribution&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">fig</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 </pre></div>
 </div>
@@ -840,26 +852,56 @@ log-likelihood (butterfly): 1062.26
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/tutorials_custom_latitude_distribution_18_0.png" src="../_images/tutorials_custom_latitude_distribution_18_0.png" />
+<img alt="../_images/tutorials_custom_latitude_distribution_17_0.png" src="../_images/tutorials_custom_latitude_distribution_17_0.png" />
 </div>
 </div>
 </section>
-<section id="Tips:">
-<h2>Tips:<a class="headerlink" href="#Tips:" title="Link to this heading">#</a></h2>
-<p><strong>Integration accuracy</strong> — The default trapezoid rule with <code class="docutils literal notranslate"><span class="pre">n_lat=64</span></code> is sufficient for broad distributions. For sharply peaked distributions (e.g. a narrow equatorial belt with <span class="math notranslate nohighlight">\(\sigma &lt; 5°\)</span>) increase <code class="docutils literal notranslate"><span class="pre">n_lat</span></code> or switch to Gauss-Legendre quadrature:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">ak</span> <span class="o">=</span> <span class="n">AnalyticKernel</span><span class="p">(</span><span class="n">hparam</span><span class="p">,</span> <span class="n">n_lat</span><span class="o">=</span><span class="mi">256</span><span class="p">,</span> <span class="n">quadrature</span><span class="o">=</span><span class="s2">&quot;gauss-legendre&quot;</span><span class="p">)</span>
+<section id="5c.-Spot-latitude-placement">
+<h3>5c. Spot latitude placement<a class="headerlink" href="#5c.-Spot-latitude-placement" title="Link to this heading">#</a></h3>
+<p>The scatter plot below shows which latitudes are drawn for each model. Latitudes outside <code class="docutils literal notranslate"><span class="pre">lat_range</span></code> are never placed; within <code class="docutils literal notranslate"><span class="pre">lat_range</span></code> the sampling is always uniform (regardless of the PDF shape).</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
 </pre></div>
 </div>
-<p><strong>Units</strong> — Latitudes are always in <strong>radians</strong> inside <code class="docutils literal notranslate"><span class="pre">lat_dist</span></code>. Convert degrees with <code class="docutils literal notranslate"><span class="pre">np.deg2rad()</span></code>.</p>
-<p><strong>Normalization</strong> — <code class="docutils literal notranslate"><span class="pre">lat_dist</span></code> does not need to integrate to one. The kernel normalizes internally by <span class="math notranslate nohighlight">\(\int p(\phi)\,d\phi\)</span>, so scaling <span class="math notranslate nohighlight">\(p\)</span> by a constant has no effect on the kernel shape.</p>
-<p><strong>JAX backend</strong> — The same <code class="docutils literal notranslate"><span class="pre">lat_dist</span></code> callable works identically with <code class="docutils literal notranslate"><span class="pre">src_jax</span></code>. However, because <code class="docutils literal notranslate"><span class="pre">lat_dist</span></code> is evaluated in Python before JIT-compilation, changing it requires rebuilding the kernel object (or calling <code class="docutils literal notranslate"><span class="pre">kernel()</span></code> with the new <code class="docutils literal notranslate"><span class="pre">lat_dist</span></code> each time — which is fine):</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">src_jax.analytic_kernel</span><span class="w"> </span><span class="kn">import</span> <span class="n">AnalyticKernel</span> <span class="k">as</span> <span class="n">AnalyticKernelJAX</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">7</span><span class="p">)</span>
+<span class="n">nspot</span> <span class="o">=</span> <span class="mi">200</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">models</span><span class="p">),</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">14</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">sharey</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-<span class="n">ak_jax</span> <span class="o">=</span> <span class="n">AnalyticKernelJAX</span><span class="p">(</span><span class="n">hparam</span><span class="p">,</span> <span class="n">n_lat</span><span class="o">=</span><span class="mi">128</span><span class="p">)</span>
-<span class="n">K</span> <span class="o">=</span> <span class="n">ak_jax</span><span class="o">.</span><span class="n">kernel</span><span class="p">(</span><span class="n">tlags</span><span class="p">,</span> <span class="n">lat_dist</span><span class="o">=</span><span class="n">butterfly</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">ax</span><span class="p">,</span> <span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">mdl</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">axes</span><span class="p">,</span> <span class="n">models</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+    <span class="n">lc</span> <span class="o">=</span> <span class="n">LightcurveModel</span><span class="o">.</span><span class="n">from_spot_model</span><span class="p">(</span>
+        <span class="n">mdl</span><span class="p">,</span> <span class="n">nspot</span><span class="o">=</span><span class="n">nspot</span><span class="p">,</span> <span class="n">tsim</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">tsamp</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">lats_deg</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">rad2deg</span><span class="p">(</span><span class="n">lc</span><span class="o">.</span><span class="n">lat</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">nspot</span><span class="p">),</span> <span class="n">lats_deg</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">s</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">colors</span><span class="p">[</span><span class="n">name</span><span class="p">])</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="o">-</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="o">-</span><span class="mi">90</span><span class="p">,</span> <span class="mi">90</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_yticks</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="o">-</span><span class="mi">90</span><span class="p">,</span> <span class="mi">91</span><span class="p">,</span> <span class="mi">30</span><span class="p">))</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xticks</span><span class="p">([])</span>
+
+<span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s2">&quot;Spot latitude [deg]&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">fig</span><span class="o">.</span><span class="n">suptitle</span><span class="p">(</span><span class="s2">&quot;Spot placement by latitude distribution&quot;</span><span class="p">,</span> <span class="n">fontsize</span><span class="o">=</span><span class="n">label_fs</span><span class="p">)</span>
+<span class="n">fig</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
 </pre></div>
 </div>
-<p><strong>Fitting the distribution</strong> — If you want to <em>infer</em> the latitude distribution (e.g. fit <span class="math notranslate nohighlight">\(\phi_0\)</span> of the butterfly diagram), define <code class="docutils literal notranslate"><span class="pre">lat_dist</span></code> as a closure over the parameter and include it in your <code class="docutils literal notranslate"><span class="pre">log_prior</span></code>. Rebuild the <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code> (or call <code class="docutils literal notranslate"><span class="pre">gp.update_hparam()</span></code>) whenever you evaluate the log-posterior at a new parameter value.</p>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/tutorials_custom_latitude_distribution_19_0.png" src="../_images/tutorials_custom_latitude_distribution_19_0.png" />
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>
+</pre></div>
+</div>
+</div>
+</section>
 </section>
 </section>
 
@@ -875,20 +917,20 @@ log-likelihood (butterfly): 1062.26
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="custom_envelope.html"
+       href="gp_optimization.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Custom Envelope Functions</p>
+        <p class="prev-next-title">GPSolver and Hyperparameter Optimization</p>
       </div>
     </a>
     <a class="right-next"
-       href="gp_optimization.html"
+       href="mcmc_sampling.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">GP Hyperparameter Optimization</p>
+        <p class="prev-next-title">MCMC Sampling with BlackJAX</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -910,15 +952,16 @@ log-likelihood (butterfly): 1062.26
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#1.-Shared-kernel-parameters">1. Shared kernel parameters</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#2.-Define-latitude-distributions">2. Define latitude distributions</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#3.-Visualize-the-distributions">3. Visualize the distributions</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#4.-Compute-kernels-with-each-distribution">4. Compute kernels with each distribution</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#5.-Compare-kernel-shapes">5. Compare kernel shapes</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#6.-Effect-on-the-power-spectral-density">6. Effect on the power spectral density</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#7.-Latitude-distributions-and-differential-rotation">7. Latitude distributions and differential rotation</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#8.-Using-a-custom-lat_dist-with-GPSolver">8. Using a custom <code class="docutils literal notranslate"><span class="pre">lat_dist</span></code> with <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code></a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#Tips:">Tips:</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#1.-Default-uniform-distribution">1. Default uniform distribution</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#2.-Equatorial-band">2. Equatorial band</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#3.-Gaussian-weighted-distribution">3. Gaussian-weighted distribution</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#4.-Polar-band">4. Polar band</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#5.-Kernel-and-lightcurve-comparison">5. Kernel and lightcurve comparison</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#5a.-GP-kernel-shapes">5a. GP kernel shapes</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#5b.-Lightcurve-comparison">5b. Lightcurve comparison</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#5c.-Spot-latitude-placement">5c. Spot latitude placement</a></li>
+</ul>
+</li>
 </ul>
   </nav></div>
 

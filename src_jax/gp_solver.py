@@ -17,23 +17,25 @@ import numpy as np
 try:
     from .params import (
         resolve_hparam, KERNEL_HPARAM_KEYS, HPARAM_KEYS_WITH_NOISE,
-        _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
-        _AMPLITUDE_KEYS_PHYSICAL, _AMPLITUDE_KEYS_PHYSICAL_RATE,
     )
-    from .analytic_kernel import (
-        AnalyticKernel, _R_Gamma_symmetric, _cn_general_jax, _gauss_legendre_grid,
+    from .envelope import _R_Gamma_symmetric
+    from .spot_model import (
+        SpotEvolutionModel, VisibilityFunction,
+        _cn_general_jax, _gauss_legendre_grid,
     )
+    from .analytic_kernel import AnalyticKernel
     from .banded_cholesky import (banded_cholesky, banded_solve,
                                    banded_cholesky_compact, banded_solve_compact)
 except ImportError:
     from params import (
         resolve_hparam, KERNEL_HPARAM_KEYS, HPARAM_KEYS_WITH_NOISE,
-        _REQUIRED_KEYS, _AMPLITUDE_KEYS_SIGMA,
-        _AMPLITUDE_KEYS_PHYSICAL, _AMPLITUDE_KEYS_PHYSICAL_RATE,
     )
-    from analytic_kernel import (
-        AnalyticKernel, _R_Gamma_symmetric, _cn_general_jax, _gauss_legendre_grid,
+    from envelope import _R_Gamma_symmetric
+    from spot_model import (
+        SpotEvolutionModel, VisibilityFunction,
+        _cn_general_jax, _gauss_legendre_grid,
     )
+    from analytic_kernel import AnalyticKernel
     from banded_cholesky import (banded_cholesky, banded_solve,
                                  banded_cholesky_compact, banded_solve_compact)
 
@@ -50,7 +52,8 @@ HPARAM_KEYS_WITH_NOISE = list(HPARAM_KEYS_WITH_NOISE)
 # =====================================================================
 
 def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
-                  quad_nodes=None, quad_weights=None):
+                  quad_nodes=None, quad_weights=None,
+                  r_gamma_func=None):
     """
     Pure-functional kernel evaluation: theta_arr -> kernel values.
 
@@ -65,23 +68,36 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
 
     Parameters
     ----------
-    theta_arr : jnp.ndarray, shape (6,)
-        [peq, kappa, inc, lspot, tau, sigma_k]
+    theta_arr : jnp.ndarray, shape (n_params,)
+        Kernel parameters. First three are always [peq, kappa, inc];
+        last is always sigma_k. Layout otherwise depends on envelope type.
+        Default (backward-compat) layout: [peq, kappa, inc, lspot, tau_spot, sigma_k].
     lag_flat : jnp.ndarray, shape (M,)
         Flattened time lags.
     n_harmonics, n_lat, lat_range : kernel config (static).
     quad_nodes, quad_weights : jnp.ndarray or None
         Gauss-Legendre nodes and weights. If None, uses trapezoid rule.
+    r_gamma_func : callable or None
+        JAX-traceable function ``f(theta_arr, lag) -> R_Gamma``.
+        If None, uses the symmetric-trapezoid closed-form (backward compat).
 
     Returns
     -------
     K_flat : jnp.ndarray, shape (M,)
         Kernel values at each lag.
     """
-    peq, kappa, inc, lspot, tau, sigma_k = theta_arr
+    peq    = theta_arr[0]
+    kappa  = theta_arr[1]
+    inc    = theta_arr[2]
+    sigma_k = theta_arr[-1]
 
-    # R_Gamma (independent of latitude, closed-form piecewise polynomial)
-    R = _R_Gamma_symmetric(lag_flat, lspot, tau)
+    # R_Gamma: envelope-specific or default symmetric trapezoid
+    if r_gamma_func is not None:
+        R = r_gamma_func(theta_arr, lag_flat)
+    else:
+        lspot    = theta_arr[3]
+        tau_spot = theta_arr[4]
+        R = _R_Gamma_symmetric(lag_flat, lspot, tau_spot)
 
     # Quadrature grid
     if quad_nodes is not None:
@@ -125,7 +141,9 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
 
 def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
                        n_harmonics, n_lat, lat_range,
-                       fit_sigma_n, quad_nodes=None, quad_weights=None):
+                       fit_sigma_n, n_kernel=6,
+                       r_gamma_func=None,
+                       quad_nodes=None, quad_weights=None):
     """
     Pure-functional GP marginal log-likelihood.
 
@@ -135,16 +153,19 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
 
     Parameters
     ----------
-    theta_full : jnp.ndarray, shape (6,) or (7,)
-        Kernel params [peq, kappa, inc, lspot, tau, sigma_k],
-        optionally followed by sigma_n (white noise amplitude).
+    theta_full : jnp.ndarray, shape (n_kernel,) or (n_kernel+1,)
+        Kernel params, optionally followed by sigma_n (white noise).
     x, y, yerr : jnp.ndarray
         Observations.
     mean_val : float
         Constant mean.
     n_harmonics, n_lat, lat_range : kernel config.
     fit_sigma_n : bool
-        If True, theta_full has 8 elements (last is sigma_n).
+        If True, last element of theta_full is sigma_n.
+    n_kernel : int
+        Number of kernel parameters (default 6 for backward compat).
+    r_gamma_func : callable or None
+        JAX-traceable envelope R_Gamma function (see _kernel_eval).
     quad_nodes, quad_weights : jnp.ndarray or None
         Gauss-Legendre nodes/weights. If None, uses trapezoid rule.
 
@@ -154,7 +175,6 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
     """
     N = x.shape[0]
 
-    n_kernel = 6
     if fit_sigma_n:
         theta_kernel = theta_full[:n_kernel]
         sigma_n = theta_full[n_kernel]
@@ -168,7 +188,8 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
 
     K_upper = _kernel_eval(theta_kernel, lag_upper,
                            n_harmonics, n_lat, lat_range,
-                           quad_nodes=quad_nodes, quad_weights=quad_weights)
+                           quad_nodes=quad_nodes, quad_weights=quad_weights,
+                           r_gamma_func=r_gamma_func)
 
     # Reconstruct symmetric matrix from upper triangle
     K = jnp.zeros((N, N))
@@ -190,6 +211,7 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
 
 def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
                               n_harmonics, n_lat, lat_range,
+                              r_gamma_func=None,
                               quad_nodes=None, quad_weights=None):
     """
     Build the kernel covariance directly in compact (b+1, N) banded storage.
@@ -198,13 +220,15 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
 
     Parameters
     ----------
-    theta_kernel : jnp.ndarray, shape (6,)
+    theta_kernel : jnp.ndarray, shape (n_params,)
         Kernel hyperparameters.
     x : jnp.ndarray, shape (N,)
         Observation times.
     bandwidth : int
         Number of sub-diagonals.
     n_harmonics, n_lat, lat_range : kernel config.
+    r_gamma_func : callable or None
+        JAX-traceable envelope R_Gamma function (see _kernel_eval).
     quad_nodes, quad_weights : jnp.ndarray or None
 
     Returns
@@ -215,17 +239,17 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
     N = x.shape[0]
     b = bandwidth
 
-    # Build index arrays: for diagonal d, entry i has lag |x[i+d] - x[i]|
-    d_idx = jnp.arange(b + 1)[:, None]   # (b+1, 1)
-    i_idx = jnp.arange(N)[None, :]       # (1, N)
-    j_idx = i_idx + d_idx                 # (b+1, N)  row index = i+d
+    d_idx = jnp.arange(b + 1)[:, None]
+    i_idx = jnp.arange(N)[None, :]
+    j_idx = i_idx + d_idx
     j_safe = jnp.minimum(j_idx, N - 1)
-    valid = j_idx < N                     # (b+1, N)
+    valid = j_idx < N
 
-    lags_flat = jnp.abs(x[j_safe] - x[i_idx]).ravel()  # ((b+1)*N,)
+    lags_flat = jnp.abs(x[j_safe] - x[i_idx]).ravel()
     K_flat = _kernel_eval(theta_kernel, lags_flat,
                           n_harmonics, n_lat, lat_range,
-                          quad_nodes=quad_nodes, quad_weights=quad_weights)
+                          quad_nodes=quad_nodes, quad_weights=quad_weights,
+                          r_gamma_func=r_gamma_func)
     cb = K_flat.reshape(b + 1, N)
     cb = jnp.where(valid, cb, 0.0)
     return cb
@@ -234,6 +258,8 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
 def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                n_harmonics, n_lat, lat_range,
                                fit_sigma_n, bandwidth,
+                               n_kernel=6,
+                               r_gamma_func=None,
                                quad_nodes=None, quad_weights=None):
     """
     Pure-functional GP marginal log-likelihood using banded Cholesky.
@@ -250,11 +276,14 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
     ----------
     bandwidth : int
         Number of sub-diagonals to retain (compile-time constant).
+    n_kernel : int
+        Number of kernel parameters (default 6 for backward compat).
+    r_gamma_func : callable or None
+        JAX-traceable envelope R_Gamma function (see _kernel_eval).
     All other parameters are the same as ``_gp_log_likelihood``.
     """
     N = x.shape[0]
 
-    n_kernel = 6
     if fit_sigma_n:
         theta_kernel = theta_full[:n_kernel]
         sigma_n = theta_full[n_kernel]
@@ -265,6 +294,7 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
     # Build covariance in compact banded storage: O(N*b) instead of O(N^2)
     cb = _build_banded_kernel_jax(theta_kernel, x, bandwidth,
                                    n_harmonics, n_lat, lat_range,
+                                   r_gamma_func=r_gamma_func,
                                    quad_nodes=quad_nodes,
                                    quad_weights=quad_weights)
 
@@ -328,7 +358,7 @@ class GPSolver:
         Measurement uncertainties (1-sigma).
     hparam : dict
         Kernel hyperparameters. Required keys: peq, kappa, inc, lspot,
-        tau. For amplitude, provide either sigma_k directly or all of
+        tau_spot. For amplitude, provide either sigma_k directly or all of
         nspot, fspot, and alpha_max (sigma_k computed automatically).
     kernel_type : {"analytic"}
         Which kernel to use (default: "analytic").
@@ -351,15 +381,26 @@ class GPSolver:
         "kappa":     (0.001, 0.999),
         "inc":       (0.01, np.pi - 0.01),
         "lspot":     (0.1, 20.0),
-        "tau":       (0.05, 10.0),
+        "tau_spot":  (0.05, 10.0),
+        "tau_em":    (0.05, 10.0),
+        "tau_dec":   (0.05, 10.0),
+        "sigma_sn":  (0.05, 10.0),
+        "n_sn":      (-10.0, 10.0),
         "sigma_k":   (1e-6, 1.0),
         "sigma_n":   (1e-6, 0.1),
     }
 
-    def __init__(self, x, y, yerr, hparam, kernel_type="analytic",
+    def __init__(self, x, y, yerr, model_or_hparam, kernel_type="analytic",
                  mean=None, fit_sigma_n=False, bounds=None,
                  log_prior=None, matrix_solver="cholesky_banded",
                  save_dir=None, **kernel_kwargs):
+        """
+        Parameters
+        ----------
+        model_or_hparam : SpotEvolutionModel or dict
+            Either a SpotEvolutionModel (new API) or a raw hparam dict
+            (backward-compatible old API).
+        """
 
         self.x = jnp.asarray(x, dtype=jnp.float64)
         self.y = jnp.asarray(y, dtype=jnp.float64)
@@ -370,9 +411,14 @@ class GPSolver:
             self.yerr = yerr_arr
         self.N = len(self.x)
 
-        # Validate and store hyperparameters
-        _validate_hparam(hparam)
-        self.hparam = dict(hparam)
+        # Accept SpotEvolutionModel or legacy hparam dict
+        if isinstance(model_or_hparam, SpotEvolutionModel):
+            self.spot_model = model_or_hparam
+            self.hparam = model_or_hparam.to_hparam()
+        else:
+            _validate_hparam(model_or_hparam)
+            self.hparam = dict(model_or_hparam)
+            self.spot_model = SpotEvolutionModel.from_hparam(self.hparam)
 
         # Mean function
         if mean is None:
@@ -405,7 +451,11 @@ class GPSolver:
         # so that the log-param remapping can identify which physical keys
         # to replace with their log-space counterparts.
         self.fit_sigma_n = fit_sigma_n
-        _base_keys = HPARAM_KEYS_WITH_NOISE if fit_sigma_n else KERNEL_HPARAM_KEYS
+
+        # Use envelope-aware param_keys from the SpotEvolutionModel.
+        # This replaces the old hardcoded KERNEL_HPARAM_KEYS approach.
+        _model_keys = self.spot_model.param_keys  # e.g. (peq, kappa, inc, lspot, tau_spot, sigma_k)
+        _base_keys = _model_keys + ("sigma_n",) if fit_sigma_n else _model_keys
 
         # Detect log-space parameters: keys prefixed with "log_" in the
         # bounds dict indicate sampling in log10 space.  The physical key
@@ -424,7 +474,7 @@ class GPSolver:
         self.n_params = len(self.param_keys)
 
         # Parse bounds — must precede _compute_bandwidth so that the upper
-        # bounds of lspot and tau are available for the bandwidth calculation.
+        # bounds of lspot and tau_spot are available for the bandwidth calculation.
         # For log-space keys the supplied bounds are already in log10 units;
         # for physical keys without explicit bounds, fall back to DEFAULT_BOUNDS.
         if bounds is None:
@@ -452,12 +502,17 @@ class GPSolver:
         # Build covariance and factorize
         self._build_covariance()
 
-        # Initial theta: physical hparam values, converted to log10 for any
-        # log-parameterized keys.
+        # Initial theta: physical values from spot_model, converted to log10
+        # for any log-parameterized keys.
+        _phys_theta0 = dict(zip(self.spot_model.param_keys,
+                                self.spot_model.theta0))
+        if fit_sigma_n:
+            _phys_theta0["sigma_n"] = float(
+                self.hparam.get("sigma_n", self.DEFAULT_BOUNDS["sigma_n"][0]))
         self.theta0 = jnp.array([
-            np.log10(float(self.hparam.get(self._log_param_map[k], 0.0)))
+            np.log10(float(_phys_theta0.get(self._log_param_map[k], 0.0)))
             if k in self._log_param_map
-            else float(self.hparam.get(k, 0.0))
+            else float(_phys_theta0.get(k, 0.0))
             for k in self.param_keys
         ], dtype=jnp.float64)
 
@@ -524,9 +579,9 @@ class GPSolver:
         print(f"Saved {filename} → {path}")
 
     def _build_kernel(self):
-        """Instantiate the kernel object."""
+        """Instantiate the kernel object from the SpotEvolutionModel."""
         if self.kernel_type == "analytic":
-            self.kernel = AnalyticKernel(self.hparam, **self.kernel_kwargs)
+            self.kernel = AnalyticKernel(self.spot_model, **self.kernel_kwargs)
         else:
             raise ValueError(
                 f"GPSolver only supports 'analytic' kernel, "
@@ -566,37 +621,20 @@ class GPSolver:
         """
         Bandwidth in samples for the banded Cholesky solver.
 
-        Derived from the **upper bounds** of ``lspot`` and ``tau`` so that
+        Derived from the **upper bounds** of envelope parameters so that
         the banded approximation is valid for any parameters within the
-        prior, regardless of the current ``hparam`` values.  This is
-        required for JIT-compiled sampling: the bandwidth is a compile-time
-        constant (it determines array shapes), so it must cover the entire
-        prior support rather than just the initial hyperparameters.
+        prior, regardless of the current hparam values.  This is required
+        for JIT-compiled sampling: the bandwidth is a compile-time constant
+        (it determines array shapes), so it must cover the entire prior
+        support rather than just the initial hyperparameters.
 
         Assumes uniform sampling; uses ``x[1] - x[0]`` as the step size.
         """
         if self.N < 2:
             return self.N
         dt = float(self.x[1] - self.x[0])
-        keys = list(self.param_keys)
-
-        # Resolve upper bound for lspot and tau, accounting for the
-        # possibility that either is sampled in log10 space.
-        if "lspot" in keys:
-            lspot_max = float(self.bounds[keys.index("lspot"), 1])
-        elif "log_lspot" in keys:
-            lspot_max = 10.0 ** float(self.bounds[keys.index("log_lspot"), 1])
-        else:
-            lspot_max = float(self.DEFAULT_BOUNDS["lspot"][1])
-
-        if "tau" in keys:
-            tau_max = float(self.bounds[keys.index("tau"), 1])
-        elif "log_tau" in keys:
-            tau_max = 10.0 ** float(self.bounds[keys.index("log_tau"), 1])
-        else:
-            tau_max = float(self.DEFAULT_BOUNDS["tau"][1])
-
-        b = int(np.ceil((lspot_max + 2.0 * tau_max) / dt))
+        support = self.spot_model.bandwidth_support(self.param_keys, self.bounds)
+        b = int(np.ceil(support / dt))
         return min(b, self.N - 1)
 
     def _build_covariance(self):
@@ -668,6 +706,11 @@ class GPSolver:
         qn, qw = self._quad_nodes, self._quad_weights
         to_phys = self._to_physical  # sampling theta → physical theta
 
+        # Envelope-specific R_Gamma function (JAX-traceable, captured in closure)
+        r_gamma_fn = self.spot_model.get_r_gamma_func()
+        # Number of kernel params (excludes sigma_n)
+        n_kernel = len(self.spot_model.param_keys)
+
         if self.matrix_solver == "cholesky_banded":
             # Capture bandwidth as a Python int in the closure so that
             # jax.lax.scan inside banded_cholesky is unrolled statically.
@@ -678,6 +721,7 @@ class GPSolver:
                 ll = _gp_log_likelihood_banded(
                     to_phys(theta_arr), x, y, yerr, mean_val,
                     n_h, n_l, lr, fit_sn, b,
+                    n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw)
                 lp = (custom_prior(theta_arr) if custom_prior is not None
                       else _default_log_prior(theta_arr, bounds))
@@ -687,6 +731,7 @@ class GPSolver:
             def log_posterior(theta_arr):
                 ll = _gp_log_likelihood(to_phys(theta_arr), x, y, yerr, mean_val,
                                         n_h, n_l, lr, fit_sn,
+                                        n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
                                         quad_nodes=qn, quad_weights=qw)
                 lp = (custom_prior(theta_arr) if custom_prior is not None
                       else _default_log_prior(theta_arr, bounds))
@@ -700,6 +745,50 @@ class GPSolver:
         self.neg_log_posterior = neg_log_posterior
         self.grad_log_posterior = jax.jit(jax.grad(log_posterior))
         self.grad_neg_log_posterior = jax.jit(jax.grad(neg_log_posterior))
+
+    # =================================================================
+    # JAX compilation warmup
+    # =================================================================
+
+    def build_jax(self):
+        """
+        Pre-compile and warm up all JAX JIT functions for this solver.
+
+        ``_build_logposterior()`` creates four ``@jax.jit``-decorated
+        functions (``log_posterior``, ``neg_log_posterior``,
+        ``grad_log_posterior``, ``grad_neg_log_posterior``) that each
+        trigger a separate XLA compilation on their first call.  Combined
+        with the banded Cholesky solver, that can add up to 10–30 s of
+        invisible overhead before a fit or MCMC run starts.
+
+        Call ``build_jax()`` once after constructing the solver to pay
+        that cost upfront.
+
+        Returns
+        -------
+        self : GPSolver
+            Returns ``self`` so the call can be chained:
+            ``gp = GPSolver(...).build_jax()``.
+        """
+        import time
+
+        theta0 = self.theta0
+
+        t0 = time.time()
+        jax.block_until_ready(self.log_posterior(theta0))
+        jax.block_until_ready(self.neg_log_posterior(theta0))
+        jax.block_until_ready(self.grad_log_posterior(theta0))
+        jax.block_until_ready(self.grad_neg_log_posterior(theta0))
+        print(f"JAX GP solver compiled in {np.round(time.time() - t0, 2)}s")
+
+        t0 = time.time()
+        jax.block_until_ready(self.log_posterior(theta0))
+        jax.block_until_ready(self.neg_log_posterior(theta0))
+        jax.block_until_ready(self.grad_log_posterior(theta0))
+        jax.block_until_ready(self.grad_neg_log_posterior(theta0))
+        print(f"JAX GP solver recompute in {np.round(time.time() - t0, 2)}s")
+
+        return self
 
     # =================================================================
     # Log-likelihood
@@ -812,7 +901,7 @@ class GPSolver:
         if theta is not None:
             phys = {}
             for k, v in (theta.items() if isinstance(theta, dict)
-                         else zip(KERNEL_HPARAM_KEYS, theta)):
+                         else zip(self.spot_model.param_keys, theta)):
                 if isinstance(k, str) and k.startswith("log_"):
                     phys[k[4:]] = 10.0 ** float(v)
                 else:
@@ -1024,8 +1113,9 @@ class GPSolver:
         acf_data_jax = jnp.asarray(acf_data)
 
         # --- Parse theta0 -------------------------------------------------
-        n_kernel = len(KERNEL_HPARAM_KEYS)
-        kernel_keys = KERNEL_HPARAM_KEYS
+        # Use envelope-aware param_keys (excludes sigma_n)
+        kernel_keys = list(self.spot_model.param_keys)
+        n_kernel = len(kernel_keys)
         if theta0 is None:
             theta0_arr = self.theta0[:n_kernel]
         elif isinstance(theta0, dict):
@@ -1068,6 +1158,7 @@ class GPSolver:
 
         qn, qw = self._quad_nodes, self._quad_weights
         n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
+        r_gamma_fn = self.spot_model.get_r_gamma_func()
 
         @jax.jit
         def loss_u(u_arr):
@@ -1076,7 +1167,8 @@ class GPSolver:
                 free_theta, free_idx, fixed_idx, fixed_vals)
             K_model = _kernel_eval(theta_full, lag_centers_jax,
                                    n_h, n_l, lr,
-                                   quad_nodes=qn, quad_weights=qw)
+                                   quad_nodes=qn, quad_weights=qw,
+                                   r_gamma_func=r_gamma_fn)
             return jnp.sum((acf_data_jax - K_model) ** 2)
 
         vg_fn = jax.jit(jax.value_and_grad(loss_u))
@@ -1179,8 +1271,8 @@ class GPSolver:
             rng = np.random.default_rng()
 
         # Determine which kernel indices are free
-        n_kernel = len(KERNEL_HPARAM_KEYS)
-        kernel_keys = KERNEL_HPARAM_KEYS
+        kernel_keys = list(self.spot_model.param_keys)
+        n_kernel = len(kernel_keys)
         if keys is None:
             free_keys = list(kernel_keys)
             free_bounds_np = np.asarray(self.bounds[:n_kernel])
@@ -1306,10 +1398,11 @@ class GPSolver:
         from scipy.optimize import minimize
         from scipy.signal import lombscargle
 
-        n_kernel = 6  # always the first 6 param_keys are kernel params
+        n_kernel = len(self.spot_model.param_keys)  # envelope-dependent
         to_phys = self._to_physical
         qn, qw = self._quad_nodes, self._quad_weights
         n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
+        r_gamma_fn = self.spot_model.get_r_gamma_func()
         w_acf = float(acf_weight)
         w_psd = float(psd_weight)
 
@@ -1397,13 +1490,15 @@ class GPSolver:
 
             if w_acf != 0.0:
                 K_acf    = _kernel_eval(theta_phys, lag_jax, n_h, n_l, lr,
-                                        quad_nodes=qn, quad_weights=qw)
+                                        quad_nodes=qn, quad_weights=qw,
+                                        r_gamma_func=r_gamma_fn)
                 acf_loss = jnp.mean(((acf_jax - K_acf) / acf_rms) ** 2)
                 loss = loss + w_acf * acf_loss
 
             if w_psd != 0.0:
                 K_tau = _kernel_eval(theta_phys, tau_jax, n_h, n_l, lr,
-                                     quad_nodes=qn, quad_weights=qw)
+                                     quad_nodes=qn, quad_weights=qw,
+                                     r_gamma_func=r_gamma_fn)
                 psd_model = jnp.maximum(
                     dt_kernel * (K_tau[0] + 2.0 * jnp.dot(K_tau[1:], cos_mat[1:])),
                     0.0)
@@ -1459,7 +1554,7 @@ class GPSolver:
         return theta_dict, result
 
     def _theta_dict_to_phys_array(self, theta):
-        """Convert a theta dict or array to a physical KERNEL_HPARAM_KEYS array.
+        """Convert a theta dict or array to a physical kernel parameter array.
 
         Handles sampling-space dicts that may contain ``log_``-prefixed keys
         (e.g. ``log_sigma_k``), converting them to physical values via
@@ -1470,13 +1565,14 @@ class GPSolver:
         ----------
         theta : dict or array_like
             Kernel parameters, either as a dict (physical or log-space keys)
-            or a length-6 array in KERNEL_HPARAM_KEYS order.
+            or an array in spot_model.param_keys order.
 
         Returns
         -------
-        theta_arr : jnp.ndarray, shape (6,)
-            Physical kernel parameters in KERNEL_HPARAM_KEYS order.
+        theta_arr : jnp.ndarray
+            Physical kernel parameters in spot_model.param_keys order.
         """
+        kernel_keys = list(self.spot_model.param_keys)
         if isinstance(theta, dict):
             phys = {}
             for k, v in theta.items():
@@ -1484,7 +1580,7 @@ class GPSolver:
                     phys[k[4:]] = 10.0 ** float(v)
                 else:
                     phys[k] = float(v)
-            return jnp.array([float(phys[k]) for k in KERNEL_HPARAM_KEYS],
+            return jnp.array([float(phys[k]) for k in kernel_keys],
                              dtype=jnp.float64)
         return jnp.asarray(theta, dtype=jnp.float64)
 
@@ -1540,7 +1636,8 @@ class GPSolver:
             K_model = np.asarray(_kernel_eval(
                 theta_arr, jnp.asarray(lag_fine),
                 self.n_harmonics, self.n_lat, self.lat_range,
-                quad_nodes=self._quad_nodes, quad_weights=self._quad_weights))
+                quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
+                r_gamma_func=self.spot_model.get_r_gamma_func()))
             if normalize:
                 var = np.mean((np.asarray(self.y) - self.mean_val) ** 2)
                 if var > 0:
@@ -1656,6 +1753,133 @@ class GPSolver:
 
         return ax
 
+    def plot_covariance_matrix(self, theta=None, ax=None, cmap="RdBu_r",
+                               show_colorbar=True, vmax=None, nbins=50,
+                               show=False, filename="covariance_matrix.png"):
+        """
+        Plot the GP covariance matrix K (signal only, no noise).
+
+        Entries outside the banded support are set to zero, matching the
+        ``cholesky_banded`` approximation.  The matrix is binned to
+        ``nbins x nbins`` before plotting.  The bandwidth boundary is drawn
+        as dashed lines, and band width plus matrix sparsity are annotated.
+
+        Parameters
+        ----------
+        theta : dict or array_like, optional
+            Kernel hyperparameters.  Accepts a physical dict with keys from
+            ``param_keys``, a sampling-space dict with ``log_``-prefixed keys,
+            or a raw array.  If None, uses the current ``self.hparam`` values.
+        ax : matplotlib Axes, optional
+            Axes to plot on.  If None, a new figure is created.
+        cmap : str, optional
+            Colormap name.  Defaults to ``"RdBu_r"`` (diverging, centred at
+            zero).
+        show_colorbar : bool, optional
+            Whether to add a colorbar.  Default True.
+        vmax : float, optional
+            Symmetric color scale limit ``[-vmax, vmax]``.  If None, uses the
+            maximum absolute value of the banded matrix.
+        nbins : int, optional
+            Bin the N x N matrix down to ``nbins x nbins`` by averaging
+            non-overlapping blocks before plotting.  Default 50.
+        show : bool, optional
+            If True, call ``plt.show()``.  Default False.
+        filename : str, optional
+            Filename used when saving to ``save_dir``.
+            Default ``"covariance_matrix.png"``.
+
+        Returns
+        -------
+        ax : matplotlib Axes
+        """
+        import os
+        import matplotlib.pyplot as plt
+
+        if theta is not None:
+            theta_arr = self._theta_dict_to_phys_array(theta)
+        else:
+            theta_arr = self._theta_dict_to_phys_array(self.hparam)
+
+        N = self.N
+        b = self.bandwidth
+        dt = float(self.x[1] - self.x[0]) if N > 1 else 1.0
+        band_days = b * dt
+
+        # Build banded K: evaluate only the b+1 diagonals, zero elsewhere
+        K = np.zeros((N, N))
+        for d in range(b + 1):
+            i_idx = np.arange(N - d)
+            j_idx = i_idx + d
+            lags = jnp.abs(self.x[i_idx] - self.x[j_idx])
+            K_diag = np.asarray(_kernel_eval(
+                theta_arr, lags,
+                self.n_harmonics, self.n_lat, self.lat_range,
+                quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
+                r_gamma_func=self.spot_model.get_r_gamma_func()))
+            K[i_idx, j_idx] = K_diag
+            if d > 0:
+                K[j_idx, i_idx] = K_diag
+
+        # Sparsity: fraction of entries outside the band
+        n_nonzero = int(N) * (2 * int(b) + 1) - int(b) * (int(b) + 1)
+        n_nonzero = min(n_nonzero, N * N)
+        sparsity = 100.0 * (1.0 - n_nonzero / (N * N))
+
+        # Bin down to nbins x nbins by block-averaging
+        n_plot = min(nbins, N)
+        block = N // n_plot
+        n_trim = block * n_plot
+        K_bin = (K[:n_trim, :n_trim]
+                 .reshape(n_plot, block, n_plot, block)
+                 .mean(axis=(1, 3)))
+
+        del K
+
+        if vmax is None:
+            vmax = float(np.max(np.abs(K_bin)))
+
+        # Bandwidth in binned-matrix units
+        b_bin = b / block
+
+        if ax is None:
+            fig, ax = plt.subplots()
+
+        im = ax.imshow(K_bin, origin="upper", cmap=cmap,
+                       vmin=-vmax, vmax=vmax, aspect="auto")
+        if show_colorbar:
+            plt.colorbar(im, ax=ax, label="Covariance")
+
+        # Dashed lines marking the bandwidth boundary in binned coordinates
+        M = n_plot
+        diag_x = np.array([-0.5, M - 0.5])
+        ax.plot(diag_x + b_bin, diag_x, color="k", lw=1, ls="--", alpha=0.6)
+        ax.plot(diag_x - b_bin, diag_x, color="k", lw=1, ls="--", alpha=0.6)
+        ax.set_xlim(-0.5, M - 0.5)
+        ax.set_ylim(M - 0.5, -0.5)
+
+        # Sparsity annotation in upper-right corner
+        ax.text(0.98, 0.02, f"sparsity = {sparsity:.1f}%",
+                ha="right", va="bottom", fontsize=11,
+                transform=ax.transAxes,
+                bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.7))
+
+        ax.set_title(f"bandwidth = {b} pts ({band_days:.1f} d)", fontsize=13)
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+        del K_bin
+
+        if self.save_dir is not None:
+            path = os.path.join(self.save_dir, filename)
+            ax.figure.savefig(path, bbox_inches="tight")
+            print(f"Saved {filename} → {path}")
+
+        if show:
+            plt.show()
+
+        return ax
+
     def get_theta(self):
         """
         Return the current kernel hyperparameters as a dictionary.
@@ -1705,9 +1929,17 @@ class GPSolver:
         return {k: float(theta_arr[i]) for i, k in enumerate(self.param_keys)}
 
     def update_hparam(self, hparam):
-        """Update hyperparameters and rebuild kernel and covariance."""
-        _validate_hparam(hparam)
-        self.hparam = dict(hparam)
+        """Update hyperparameters and rebuild kernel and covariance.
+
+        Accepts either a SpotEvolutionModel or a hparam dict.
+        """
+        if isinstance(hparam, SpotEvolutionModel):
+            self.spot_model = hparam
+            self.hparam = hparam.to_hparam()
+        else:
+            _validate_hparam(hparam)
+            self.hparam = dict(hparam)
+            self.spot_model = SpotEvolutionModel.from_hparam(self.hparam)
         self._build_kernel()
         self.hparam = dict(self.kernel.hparam)
         if self.matrix_solver == "cholesky_banded":
@@ -1720,10 +1952,12 @@ class GPSolver:
                 self._build_covariance()
         else:
             self._build_covariance()
+        _phys_theta0 = dict(zip(self.spot_model.param_keys,
+                                self.spot_model.theta0))
         self.theta0 = jnp.array([
-            np.log10(float(self.hparam.get(self._log_param_map[k], 0.0)))
+            np.log10(float(_phys_theta0.get(self._log_param_map[k], 0.0)))
             if k in self._log_param_map
-            else float(self.hparam.get(k, 0.0))
+            else float(_phys_theta0.get(k, 0.0))
             for k in self.param_keys
         ], dtype=jnp.float64)
 
