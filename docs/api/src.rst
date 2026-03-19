@@ -1,7 +1,15 @@
 API Reference (``src``)
-=======================
+============================
 
 .. module:: src
+
+Lightcurve Model
+----------------
+
+.. autoclass:: src.starspot.LightcurveModel
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
 Analytic Kernel
 ---------------
@@ -23,14 +31,6 @@ Numerical Kernel
 
 .. autofunction:: src.numerical_kernel.avg_covariance_tlag
 
-Lightcurve Model
-----------------
-
-.. autoclass:: src.starspot.LightcurveModel
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 GP Solver
 ---------
 
@@ -48,6 +48,11 @@ MCMC Sampler
 ------------
 
 .. autoclass:: src.mcmc.MCMCSampler
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: src.mcmc.BlackJAXSampler
    :members:
    :undoc-members:
    :show-inheritance:

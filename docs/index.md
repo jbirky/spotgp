@@ -52,5 +52,5 @@ tutorials/mcmc_sampling
 :maxdepth: 2
 :caption: API Reference
 
-api/src_jax
+api/src
 ```
