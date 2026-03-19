@@ -61,8 +61,7 @@ html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 highlight_language = "python3"
-pygments_style      = "one-light"
-pygments_dark_style = "ayu-mirage"
+pygments_style = "one-light"
 
 html_theme_options = {
     "repository_url": "https://github.com/jbirky/spotgp",
@@ -77,6 +76,8 @@ html_theme_options = {
         "image_light": "_static/spotgp_logo_light.png",
         "image_dark": "_static/spotgp_logo_dark.png",
     },
+    "pygments_light_style": "one-light",
+    "pygments_dark_style": "ayu-mirage",
 }
 
 # -- nbsphinx ----------------------------------------------------------------

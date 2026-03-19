@@ -33,17 +33,8 @@ This project is build and maintained by [Jess Birky](https://github.com/jbirky)-
 :caption: Basics
 
 self
-
-:maxdepth: 2
-  :caption: Model Concepts
-
 tutorials/time_domain
 tutorials/fourier_domain
-```
-
-```{toctree}
-:maxdepth: 2
-
 overview
 tutorials/lightcurve_demo
 tutorials/jax_jit
