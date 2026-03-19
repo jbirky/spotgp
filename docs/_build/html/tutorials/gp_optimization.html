@@ -8,7 +8,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>GPSolver and Hyperparameter Optimization &#8212; spotgp 0.1.0 documentation</title>
+    <title>GP Solver &#8212; spotgp 0.1.0 documentation</title>
   
   
   
@@ -154,7 +154,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../overview.html">Code Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="lightcurve_demo.html">Lightcurve Animations</a></li>
 <li class="toctree-l1"><a class="reference internal" href="trapezoid_symmetric_tutorial.html">Spot Evolution Model</a></li>
-<li class="toctree-l1 current active"><a class="current reference internal" href="#">GPSolver and Hyperparameter Optimization</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">GP Solver</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Advanced</span></p>
 <ul class="nav bd-sidenav">
@@ -163,7 +163,6 @@
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul class="nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="../api/src_numpy.html">API Reference (<code class="docutils literal notranslate"><span class="pre">src_numpy</span></code>)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../api/src_jax.html">API Reference (<code class="docutils literal notranslate"><span class="pre">src_jax</span></code>)</a></li>
 </ul>
 
@@ -381,7 +380,7 @@
               
 
 <div id="jb-print-docs-body" class="onlyprint">
-    <h1>GPSolver and Hyperparameter Optimization</h1>
+    <h1>GP Solver</h1>
     <!-- Table of contents -->
     <div id="print-main-content">
         <div id="jb-print-toc">
@@ -406,8 +405,8 @@
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <meta name="notebook-source" content="gp_optimization.ipynb"><section id="GPSolver-and-Hyperparameter-Optimization">
-<h1>GPSolver and Hyperparameter Optimization<a class="headerlink" href="#GPSolver-and-Hyperparameter-Optimization" title="Link to this heading">#</a></h1>
+  <meta name="notebook-source" content="gp_optimization.ipynb"><section id="GP-Solver">
+<h1>GP Solver<a class="headerlink" href="#GP-Solver" title="Link to this heading">#</a></h1>
 <p>This notebook fits GP hyperparameters to a simulated stellar lightcurve using <code class="docutils literal notranslate"><span class="pre">GPSolver</span></code>. It continues from <code class="docutils literal notranslate"><span class="pre">trapezoid_symmetric_tutorial.ipynb</span></code>, which builds the model and generates the lightcurve.</p>
 <ol class="arabic simple">
 <li><p><strong>Set up</strong> the model and simulate a lightcurve (quick recap)</p></li>

@@ -150,7 +150,7 @@
 <li class="toctree-l1"><a class="reference internal" href="overview.html">Code Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/lightcurve_demo.html">Lightcurve Animations</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/trapezoid_symmetric_tutorial.html">Spot Evolution Model</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/gp_optimization.html">GPSolver and Hyperparameter Optimization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/gp_optimization.html">GP Solver</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Advanced</span></p>
 <ul class="nav bd-sidenav">
@@ -159,7 +159,6 @@
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul class="nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="api/src_numpy.html">API Reference (<code class="docutils literal notranslate"><span class="pre">src_numpy</span></code>)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/src_jax.html">API Reference (<code class="docutils literal notranslate"><span class="pre">src_jax</span></code>)</a></li>
 </ul>
 
@@ -333,21 +332,11 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.analytic_kernel.AnalyticKernel">AnalyticKernel (class in src_jax.analytic_kernel)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.analytic_kernel.AnalyticKernel">(class in src_numpy.analytic_kernel)</a>
 </li>
-      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/src_numpy.html#src_numpy.starspot.LightcurveModel.animate_lightcurve">animate_lightcurve() (src_numpy.starspot.LightcurveModel method)</a>
-</li>
       <li><a href="api/src_jax.html#src_jax.numerical_kernel.avg_covariance_tlag">avg_covariance_tlag() (in module src_jax.numerical_kernel)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.numerical_kernel.avg_covariance_tlag">(in module src_numpy.numerical_kernel)</a>
 </li>
-      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -371,37 +360,19 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.analytic_kernel.AnalyticKernel.cn_squared">cn_squared() (src_jax.analytic_kernel.AnalyticKernel method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.analytic_kernel.AnalyticKernel.cn_squared">(src_numpy.analytic_kernel.AnalyticKernel method)</a>
 </li>
-      </ul></li>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.compute_acf">compute_acf() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.compute_acf">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.compute_kernel">compute_kernel() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.compute_kernel">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.psd.compute_psd">compute_psd() (in module src_jax.psd)</a>
 
       <ul>
-        <li><a href="api/src_numpy.html#src_numpy.psd.compute_psd">(in module src_numpy.psd)</a>
-</li>
         <li><a href="api/src_jax.html#src_jax.analytic_kernel.AnalyticKernel.compute_psd">(src_jax.analytic_kernel.AnalyticKernel method)</a>
 </li>
         <li><a href="api/src_jax.html#src_jax.numerical_kernel.NumericalKernel.compute_psd">(src_jax.numerical_kernel.NumericalKernel method)</a>
-</li>
-        <li><a href="api/src_numpy.html#src_numpy.analytic_kernel.AnalyticKernel.compute_psd">(src_numpy.analytic_kernel.AnalyticKernel method)</a>
-</li>
-        <li><a href="api/src_numpy.html#src_numpy.numerical_kernel.NumericalKernel.compute_psd">(src_numpy.numerical_kernel.NumericalKernel method)</a>
 </li>
       </ul></li>
   </ul></td>
@@ -411,11 +382,7 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.DEFAULT_BOUNDS">DEFAULT_BOUNDS (src_jax.gp_solver.GPSolver attribute)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.DEFAULT_BOUNDS">(src_numpy.gp_solver.GPSolver attribute)</a>
 </li>
-      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -423,40 +390,16 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.fit_acf">fit_acf() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.fit_acf">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.fit_acf_parallel">fit_acf_parallel() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.fit_acf_parallel">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
-      <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.fit_acf_psd">fit_acf_psd() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.fit_acf_psd">(src_numpy.gp_solver.GPSolver method)</a>
-</li>
-      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.fit_acf_psd">fit_acf_psd() (src_jax.gp_solver.GPSolver method)</a>
+</li>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.fit_map">fit_map() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.fit_map">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.fit_map_parallel">fit_map_parallel() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.fit_map_parallel">(src_numpy.gp_solver.GPSolver method)</a>
-</li>
-      </ul></li>
-      <li><a href="api/src_numpy.html#src_numpy.starspot.LightcurveModel.Flux">Flux() (src_numpy.starspot.LightcurveModel method)</a>
-</li>
-      <li><a href="api/src_numpy.html#src_numpy.starspot.LightcurveModel.from_hparam">from_hparam() (src_numpy.starspot.LightcurveModel class method)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -465,31 +408,15 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.numerical_kernel.generate_sims">generate_sims() (in module src_jax.numerical_kernel)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.numerical_kernel.generate_sims">(in module src_numpy.numerical_kernel)</a>
 </li>
-      </ul></li>
       <li><a href="api/src_jax.html#src_jax.numerical_kernel.NumericalKernel.get_acf">get_acf() (src_jax.numerical_kernel.NumericalKernel method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.numerical_kernel.NumericalKernel.get_acf">(src_numpy.numerical_kernel.NumericalKernel method)</a>
 </li>
-      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.get_theta">get_theta() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.get_theta">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver">GPSolver (class in src_jax.gp_solver)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver">(class in src_numpy.gp_solver)</a>
 </li>
-      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -497,25 +424,13 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.analytic_kernel.AnalyticKernel.kernel">kernel() (src_jax.analytic_kernel.AnalyticKernel method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.analytic_kernel.AnalyticKernel.kernel">(src_numpy.analytic_kernel.AnalyticKernel method)</a>
 </li>
-      </ul></li>
-      <li><a href="api/src_jax.html#src_jax.analytic_kernel.AnalyticKernel.kernel_single_latitude">kernel_single_latitude() (src_jax.analytic_kernel.AnalyticKernel method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.analytic_kernel.AnalyticKernel.kernel_single_latitude">(src_numpy.analytic_kernel.AnalyticKernel method)</a>
-</li>
-      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/src_jax.html#src_jax.analytic_kernel.AnalyticKernel.kernel_solid_body">kernel_solid_body() (src_jax.analytic_kernel.AnalyticKernel method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.analytic_kernel.AnalyticKernel.kernel_solid_body">(src_numpy.analytic_kernel.AnalyticKernel method)</a>
+      <li><a href="api/src_jax.html#src_jax.analytic_kernel.AnalyticKernel.kernel_single_latitude">kernel_single_latitude() (src_jax.analytic_kernel.AnalyticKernel method)</a>
 </li>
-      </ul></li>
+      <li><a href="api/src_jax.html#src_jax.analytic_kernel.AnalyticKernel.kernel_solid_body">kernel_solid_body() (src_jax.analytic_kernel.AnalyticKernel method)</a>
+</li>
   </ul></td>
 </tr></table>
 
@@ -523,25 +438,15 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.laplace_samples">laplace_samples() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.laplace_samples">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
-      <li><a href="api/src_numpy.html#src_numpy.starspot.LightcurveModel">LightcurveModel (class in src_numpy.starspot)</a>
+      <li><a href="api/src_jax.html#src_jax.mcmc.BlackJAXSampler.load_checkpoint">load_checkpoint() (src_jax.mcmc.BlackJAXSampler method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/src_jax.html#src_jax.mcmc.BlackJAXSampler.load_checkpoint">load_checkpoint() (src_jax.mcmc.BlackJAXSampler method)</a>
-</li>
       <li><a href="api/src_jax.html#src_jax.mcmc.BlackJAXSampler.load_samples">load_samples() (src_jax.mcmc.BlackJAXSampler static method)</a>
 </li>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.log_likelihood">log_likelihood() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.log_likelihood">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -549,27 +454,15 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.mass_matrix_fisher">mass_matrix_fisher() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.mass_matrix_fisher">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.mass_matrix_hessian_map">mass_matrix_hessian_map() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.mass_matrix_hessian_map">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.mass_matrix_laplace">mass_matrix_laplace() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.mass_matrix_laplace">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.mcmc.MCMCSampler">MCMCSampler (class in src_jax.mcmc)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     module
 
@@ -592,11 +485,7 @@
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.numerical_kernel.NumericalKernel">NumericalKernel (class in src_jax.numerical_kernel)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.numerical_kernel.NumericalKernel">(class in src_numpy.numerical_kernel)</a>
 </li>
-      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -604,11 +493,7 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.analytic_kernel.AnalyticKernel.omega0">omega0() (src_jax.analytic_kernel.AnalyticKernel method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.analytic_kernel.AnalyticKernel.omega0">(src_numpy.analytic_kernel.AnalyticKernel method)</a>
 </li>
-      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -618,43 +503,21 @@
       <li><a href="api/src_jax.html#src_jax.mcmc.MCMCSampler.param_keys">param_keys (src_jax.mcmc.MCMCSampler property)</a>
 </li>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.plot_acf">plot_acf() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.plot_acf">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
       <li><a href="api/src_jax.html#src_jax.numerical_kernel.NumericalKernel.plot_autocorrelation">plot_autocorrelation() (src_jax.numerical_kernel.NumericalKernel method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.numerical_kernel.NumericalKernel.plot_autocorrelation">(src_numpy.numerical_kernel.NumericalKernel method)</a>
 </li>
-      </ul></li>
       <li><a href="api/src_jax.html#src_jax.mcmc.MCMCSampler.plot_covariance">plot_covariance() (src_jax.mcmc.MCMCSampler method)</a>
-</li>
-      <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.plot_covariance_matrix">plot_covariance_matrix() (src_jax.gp_solver.GPSolver method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/src_numpy.html#src_numpy.starspot.LightcurveModel.plot_lightcurve">plot_lightcurve() (src_numpy.starspot.LightcurveModel method)</a>
+      <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.plot_covariance_matrix">plot_covariance_matrix() (src_jax.gp_solver.GPSolver method)</a>
 </li>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.plot_prediction">plot_prediction() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.plot_prediction">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.plot_psd">plot_psd() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.plot_psd">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.predict">predict() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.predict">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -662,11 +525,7 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.analytic_kernel.AnalyticKernel.R_Gamma">R_Gamma() (src_jax.analytic_kernel.AnalyticKernel method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.analytic_kernel.AnalyticKernel.R_Gamma">(src_numpy.analytic_kernel.AnalyticKernel method)</a>
 </li>
-      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.mcmc.BlackJAXSampler.resume_nuts">resume_nuts() (src_jax.mcmc.BlackJAXSampler method)</a>
@@ -680,17 +539,9 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.sample_posterior">sample_posterior() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.sample_posterior">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.sample_prior">sample_prior() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.sample_prior">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
       <li><a href="api/src_jax.html#src_jax.mcmc.BlackJAXSampler.save_checkpoint">save_checkpoint() (src_jax.mcmc.BlackJAXSampler method)</a>
 </li>
       <li>
@@ -733,11 +584,7 @@
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/src_jax.html#src_jax.gp_solver.GPSolver.update_hparam">update_hparam() (src_jax.gp_solver.GPSolver method)</a>
-
-      <ul>
-        <li><a href="api/src_numpy.html#src_numpy.gp_solver.GPSolver.update_hparam">(src_numpy.gp_solver.GPSolver method)</a>
 </li>
-      </ul></li>
   </ul></td>
 </tr></table>
 
