@@ -13,7 +13,7 @@ try:
         compute_R_Gamma_numerical,
     )
     from .spot_model import (
-        VisibilityFunction, SpotEvolutionModel,
+        VisibilityFunction, EdgeOnVisibilityFunction, SpotEvolutionModel,
         _cn_squared_coefficients_jax, _gauss_legendre_grid,
     )
 except ImportError:
@@ -26,7 +26,7 @@ except ImportError:
         compute_R_Gamma_numerical,
     )
     from spot_model import (
-        VisibilityFunction, SpotEvolutionModel,
+        VisibilityFunction, EdgeOnVisibilityFunction, SpotEvolutionModel,
         _cn_squared_coefficients_jax, _gauss_legendre_grid,
     )
 
@@ -165,6 +165,10 @@ class AnalyticKernel:
         Uses jax.lax.scan for memory-efficient accumulation: only one
         lag-sized buffer is live at a time — O(M) instead of O(n_lat·M).
 
+        When the visibility function is an EdgeOnVisibilityFunction, the
+        latitude-averaged |c_n|^2 are known constants and the latitude
+        loop is bypassed entirely.
+
         Parameters
         ----------
         lag : array_like
@@ -179,6 +183,18 @@ class AnalyticKernel:
         lag = jnp.asarray(lag, dtype=float)
         orig_shape = lag.shape
         lag_flat = lag.ravel()
+
+        # Fast path: EdgeOnVisibilityFunction has closed-form latitude-
+        # averaged |c_n|^2, so no quadrature loop is needed.
+        if isinstance(self.visibility, EdgeOnVisibilityFunction):
+            R = self.R_Gamma(lag_flat)
+            cn_sq = self.visibility.cn_squared(0.0, self.n_harmonics)
+            w0 = self.visibility.omega0(0.0)
+            ns = jnp.arange(1, self.n_harmonics + 1)
+            cosine_terms = jnp.sum(
+                cn_sq[1:] * jnp.cos(ns * w0 * lag_flat[:, None]), axis=1)
+            K = self.sigma_k ** 2 * R * (cn_sq[0] + 2 * cosine_terms)
+            return np.asarray(K.reshape(orig_shape))
 
         if lat_dist is None:
             lat_dist = self.spot_model.latitude_distribution
