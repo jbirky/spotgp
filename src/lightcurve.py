@@ -231,6 +231,70 @@ _dflux_all_spots = jax.vmap(
 )
 
 
+@jax.jit
+def _dflux_single_spot_fixed(teval, tmaxk, lspot, tem, tdec, alpha_max, fspot):
+    """
+    Flux deficit for a spot fixed at disk center (no stellar rotation).
+
+    Equivalent to _dflux_single_spot with beta=0 at all times: only the
+    spot size envelope drives flux changes.  With beta=0 the projected
+    area simplifies to A_k = pi * sin^2(alpha).
+    """
+    alphak_t = _alphak(teval, tmaxk, lspot, tem, tdec, alpha_max)
+
+    sina = jnp.sin(alphak_t)
+    dspot = sina**2 * (1.0 - fspot)
+    dspot = jnp.where(alphak_t > 1e-15, dspot, 0.0)
+
+    return dspot
+
+
+# Vectorize fixed-spot function over tmaxk only (no per-spot geometry)
+_dflux_all_spots_fixed = jax.vmap(
+    _dflux_single_spot_fixed,
+    in_axes=(None, 0, None, None, None, None, None)  # teval shared; tmaxk per-spot
+)
+
+
+@jax.jit
+def _dflux_single_spot_constant(teval, longk, latk, tmaxk,
+                                peq, kappa, inc, alpha_max, fspot):
+    """
+    Flux deficit for a spot with constant angular size (no envelope evolution).
+
+    The spot is always at full size alpha_max; only stellar rotation via
+    _betak modulates the projected area.
+    """
+    betak_t, _ = _betak(teval, longk, latk, tmaxk, peq, kappa, inc)
+
+    cosa = jnp.cos(alpha_max)
+    sina = jnp.sin(alpha_max)
+    cosb = jnp.cos(betak_t)
+    sinb = jnp.sin(betak_t)
+
+    eps = 1e-30
+    cota = cosa / (sina + eps)
+    cscb = 1.0 / (sinb + eps)
+    cotb = cosb / (sinb + eps)
+
+    arg1 = jnp.clip(cosa * cscb, -1.0, 1.0)
+    arg2 = jnp.clip(-cota * cotb, -1.0, 1.0)
+    sqrt_arg = jnp.clip(1 - cosa**2 * cscb**2, 0.0, None)
+
+    Ak  = jnp.arccos(arg1)
+    Ak += cosb * sina**2 * jnp.arccos(arg2)
+    Ak -= cosa * sinb * jnp.sqrt(sqrt_arg)
+
+    return Ak / jnp.pi * (1.0 - fspot)
+
+
+# Vectorize constant-size function over per-spot geometry
+_dflux_all_spots_constant = jax.vmap(
+    _dflux_single_spot_constant,
+    in_axes=(None, 0, 0, 0, None, None, None, None, None)
+)
+
+
 class LightcurveModel(object):
     """
     JAX-accelerated star with spots and its lightcurve.
@@ -258,7 +322,8 @@ class LightcurveModel(object):
     def __init__(self, peq=4.0, kappa=0.0, inc=np.pi/2, nspot=10,
                  tau_spot=None, tem=2, tdec=2, alpha_max=0.1, fspot=0, lspot=5,
                  long=[0, 2*np.pi], lat=[-np.pi/2, np.pi/2],
-                 tsim=28, tsamp=0.02, limb_darkening=False):
+                 tsim=28, tsamp=0.02, limb_darkening=False, tmax=None,
+                 rotate=True, grow=True):
 
         # simulation parameters
         self.tsim = tsim
@@ -286,9 +351,17 @@ class LightcurveModel(object):
 
         self.long = self._assign_property(long)
         self.lat = self._assign_property(lat)
-        self.tmax = np.random.uniform(-(self.lspot/2 + self.tdec),
-                                      self.tsim + self.lspot/2 + self.tem,
-                                      self.nspot)
+        if tmax is None:
+            self.tmax = np.random.uniform(-(self.lspot/2 + self.tdec),
+                                          self.tsim + self.lspot/2 + self.tem,
+                                          self.nspot)
+        elif isinstance(tmax, float):
+            self.tmax = np.full(self.nspot, tmax)
+        else:
+            self.tmax = np.asarray(tmax)
+
+        self.rotate = bool(rotate)
+        self.grow   = bool(grow)
 
         # limb darkening
         self.limb_darkening = limb_darkening
@@ -317,27 +390,36 @@ class LightcurveModel(object):
         """
         from .envelope import TrapezoidAsymmetricEnvelope
         env = spot_model.envelope
-        if isinstance(env, TrapezoidAsymmetricEnvelope):
-            tau_em  = env.tau_em
-            tau_dec = env.tau_dec
+        if env is not None:
+            if isinstance(env, TrapezoidAsymmetricEnvelope):
+                tau_em  = env.tau_em
+                tau_dec = env.tau_dec
+            else:
+                tau_em  = env.tau_spot
+                tau_dec = env.tau_spot
+            lspot = spot_model.lspot
         else:
-            tau_em  = env.tau_spot
-            tau_dec = env.tau_spot
+            tau_em  = kwargs.pop("tem",  kwargs.pop("tau_spot", 2.0))
+            tau_dec = kwargs.pop("tdec", tau_em)
+            lspot   = kwargs.pop("lspot", 5.0)
         alpha_max = spot_model.alpha_max if spot_model.alpha_max is not None \
                     else kwargs.pop("alpha_max", 0.1)
         fspot     = spot_model.fspot if spot_model.fspot else kwargs.pop("fspot", 0.0)
         if "lat" not in kwargs:
             kwargs["lat"] = list(spot_model.latitude_distribution.lat_range)
+        vis = spot_model.visibility
         return cls(
-            peq=spot_model.peq,
-            kappa=spot_model.kappa,
-            inc=spot_model.inc,
+            peq=vis.peq if vis is not None else kwargs.pop("peq", 4.0),
+            kappa=vis.kappa if vis is not None else kwargs.pop("kappa", 0.0),
+            inc=vis.inc if vis is not None else kwargs.pop("inc", np.pi / 2),
             nspot=nspot,
             tem=tau_em,
             tdec=tau_dec,
             alpha_max=alpha_max,
             fspot=fspot,
-            lspot=spot_model.lspot,
+            lspot=lspot,
+            rotate=(vis is not None),
+            grow=(spot_model.envelope is not None),
             **kwargs,
         )
 
@@ -377,9 +459,9 @@ class LightcurveModel(object):
         )
 
     def _assign_property(self, var):
-        if isinstance(var, (int, float)):
-            return var
-        elif isinstance(var, (list, np.ndarray)):
+        if isinstance(var, float):
+            return np.full(self.nspot, var)
+        elif isinstance(var, (int, list, np.ndarray)):
             return np.random.uniform(var[0], var[1], self.nspot)
         else:
             raise TypeError("Invalid datatype for model parameter. "
@@ -398,11 +480,27 @@ class LightcurveModel(object):
         tmax_jax = jnp.array(self.tmax)
 
         # Compute all spots in parallel via vmap
-        dspots = _dflux_all_spots(
-            teval_jax, long_jax, lat_jax, tmax_jax,
-            self.peq, self.kappa, self.inc,
-            self.lspot, self.tem, self.tdec, self.alpha_max, self.fspot
-        )
+        if self.rotate and self.grow:
+            dspots = _dflux_all_spots(
+                teval_jax, long_jax, lat_jax, tmax_jax,
+                self.peq, self.kappa, self.inc,
+                self.lspot, self.tem, self.tdec, self.alpha_max, self.fspot
+            )
+        elif self.rotate and not self.grow:
+            dspots = _dflux_all_spots_constant(
+                teval_jax, long_jax, lat_jax, tmax_jax,
+                self.peq, self.kappa, self.inc, self.alpha_max, self.fspot
+            )
+        elif not self.rotate and self.grow:
+            dspots = _dflux_all_spots_fixed(
+                teval_jax, tmax_jax,
+                self.lspot, self.tem, self.tdec, self.alpha_max, self.fspot
+            )
+        else:  # not rotate, not grow
+            dspots = _dflux_all_spots_constant(
+                teval_jax, long_jax, lat_jax, tmax_jax,
+                self.peq, self.kappa, self.inc, self.alpha_max, self.fspot
+            )
 
         # Convert back to numpy for storage
         self.dspots = np.asarray(dspots)
@@ -423,11 +521,12 @@ class LightcurveModel(object):
     def plot_lightcurve(self, show_spots=True, show_title=True):
         """Plot the lightcurve."""
         flux = self.flux + self.dlimb
+        dflux_pct = (flux - 1) * 100
         fig = plt.figure(figsize=[16, 6])
         if show_spots:
             for ii in range(self.nspot):
-                plt.plot(self.t, 1-self.dspots[ii], alpha=0.5)
-        plt.plot(self.t, flux, color="k")
+                plt.plot(self.t, -self.dspots[ii] * 100, alpha=0.5)
+        plt.plot(self.t, dflux_pct, color="k")
 
         if show_title:
             title = r"$P_{{\rm eq}}$={:.1f} d, ".format(self.peq)
@@ -440,8 +539,8 @@ class LightcurveModel(object):
             title += r"$\tau_{{\rm dec}}$={:.2f}".format(self.tdec)
             plt.title(title, fontsize=25)
         plt.xlabel("Time [days]", fontsize=24)
-        plt.ylabel("Flux", fontsize=24)
-        plt.ylim(min(flux)-2e-3, 1+1e-3)
+        plt.ylabel(r"$\Delta$ Flux [\%]", fontsize=24)
+        plt.ylim(min(dflux_pct) - 0.2, max(dflux_pct) + 0.2)
         plt.xlim(self.t[0], self.t[-1])
         plt.minorticks_on()
         plt.ticklabel_format(axis='both', style='', useOffset=False)
@@ -513,13 +612,19 @@ class LightcurveModel(object):
         spot_alphas = np.zeros((nspot, n_times))
         spot_longs_t = np.zeros((nspot, n_times))
         for k in range(nspot):
-            spot_alphas[k] = np.asarray(_alphak(
-                t_jax, spot_tmaxs[k], self.lspot,
-                self.tem, self.tdec, self.alpha_max))
-            _, longk_t = _betak(
-                t_jax, spot_longs[k], spot_lats[k], spot_tmaxs[k],
-                self.peq, self.kappa, self.inc)
-            spot_longs_t[k] = np.asarray(longk_t)
+            if self.grow:
+                spot_alphas[k] = np.asarray(_alphak(
+                    t_jax, spot_tmaxs[k], self.lspot,
+                    self.tem, self.tdec, self.alpha_max))
+            else:
+                spot_alphas[k] = self.alpha_max
+            if self.rotate:
+                _, longk_t = _betak(
+                    t_jax, spot_longs[k], spot_lats[k], spot_tmaxs[k],
+                    self.peq, self.kappa, self.inc)
+                spot_longs_t[k] = np.asarray(longk_t)
+            else:
+                spot_longs_t[k] = spot_longs[k]
 
         # --- Set up figure ---
         fig, (ax_star, ax_lc) = plt.subplots(
@@ -538,59 +643,73 @@ class LightcurveModel(object):
             import matplotlib.cm as cm
 
             omega_eq = 2 * np.pi / self.peq
-            omega_min = omega_eq * (1 - self.kappa)
-            omega_max = omega_eq
-            if omega_min > omega_max:
-                omega_min, omega_max = omega_max, omega_min
-            # Small padding so uniform case still renders
-            if omega_max - omega_min < 1e-12:
-                omega_max = omega_min + 1e-12
-            norm = Normalize(vmin=omega_min, vmax=omega_max)
             cmap = cm.coolwarm
 
-            # Build an image of Omega(lat) on the projected disk (left half)
-            n_pix = 300
-            xp = np.linspace(-1, 1, n_pix)
-            yp = np.linspace(-1, 1, n_pix)
-            XP, YP = np.meshgrid(xp, yp)
-            R2 = XP**2 + YP**2
+            if self.kappa == 0:
+                # Solid-body rotation: uniform shading at middle of colormap
+                mid_color = cmap(0.5)
+                stellar_disk = Circle((0, 0), 1.0, fc="lightyellow",
+                                      ec="k", lw=1.5, zorder=-1)
+                ax_star.add_patch(stellar_disk)
 
-            # For each pixel inside the unit disk, invert the projection
-            # to find the stellar latitude. Observer frame:
-            #   cx = YP (up on sky), cy = XP (right on sky),
-            #   cz = sqrt(1 - R2) (toward observer)
-            # Star-frame latitude: sin(lat) = -sin(inc)*cx + cos(inc)*cz
-            CZ = np.sqrt(np.clip(1.0 - R2, 0, None))
-            sin_lat = -np.sin(inc) * YP + np.cos(inc) * CZ
-            sin_lat = np.clip(sin_lat, -1.0, 1.0)
-            lat_map = np.arcsin(sin_lat)
+                n_pix = 300
+                xp = np.linspace(-1, 1, n_pix)
+                yp = np.linspace(-1, 1, n_pix)
+                XP, YP = np.meshgrid(xp, yp)
+                R2 = XP**2 + YP**2
+                omega_map = np.where(R2 <= 1.0, 0.5, np.nan)
 
-            omega_map = omega_eq * (1 - self.kappa * np.sin(lat_map)**2)
+                norm = Normalize(vmin=0.0, vmax=1.0)
+                dr_img = ax_star.imshow(omega_map, extent=[-1, 1, -1, 1],
+                                        origin="lower", interpolation="bilinear",
+                                        cmap=cmap, norm=norm, alpha=0.3, zorder=0)
+                clip_circle = Circle((0, 0), 1.0, transform=ax_star.transData)
+                dr_img.set_clip_path(clip_circle)
 
-            # Disk background
-            stellar_disk = Circle((0, 0), 1.0, fc="lightyellow",
-                                  ec="k", lw=1.5, zorder=-1)
-            ax_star.add_patch(stellar_disk)
+                ax_star.text(-1.3, 0.0,
+                             rf"$\Omega = {omega_eq:.3f}$ [rad/d]",
+                             fontsize=label_size - 2, ha="center", va="center",
+                             rotation=90, transform=ax_star.transData)
+            else:
+                omega_min = omega_eq * (1 - self.kappa)
+                omega_max = omega_eq
+                if omega_min > omega_max:
+                    omega_min, omega_max = omega_max, omega_min
+                norm = Normalize(vmin=omega_min, vmax=omega_max)
 
-            # Render DR shading clipped to the stellar disk
-            dr_img = ax_star.imshow(omega_map, extent=[-1, 1, -1, 1],
-                                    origin="lower", interpolation="bilinear",
-                                    cmap=cmap, norm=norm, alpha=0.3, zorder=0)
-            clip_circle = Circle((0, 0), 1.0, transform=ax_star.transData)
-            dr_img.set_clip_path(clip_circle)
+                # Build an image of Omega(lat) on the projected disk
+                n_pix = 300
+                xp = np.linspace(-1, 1, n_pix)
+                yp = np.linspace(-1, 1, n_pix)
+                XP, YP = np.meshgrid(xp, yp)
+                R2 = XP**2 + YP**2
 
-            # Colorbar on the left side
-            cbar = fig.colorbar(dr_img, ax=ax_star, fraction=0.046, pad=0.04,
-                                location="left")
-            cbar.set_label(r"$\Omega$ [rad/d]", fontsize=label_size)
-            cbar.ax.tick_params(labelsize=label_size - 2)
-            # Annotate faster (blue, high Omega) and slower (red, low Omega)
-            cbar.ax.text(0.6, 1.02, "faster", transform=cbar.ax.transAxes,
-                         ha="center", va="bottom", fontsize=label_size - 2,
-                         color="red")
-            cbar.ax.text(0.6, -0.02, "slower", transform=cbar.ax.transAxes,
-                         ha="center", va="top", fontsize=label_size - 2,
-                         color="blue")
+                CZ = np.sqrt(np.clip(1.0 - R2, 0, None))
+                sin_lat = -np.sin(inc) * YP + np.cos(inc) * CZ
+                sin_lat = np.clip(sin_lat, -1.0, 1.0)
+                lat_map = np.arcsin(sin_lat)
+                omega_map = omega_eq * (1 - self.kappa * np.sin(lat_map)**2)
+
+                stellar_disk = Circle((0, 0), 1.0, fc="lightyellow",
+                                      ec="k", lw=1.5, zorder=-1)
+                ax_star.add_patch(stellar_disk)
+
+                dr_img = ax_star.imshow(omega_map, extent=[-1, 1, -1, 1],
+                                        origin="lower", interpolation="bilinear",
+                                        cmap=cmap, norm=norm, alpha=0.3, zorder=0)
+                clip_circle = Circle((0, 0), 1.0, transform=ax_star.transData)
+                dr_img.set_clip_path(clip_circle)
+
+                cbar = fig.colorbar(dr_img, ax=ax_star, fraction=0.046, pad=0.04,
+                                    location="left")
+                cbar.set_label(r"$\Omega$ [rad/d]", fontsize=label_size)
+                cbar.ax.tick_params(labelsize=label_size - 2)
+                cbar.ax.text(0.6, 1.02, "faster", transform=cbar.ax.transAxes,
+                             ha="center", va="bottom", fontsize=label_size - 2,
+                             color="red")
+                cbar.ax.text(0.6, -0.02, "slower", transform=cbar.ax.transAxes,
+                             ha="center", va="top", fontsize=label_size - 2,
+                             color="blue")
         else:
             stellar_disk = Circle((0, 0), 1.0, fc="lightyellow",
                                   ec="k", lw=1.5, zorder=0)

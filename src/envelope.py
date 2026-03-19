@@ -397,10 +397,10 @@ class EnvelopeFunction(ABC):
 
     def sympy_Gamma_hat(self):
         """
-        Sympy expression for Gamma_hat(omega) = |FT[Gamma]|(omega).
+        Sympy expression for Gamma_hat(omega) = FT[Gamma](omega).
 
         Override in subclasses with a closed-form Fourier transform.
-        Returns None if no analytic expression is available.
+        Returns None if no analytic form is available.
         """
         return None
 
@@ -409,19 +409,62 @@ class EnvelopeFunction(ABC):
         Sympy expression for R_Gamma(tau) = integral Gamma(t) Gamma(t+tau) dt.
 
         Override in subclasses with a closed-form autocorrelation.
-        Returns None if no analytic expression is available.
+        Returns None if no analytic form is available.
         """
         return None
 
-    def get_sympy(self):
+    def _compute_Gamma_hat_symbolic(self, gamma_expr):
+        """Attempt to derive Gamma_hat from gamma_expr via symbolic integration."""
+        if gamma_expr is None:
+            return None
+        try:
+            import sympy as sp
+            t     = sp.Symbol('t', real=True)
+            omega = sp.Symbol(r'\omega', real=True)
+            result = sp.integrate(
+                gamma_expr * sp.exp(-sp.I * omega * t), (t, -sp.oo, sp.oo))
+            return None if result.has(sp.Integral) else result
+        except Exception:
+            return None
+
+    def _compute_R_Gamma_symbolic(self, gamma_expr):
+        """Attempt to derive R_Gamma from gamma_expr via symbolic integration."""
+        if gamma_expr is None:
+            return None
+        try:
+            import sympy as sp
+            t   = sp.Symbol('t', real=True)
+            tau = sp.Symbol(r'\tau', real=True)
+            result = sp.integrate(
+                gamma_expr * gamma_expr.subs(t, t + tau), (t, -sp.oo, sp.oo))
+            return None if result.has(sp.Integral) else result
+        except Exception:
+            return None
+
+    def get_sympy(self, display=True, status=None, compute_symbolic=False):
         """
         Retrieve and display sympy expressions for Gamma, Gamma_hat, and R_Gamma.
 
-        Prints the LaTeX equation for each function that has a closed-form
-        analytic expression, or '[numerical]' for functions that rely on
-        FFT-based approximations.
+        Prints or renders the LaTeX equation for each function that has a
+        closed-form analytic expression, or '[numerical]' for functions that
+        rely on FFT-based approximations.
 
         Requires sympy (``pip install sympy``).
+
+        Parameters
+        ----------
+        display : bool, optional
+            If True (default), render equations as formatted LaTeX in a
+            Jupyter notebook (via IPython.display) or print them as LaTeX
+            strings in a plain terminal.
+        status : str or None, optional
+            If provided, appended to the class name header in brackets,
+            e.g. ``"user defined"`` renders as
+            ``TrapezoidSymmetricEnvelope [user defined]``.
+        compute_symbolic : bool, optional
+            If True, attempt to derive Gamma_hat and R_Gamma symbolically
+            from sympy_Gamma() when no explicit override exists.  Can be
+            slow for complex envelopes.  Defaults to False.
 
         Returns
         -------
@@ -436,10 +479,28 @@ class EnvelopeFunction(ABC):
                 "sympy is required for get_sympy(). "
                 "Install with: pip install sympy")
 
+        gamma_expr = self.sympy_Gamma()
+
+        # Use explicit override if subclass provides one; otherwise optionally
+        # derive from sympy_Gamma via symbolic integration.
+        if type(self).sympy_Gamma_hat is not EnvelopeFunction.sympy_Gamma_hat:
+            gamma_hat_expr = self.sympy_Gamma_hat()
+        elif compute_symbolic:
+            gamma_hat_expr = self._compute_Gamma_hat_symbolic(gamma_expr)
+        else:
+            gamma_hat_expr = None
+
+        if type(self).sympy_R_Gamma is not EnvelopeFunction.sympy_R_Gamma:
+            R_gamma_expr = self.sympy_R_Gamma()
+        elif compute_symbolic:
+            R_gamma_expr = self._compute_R_Gamma_symbolic(gamma_expr)
+        else:
+            R_gamma_expr = None
+
         exprs = {
-            "Gamma":     self.sympy_Gamma(),
-            "Gamma_hat": self.sympy_Gamma_hat(),
-            "R_Gamma":   self.sympy_R_Gamma(),
+            "Gamma":     gamma_expr,
+            "Gamma_hat": gamma_hat_expr,
+            "R_Gamma":   R_gamma_expr,
         }
 
         lhs = {
@@ -448,12 +509,39 @@ class EnvelopeFunction(ABC):
             "R_Gamma":   r"R_{\Gamma}(\tau)",
         }
 
-        print(f"{type(self).__name__}")
-        for key, expr in exprs.items():
-            if expr is None:
-                print(f"  ${lhs[key]} = \\text{{[numerical]}}$")
-            else:
-                print(f"  ${lhs[key]} = {sp.latex(expr)}$")
+        # Integral definitions shown when no closed-form analytic expression exists
+        t      = sp.Symbol('t', real=True)
+        omega  = sp.Symbol(r'\omega', real=True)
+        tau    = sp.Symbol(r'\tau', real=True)
+        Gamma  = sp.Function(r'\Gamma')
+        integral_forms = {
+            "Gamma_hat": sp.Integral(Gamma(t) * sp.exp(-sp.I * omega * t),
+                                     (t, -sp.oo, sp.oo)),
+            "R_Gamma":   sp.Integral(Gamma(t) * Gamma(t + tau),
+                                     (t, 0, sp.oo)),
+        }
+
+        def _rhs_latex(key, expr):
+            if expr is not None:
+                return sp.latex(expr)
+            integral = integral_forms.get(key)
+            if integral is not None:
+                return sp.latex(integral) + r" \quad \text{[numerical]}"
+            return r"\text{[numerical]}"
+
+        if display:
+            status_tag = r" \text{[" + status + r"]}" if status else ""
+            header = r"\textbf{" + type(self).__name__ + r"}" + status_tag
+            try:
+                from IPython.display import display as ipy_display, Math
+                ipy_display(Math(header))
+                for key, expr in exprs.items():
+                    ipy_display(Math(lhs[key] + " = " + _rhs_latex(key, expr)))
+            except ImportError:
+                status_str = f" [{status}]" if status else ""
+                print(f"{type(self).__name__}{status_str}")
+                for key, expr in exprs.items():
+                    print(f"  ${lhs[key]} = {_rhs_latex(key, expr)}$")
 
         return exprs
 
@@ -660,13 +748,14 @@ class TrapezoidSymmetricEnvelope(EnvelopeFunction):
         ell  = sp.Symbol(r'\ell', positive=True)
         tau  = sp.Symbol(r'\tau_{\rm spot}', positive=True)
         half = ell / 2
-        return sp.Piecewise(
+        alpha_norm = sp.Piecewise(
             (sp.Integer(0),                        t < -(half + tau)),
             ((t + half + tau) / tau,               t < -half),
             (sp.Integer(1),                        t <= half),
             ((half + tau - t) / tau,               t < half + tau),
             (sp.Integer(0),                        True),
         )
+        return alpha_norm ** 2
 
     def sympy_Gamma_hat(self):
         import sympy as sp
@@ -755,13 +844,14 @@ class TrapezoidAsymmetricEnvelope(EnvelopeFunction):
         te   = sp.Symbol(r'\tau_{\rm em}', positive=True)
         td   = sp.Symbol(r'\tau_{\rm dec}', positive=True)
         half = ell / 2
-        return sp.Piecewise(
+        alpha_norm = sp.Piecewise(
             (sp.Integer(0),              t < -(half + te)),
             ((t + half + te) / te,       t < -half),
             (sp.Integer(1),              t <= half),
             ((half + td - t) / td,       t < half + td),
             (sp.Integer(0),              True),
         )
+        return alpha_norm ** 2
 
 
 class SkewedGaussianEnvelope(EnvelopeFunction):

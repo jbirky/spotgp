@@ -13,6 +13,8 @@ and LightcurveModel.
 from __future__ import annotations
 
 import numpy as np
+
+_UNSET = object()  # sentinel to distinguish "not passed" from explicit None
 import jax
 import jax.numpy as jnp
 
@@ -181,6 +183,73 @@ class LatitudeDistributionFunction:
         """
         return 1.0
 
+    def sympy_pdf(self):
+        """
+        Return the sympy expression for the latitude PDF p(phi).
+
+        Subclasses should override this to provide their analytic form.
+        The base implementation returns 1 (uniform distribution).
+
+        Returns
+        -------
+        sympy.Expr or None
+            Sympy expression for p(phi), or None if no analytic form exists.
+        """
+        try:
+            import sympy as sp
+        except ImportError:
+            raise ImportError(
+                "sympy is required for get_sympy(). "
+                "Install with: pip install sympy")
+        return sp.Integer(1)
+
+    def get_sympy(self, display=True, status=None):
+        """
+        Display the sympy expression for the latitude PDF p(phi).
+
+        Requires sympy (``pip install sympy``).
+
+        Parameters
+        ----------
+        display : bool, optional
+            If True (default), render equations as formatted LaTeX in a
+            Jupyter notebook (via IPython.display) or print them as LaTeX
+            strings in a plain terminal.
+        status : str or None, optional
+            If provided, appended to the class name header in brackets,
+            e.g. ``"default"`` renders as
+            ``LatitudeDistributionFunction [default]``.
+
+        Returns
+        -------
+        dict
+            ``{"pdf": expr_or_None}``
+        """
+        try:
+            import sympy as sp
+        except ImportError:
+            raise ImportError(
+                "sympy is required for get_sympy(). "
+                "Install with: pip install sympy")
+
+        expr = self.sympy_pdf()
+        exprs = {"pdf": expr}
+
+        if display:
+            rhs = r"\text{[numerical]}" if expr is None else sp.latex(expr)
+            status_tag = r" \text{[" + status + r"]}" if status else ""
+            header = r"\textbf{" + type(self).__name__ + r"}" + status_tag
+            try:
+                from IPython.display import display as ipy_display, Math
+                ipy_display(Math(header))
+                ipy_display(Math(r"p(\phi) = " + rhs))
+            except ImportError:
+                status_str = f" [{status}]" if status else ""
+                print(f"{type(self).__name__}{status_str}")
+                print(f"  $p(\\phi) = {rhs}$")
+
+        return exprs
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"lat_range=[{self.lat_range[0]:.3f}, {self.lat_range[1]:.3f}])")
@@ -235,20 +304,31 @@ class VisibilityFunction:
         """
         return _cn_squared_coefficients_jax(self.inc, phi, n_harmonics)
 
-    def get_sympy(self):
+    def get_sympy(self, display=True, status=None):
         """
         Display the sympy expressions for the visibility function.
 
-        Prints LaTeX for:
+        Renders or prints LaTeX for:
           - omega_0(phi): latitude-dependent rotation angular frequency.
           - a_0, a_1, theta_v: intermediate visibility geometry variables.
           - c_0, c_1: special-case Fourier coefficients.
           - c_n: general Fourier coefficient (n >= 2).
 
-        Intermediate symbols are introduced so each printed equation
-        stays compact and human-readable.
+        Intermediate symbols are introduced so each equation stays compact
+        and human-readable.
 
         Requires sympy (``pip install sympy``).
+
+        Parameters
+        ----------
+        display : bool, optional
+            If True (default), render equations as formatted LaTeX in a
+            Jupyter notebook (via IPython.display) or print them as LaTeX
+            strings in a plain terminal.
+        status : str or None, optional
+            If provided, appended to the class name header in brackets,
+            e.g. ``"user defined"`` renders as
+            ``VisibilityFunction [user defined]``.
 
         Returns
         -------
@@ -293,14 +373,29 @@ class VisibilityFunction:
             "theta_v": theta_def, "c0": c0, "c1": c1, "cn": cn,
         }
 
-        print("VisibilityFunction")
-        print(f"  $\\omega_0(\\phi) = {sp.latex(omega0)}$")
-        print(f"  $a_0 = {sp.latex(a0_def)}$")
-        print(f"  $a_1 = {sp.latex(a1_def)}$")
-        print(f"  $\\theta_v = {sp.latex(theta_def)}$")
-        print(f"  $c_0 = {sp.latex(c0)}$")
-        print(f"  $c_1 = {sp.latex(c1)}$")
-        print(f"  $c_n = {sp.latex(cn)}$ $(n \\geq 2)$")
+        lhs = {
+            "omega0":   r"\omega_0(\phi)",
+            "a0":       r"a_0",
+            "a1":       r"a_1",
+            "theta_v":  r"\theta_v",
+            "c0":       r"c_0",
+            "c1":       r"c_1",
+            "cn":       r"c_n \; (n \geq 2)",
+        }
+
+        if display:
+            status_tag = r" \text{[" + status + r"]}" if status else ""
+            header = r"\textbf{VisibilityFunction}" + status_tag
+            try:
+                from IPython.display import display as ipy_display, Math
+                ipy_display(Math(header))
+                for key, expr in exprs.items():
+                    ipy_display(Math(lhs[key] + " = " + sp.latex(expr)))
+            except ImportError:
+                status_str = f" [{status}]" if status else ""
+                print(f"VisibilityFunction{status_str}")
+                for key, expr in exprs.items():
+                    print(f"  ${lhs[key]} = {sp.latex(expr)}$")
 
         return exprs
 
@@ -379,10 +474,12 @@ class SpotEvolutionModel:
 
     Parameters
     ----------
-    envelope : EnvelopeFunction
-        Spot size envelope (e.g. TrapezoidSymmetricEnvelope).
-    visibility : VisibilityFunction
-        Stellar visibility function (peq, kappa, inc).
+    envelope : EnvelopeFunction or None
+        Spot size envelope (e.g. TrapezoidSymmetricEnvelope).  When None
+        the kernel contains only the visibility function (R_Gamma = 1).
+    visibility : VisibilityFunction or None
+        Stellar visibility function (peq, kappa, inc).  When None the
+        kernel contains only the envelope function.
     sigma_k : float, optional
         Kernel amplitude prefactor. Provide either sigma_k directly or
         (nspot_rate, fspot, alpha_max) for the physical parameterization.
@@ -405,31 +502,54 @@ class SpotEvolutionModel:
 
     def __init__(
         self,
-        envelope: EnvelopeFunction,
-        visibility: VisibilityFunction,
+        envelope: EnvelopeFunction = _UNSET,
+        visibility: VisibilityFunction = _UNSET,
         sigma_k: float = None,
         nspot_rate: float = None,
         fspot: float = 0.0,
         alpha_max: float = None,
-        latitude_distribution: LatitudeDistributionFunction = None,
+        latitude_distribution: LatitudeDistributionFunction = _UNSET,
     ):
-        if not isinstance(envelope, EnvelopeFunction):
-            raise TypeError(
-                f"envelope must be an EnvelopeFunction, got {type(envelope)}")
-        if not isinstance(visibility, VisibilityFunction):
-            raise TypeError(
-                f"visibility must be a VisibilityFunction, got {type(visibility)}")
-        if latitude_distribution is not None and not isinstance(
-                latitude_distribution, LatitudeDistributionFunction):
-            raise TypeError(
-                f"latitude_distribution must be a LatitudeDistributionFunction, "
-                f"got {type(latitude_distribution)}")
+        # Resolve each component and record its provenance for get_sympy()
+        if envelope is _UNSET:
+            self.envelope = None
+            self._envelope_status = "not specified"
+        elif envelope is None:
+            self.envelope = None
+            self._envelope_status = "not specified"
+        else:
+            if not isinstance(envelope, EnvelopeFunction):
+                raise TypeError(
+                    f"envelope must be an EnvelopeFunction, got {type(envelope)}")
+            self.envelope = envelope
+            self._envelope_status = "user defined"
 
-        self.envelope = envelope
-        self.visibility = visibility
-        self.latitude_distribution = (latitude_distribution
-                                      if latitude_distribution is not None
-                                      else LatitudeDistributionFunction())
+        if visibility is _UNSET:
+            self.visibility = None
+            self._visibility_status = "not specified"
+        elif visibility is None:
+            self.visibility = None
+            self._visibility_status = "not specified"
+        else:
+            if not isinstance(visibility, VisibilityFunction):
+                raise TypeError(
+                    f"visibility must be a VisibilityFunction, got {type(visibility)}")
+            self.visibility = visibility
+            self._visibility_status = "user defined"
+
+        if latitude_distribution is _UNSET:
+            self.latitude_distribution = LatitudeDistributionFunction()
+            self._latitude_status = "default"
+        elif latitude_distribution is None:
+            self.latitude_distribution = LatitudeDistributionFunction()
+            self._latitude_status = "not specified"
+        else:
+            if not isinstance(latitude_distribution, LatitudeDistributionFunction):
+                raise TypeError(
+                    f"latitude_distribution must be a LatitudeDistributionFunction, "
+                    f"got {type(latitude_distribution)}")
+            self.latitude_distribution = latitude_distribution
+            self._latitude_status = "user defined"
         self.fspot = float(fspot)
         self.alpha_max = float(alpha_max) if alpha_max is not None else None
 
@@ -450,23 +570,23 @@ class SpotEvolutionModel:
 
     @property
     def peq(self) -> float:
-        return self.visibility.peq
+        return self.visibility.peq if self.visibility is not None else None
 
     @property
     def kappa(self) -> float:
-        return self.visibility.kappa
+        return self.visibility.kappa if self.visibility is not None else None
 
     @property
     def inc(self) -> float:
-        return self.visibility.inc
+        return self.visibility.inc if self.visibility is not None else None
 
     @property
     def lspot(self) -> float:
-        return self.envelope.lspot
+        return self.envelope.lspot if self.envelope is not None else None
 
     @property
     def tau_spot(self) -> float:
-        return self.envelope.tau_spot
+        return self.envelope.tau_spot if self.envelope is not None else None
 
     # ── Parameter keys ──────────────────────────────────────────────────────
 
@@ -475,19 +595,25 @@ class SpotEvolutionModel:
         """
         Ordered parameter names for the theta vector used in GPSolver.
 
-        Always starts with (peq, kappa, inc) from the visibility function,
-        followed by the envelope-specific keys, then sigma_k.
+        When both are present, starts with (peq, kappa, inc) from the
+        visibility function, followed by the envelope-specific keys, then
+        sigma_k.  When envelope is None only the visibility keys are
+        included; when visibility is None only the envelope keys are
+        included.
         """
-        vis_keys = self.visibility.param_keys               # (peq, kappa, inc)
-        env_keys = tuple(self.envelope.param_dict.keys())   # envelope params
+        vis_keys = self.visibility.param_keys if self.visibility is not None else ()
+        env_keys = (tuple(self.envelope.param_dict.keys())
+                    if self.envelope is not None else ())
         return vis_keys + env_keys + ("sigma_k",)
 
     @property
     def theta0(self) -> np.ndarray:
         """Initial parameter vector from current model values."""
         vals = {}
-        vals.update(self.visibility.param_dict)
-        vals.update(self.envelope.param_dict)
+        if self.visibility is not None:
+            vals.update(self.visibility.param_dict)
+        if self.envelope is not None:
+            vals.update(self.envelope.param_dict)
         vals["sigma_k"] = self.sigma_k
         return np.array([float(vals[k]) for k in self.param_keys])
 
@@ -510,11 +636,18 @@ class SpotEvolutionModel:
         The theta_arr layout follows self.param_keys:
           [peq, kappa, inc, <envelope params...>, sigma_k]
 
-        The R_Gamma function is selected based on the envelope type and
-        captured (together with any precomputed grids) in a closure so
-        that the returned callable is safe to use inside jax.jit.
+        When envelope is None, returns a function that always yields 1.0
+        (pure visibility kernel).  The R_Gamma function is selected based
+        on the envelope type and captured (together with any precomputed
+        grids) in a closure so that the returned callable is safe to use
+        inside jax.jit.
         """
-        n_vis = 3  # peq, kappa, inc are always at indices 0, 1, 2
+        if self.envelope is None:
+            def r_gamma(theta_arr, lag):  # noqa: ARG001
+                return jnp.ones_like(jnp.asarray(lag))
+            return r_gamma
+
+        n_vis = len(self.visibility.param_keys) if self.visibility is not None else 0
 
         if isinstance(self.envelope, TrapezoidSymmetricEnvelope):
             def r_gamma(theta_arr, lag):
@@ -587,6 +720,9 @@ class SpotEvolutionModel:
                 return 10.0 ** float(bounds_arr[keys.index(log_key), 1])
             return float(fallback)
 
+        if self.envelope is None:
+            return 0.0
+
         if isinstance(self.envelope, TrapezoidSymmetricEnvelope):
             return (upper("lspot", self.lspot)
                     + 2.0 * upper("tau_spot", self.tau_spot))
@@ -615,8 +751,10 @@ class SpotEvolutionModel:
         old-style constructors of AnalyticKernel, GPSolver, etc.
         """
         d = {}
-        d.update(self.visibility.param_dict)
-        d.update(self.envelope.param_dict)
+        if self.visibility is not None:
+            d.update(self.visibility.param_dict)
+        if self.envelope is not None:
+            d.update(self.envelope.param_dict)
         d["sigma_k"] = self.sigma_k
         if self.alpha_max is not None:
             d["alpha_max"] = self.alpha_max
@@ -647,7 +785,7 @@ class SpotEvolutionModel:
 
         return cls(envelope, visibility, sigma_k=p["sigma_k"])
 
-    def get_sympy(self):
+    def get_sympy(self, display=True, compute_symbolic=False):
         """
         Display sympy expressions for the full spot evolution model.
 
@@ -656,28 +794,68 @@ class SpotEvolutionModel:
 
         Requires sympy (``pip install sympy``).
 
+        Parameters
+        ----------
+        display : bool, optional
+            If True (default), render equations as formatted LaTeX in a
+            Jupyter notebook (via IPython.display) or print them as LaTeX
+            strings in a plain terminal.
+        compute_symbolic : bool, optional
+            Passed through to ``EnvelopeFunction.get_sympy()``.  If True,
+            attempt to derive Gamma_hat and R_Gamma symbolically from
+            sympy_Gamma() when no explicit override exists.  Defaults to
+            False.
+
         Returns
         -------
         dict
-            ``{"envelope": envelope_exprs, "visibility": visibility_exprs}``
+            ``{"envelope": envelope_exprs, "visibility": visibility_exprs,
+               "latitude": latitude_exprs}``
             where each value is the dict returned by the respective
             ``get_sympy()`` call.
         """
-        print(f"SpotEvolutionModel")
-        print(f"  envelope  : {type(self.envelope).__name__}")
-        print(f"  visibility: VisibilityFunction")
-        print()
-        envelope_exprs  = self.envelope.get_sympy()
-        print()
-        visibility_exprs = self.visibility.get_sympy()
-        return {"envelope": envelope_exprs, "visibility": visibility_exprs}
+        def _display_not_specified(label):
+            if display:
+                try:
+                    from IPython.display import display as ipy_display, Math
+                    ipy_display(Math(r"\textbf{" + label
+                                     + r"} \text{ [not specified]}"))
+                except ImportError:
+                    print(f"{label} [not specified]")
+
+        if self.envelope is not None:
+            envelope_exprs = self.envelope.get_sympy(
+                display=display, status=self._envelope_status,
+                compute_symbolic=compute_symbolic)
+        else:
+            _display_not_specified("EnvelopeFunction")
+            envelope_exprs = None
+
+        if self.visibility is not None:
+            visibility_exprs = self.visibility.get_sympy(
+                display=display, status=self._visibility_status)
+        else:
+            _display_not_specified("VisibilityFunction")
+            visibility_exprs = None
+
+        latitude_exprs = self.latitude_distribution.get_sympy(
+            display=display, status=self._latitude_status)
+        return {"envelope": envelope_exprs, "visibility": visibility_exprs, "latitude": latitude_exprs}
 
     def __repr__(self) -> str:
+        if self.envelope is not None:
+            env_str = (f"{self.envelope.__class__.__name__}"
+                       f"({self.envelope.param_dict})")
+        else:
+            env_str = "None"
+        if self.visibility is not None:
+            vis_str = (f"VisibilityFunction"
+                       f"(peq={self.peq}, kappa={self.kappa}, inc={self.inc:.3f})")
+        else:
+            vis_str = "None"
         return (
             f"SpotEvolutionModel(\n"
-            f"  envelope={self.envelope.__class__.__name__}"
-            f"({self.envelope.param_dict}),\n"
-            f"  visibility=VisibilityFunction"
-            f"(peq={self.peq}, kappa={self.kappa}, inc={self.inc:.3f}),\n"
+            f"  envelope={env_str},\n"
+            f"  visibility={vis_str},\n"
             f"  sigma_k={self.sigma_k}\n)"
         )
