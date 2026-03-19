@@ -5,3 +5,5 @@ numpydoc>=1.6
 nbsphinx>=0.9
 pandoc
 myst-parser>=2.0
+pygments-styles>=0.3
+sphinx-copybutton>=0.5

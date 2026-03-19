@@ -2,11 +2,7 @@
 
 [![Documentation Status](https://readthedocs.org/projects/spotgp/badge/?version=latest)](https://spotgp.readthedocs.io/en/latest/?badge=latest)
 
-Gaussian Process kernels for stellar variability from starspot models.
-
-**spotgp** provides analytic and numerical GP kernels derived from physically
-motivated starspot models, along with GP solvers for fitting stellar
-lightcurves. Both NumPy and JAX backends are available.
+**`spotgp`**: Gaussian Process kernels for stellar starspot variability implemented in `JAX`.
 
 <br>
 

@@ -1,6 +1,6 @@
-# Introduction
+# Home
 
-**spotgp** Gaussian Process kernels for stellar starspot variability implemented in `JAX`.
+**spotgp:** Gaussian Process kernels for stellar starspot variability implemented in `JAX`.
 
 <br>
 
@@ -33,10 +33,20 @@ This project is build and maintained by [Jess Birky](https://github.com/jbirky)-
 :caption: Basics
 
 self
-tutorials/conceptual_intro
+
+:maxdepth: 2
+  :caption: Model Concepts
+
+tutorials/time_domain
+tutorials/fourier_domain
+```
+
+```{toctree}
+:maxdepth: 2
+
 overview
 tutorials/lightcurve_demo
-tutorials/trapezoid_symmetric_tutorial
+tutorials/jax_jit
 tutorials/gp_optimization
 ```
 
