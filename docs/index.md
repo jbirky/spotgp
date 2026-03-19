@@ -43,7 +43,7 @@ tutorials/gp_optimization
 :maxdepth: 2
 :caption: Advanced 
 
-tutorials/custom_envelope
+tutorials/custom_envelope_gaussian
 tutorials/custom_latitude_distribution
 tutorials/mcmc_sampling
 ```
