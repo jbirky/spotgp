@@ -42,6 +42,7 @@ except ImportError:
 __all__ = [
     "LatitudeDistributionFunction",
     "VisibilityFunction",
+    "EdgeOnVisibilityFunction",
     "SpotEvolutionModel",
     # low-level helpers re-exported for backward compat
     "_cn_general_jax",
@@ -302,6 +303,68 @@ class VisibilityFunction:
         print(f"  $c_n = {sp.latex(cn)}$ $(n \\geq 2)$")
 
         return exprs
+
+
+class EdgeOnVisibilityFunction(VisibilityFunction):
+    """
+    Closed-form visibility for edge-on viewing (I = pi/2) with solid-body
+    rotation (kappa = 0) and a uniform latitude distribution.
+
+    For this special case, the latitude-averaged squared Fourier coefficients
+    are known analytically (Eq. 68 of Birky et al.):
+
+        <|c_0|^2> = 1 / (2 * pi^2)
+        <|c_1|^2> = 1 / 16
+        <|c_2|^2> = 1 / (9 * pi^2)
+
+    and the rotation frequency is latitude-independent:
+        omega_0 = 2 * pi / P_eq.
+
+    This eliminates the need for numerical latitude quadrature, making
+    kernel evaluation significantly faster.
+
+    Parameters
+    ----------
+    peq : float
+        Equatorial rotation period [days].
+    """
+
+    # Pre-computed latitude-averaged |c_n|^2 = g_n^2 / 2
+    # where g_0 = 1/pi, g_1 = 1/4, g_2 = 1/(3*pi)
+    _CN_SQ = None  # lazily built as JAX array
+
+    def __init__(self, peq: float):
+        super().__init__(peq=peq, kappa=0.0, inc=jnp.pi / 2)
+
+    @property
+    def param_dict(self) -> dict:
+        return {"peq": self.peq}
+
+    @property
+    def param_keys(self) -> tuple:
+        return ("peq",)
+
+    def omega0(self, phi):
+        """Rotation frequency (latitude-independent for kappa=0)."""
+        return 2.0 * jnp.pi / self.peq
+
+    def cn_squared(self, phi, n_harmonics: int = 3):
+        """Latitude-averaged |c_n|^2 (independent of phi).
+
+        Returns the closed-form coefficients for n = 0, 1, 2 and zero
+        for higher harmonics.
+        """
+        cn_sq = jnp.zeros(n_harmonics + 1)
+        pi2 = jnp.pi ** 2
+        # n=0: g_0 = 1/pi  => g_0^2/2 = 1/(2*pi^2)
+        cn_sq = cn_sq.at[0].set(1.0 / (2.0 * pi2))
+        # n=1: g_1 = 1/4   => g_1^2/2 = 1/32
+        if n_harmonics >= 1:
+            cn_sq = cn_sq.at[1].set(1.0 / 32.0)
+        # n=2: g_2 = 1/(3*pi) => g_2^2/2 = 1/(18*pi^2)
+        if n_harmonics >= 2:
+            cn_sq = cn_sq.at[2].set(1.0 / (18.0 * pi2))
+        return cn_sq
 
 
 # ── SpotEvolutionModel ──────────────────────────────────────────────────────

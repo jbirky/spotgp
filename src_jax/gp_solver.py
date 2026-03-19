@@ -20,7 +20,7 @@ try:
     )
     from .envelope import _R_Gamma_symmetric
     from .spot_model import (
-        SpotEvolutionModel, VisibilityFunction,
+        SpotEvolutionModel, VisibilityFunction, EdgeOnVisibilityFunction,
         _cn_general_jax, _gauss_legendre_grid,
     )
     from .analytic_kernel import AnalyticKernel
@@ -32,7 +32,7 @@ except ImportError:
     )
     from envelope import _R_Gamma_symmetric
     from spot_model import (
-        SpotEvolutionModel, VisibilityFunction,
+        SpotEvolutionModel, VisibilityFunction, EdgeOnVisibilityFunction,
         _cn_general_jax, _gauss_legendre_grid,
     )
     from analytic_kernel import AnalyticKernel
@@ -51,9 +51,50 @@ HPARAM_KEYS_WITH_NOISE = list(HPARAM_KEYS_WITH_NOISE)
 # Pure-functional GP helpers (module-level for clean JAX tracing)
 # =====================================================================
 
+def _kernel_eval_edgeon(theta_arr, lag_flat, n_harmonics,
+                        r_gamma_func=None, cn_sq_fixed=None):
+    """
+    Fast-path kernel evaluation for EdgeOnVisibilityFunction.
+
+    Skips the latitude quadrature loop entirely.  The latitude-averaged
+    |c_n|^2 are known constants passed in via ``cn_sq_fixed``.
+
+    Parameters
+    ----------
+    theta_arr : jnp.ndarray
+        Kernel parameters.  theta_arr[0] = peq, theta_arr[-1] = sigma_k.
+    lag_flat : jnp.ndarray, shape (M,)
+    n_harmonics : int
+    r_gamma_func : callable or None
+    cn_sq_fixed : jnp.ndarray, shape (n_harmonics+1,)
+        Pre-computed latitude-averaged |c_n|^2.
+
+    Returns
+    -------
+    K_flat : jnp.ndarray, shape (M,)
+    """
+    peq = theta_arr[0]
+    sigma_k = theta_arr[-1]
+
+    if r_gamma_func is not None:
+        R = r_gamma_func(theta_arr, lag_flat)
+    else:
+        lspot    = theta_arr[1]
+        tau_spot = theta_arr[2]
+        R = _R_Gamma_symmetric(lag_flat, lspot, tau_spot)
+
+    w0 = 2.0 * jnp.pi / peq
+    harm_ns = jnp.arange(1, n_harmonics + 1)
+    cosine_terms = jnp.sum(
+        cn_sq_fixed[1:] * jnp.cos(harm_ns * w0 * lag_flat[:, None]), axis=1)
+    K = sigma_k ** 2 * R * (cn_sq_fixed[0] + 2.0 * cosine_terms)
+    return K
+
+
 def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
                   quad_nodes=None, quad_weights=None,
-                  r_gamma_func=None):
+                  r_gamma_func=None,
+                  edgeon_cn_sq=None):
     """
     Pure-functional kernel evaluation: theta_arr -> kernel values.
 
@@ -65,6 +106,9 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
 
     Memory scales as O(n_lat * M) instead of O(M), which is acceptable
     on GPU where M = N*bandwidth is small relative to device memory.
+
+    When ``edgeon_cn_sq`` is not None, delegates to the fast edge-on
+    path that skips all latitude quadrature.
 
     Parameters
     ----------
@@ -80,12 +124,20 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
     r_gamma_func : callable or None
         JAX-traceable function ``f(theta_arr, lag) -> R_Gamma``.
         If None, uses the symmetric-trapezoid closed-form (backward compat).
+    edgeon_cn_sq : jnp.ndarray or None
+        If not None, use the edge-on fast path with these fixed |c_n|^2.
 
     Returns
     -------
     K_flat : jnp.ndarray, shape (M,)
         Kernel values at each lag.
     """
+    # Fast path for EdgeOnVisibilityFunction
+    if edgeon_cn_sq is not None:
+        return _kernel_eval_edgeon(theta_arr, lag_flat, n_harmonics,
+                                   r_gamma_func=r_gamma_func,
+                                   cn_sq_fixed=edgeon_cn_sq)
+
     peq    = theta_arr[0]
     kappa  = theta_arr[1]
     inc    = theta_arr[2]
@@ -143,7 +195,8 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
                        n_harmonics, n_lat, lat_range,
                        fit_sigma_n, n_kernel=6,
                        r_gamma_func=None,
-                       quad_nodes=None, quad_weights=None):
+                       quad_nodes=None, quad_weights=None,
+                       edgeon_cn_sq=None):
     """
     Pure-functional GP marginal log-likelihood.
 
@@ -189,7 +242,8 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
     K_upper = _kernel_eval(theta_kernel, lag_upper,
                            n_harmonics, n_lat, lat_range,
                            quad_nodes=quad_nodes, quad_weights=quad_weights,
-                           r_gamma_func=r_gamma_func)
+                           r_gamma_func=r_gamma_func,
+                           edgeon_cn_sq=edgeon_cn_sq)
 
     # Reconstruct symmetric matrix from upper triangle
     K = jnp.zeros((N, N))
@@ -212,7 +266,8 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
 def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
                               n_harmonics, n_lat, lat_range,
                               r_gamma_func=None,
-                              quad_nodes=None, quad_weights=None):
+                              quad_nodes=None, quad_weights=None,
+                              edgeon_cn_sq=None):
     """
     Build the kernel covariance directly in compact (b+1, N) banded storage.
 
@@ -249,7 +304,8 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
     K_flat = _kernel_eval(theta_kernel, lags_flat,
                           n_harmonics, n_lat, lat_range,
                           quad_nodes=quad_nodes, quad_weights=quad_weights,
-                          r_gamma_func=r_gamma_func)
+                          r_gamma_func=r_gamma_func,
+                          edgeon_cn_sq=edgeon_cn_sq)
     cb = K_flat.reshape(b + 1, N)
     cb = jnp.where(valid, cb, 0.0)
     return cb
@@ -260,7 +316,8 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                fit_sigma_n, bandwidth,
                                n_kernel=6,
                                r_gamma_func=None,
-                               quad_nodes=None, quad_weights=None):
+                               quad_nodes=None, quad_weights=None,
+                               edgeon_cn_sq=None):
     """
     Pure-functional GP marginal log-likelihood using banded Cholesky.
 
@@ -296,7 +353,8 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                    n_harmonics, n_lat, lat_range,
                                    r_gamma_func=r_gamma_func,
                                    quad_nodes=quad_nodes,
-                                   quad_weights=quad_weights)
+                                   quad_weights=quad_weights,
+                                   edgeon_cn_sq=edgeon_cn_sq)
 
     # Add noise to diagonal (row 0 of compact storage)
     noise_var = yerr ** 2 + sigma_n ** 2
@@ -711,6 +769,13 @@ class GPSolver:
         # Number of kernel params (excludes sigma_n)
         n_kernel = len(self.spot_model.param_keys)
 
+        # Edge-on fast path: pre-compute fixed |c_n|^2 as a JAX array
+        if isinstance(self.spot_model.visibility, EdgeOnVisibilityFunction):
+            eo_cn = jnp.array(self.spot_model.visibility.cn_squared(
+                0.0, self.n_harmonics))
+        else:
+            eo_cn = None
+
         if self.matrix_solver == "cholesky_banded":
             # Capture bandwidth as a Python int in the closure so that
             # jax.lax.scan inside banded_cholesky is unrolled statically.
@@ -722,7 +787,8 @@ class GPSolver:
                     to_phys(theta_arr), x, y, yerr, mean_val,
                     n_h, n_l, lr, fit_sn, b,
                     n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
-                    quad_nodes=qn, quad_weights=qw)
+                    quad_nodes=qn, quad_weights=qw,
+                    edgeon_cn_sq=eo_cn)
                 lp = (custom_prior(theta_arr) if custom_prior is not None
                       else _default_log_prior(theta_arr, bounds))
                 return ll + lp
@@ -732,7 +798,8 @@ class GPSolver:
                 ll = _gp_log_likelihood(to_phys(theta_arr), x, y, yerr, mean_val,
                                         n_h, n_l, lr, fit_sn,
                                         n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
-                                        quad_nodes=qn, quad_weights=qw)
+                                        quad_nodes=qn, quad_weights=qw,
+                                        edgeon_cn_sq=eo_cn)
                 lp = (custom_prior(theta_arr) if custom_prior is not None
                       else _default_log_prior(theta_arr, bounds))
                 return ll + lp
