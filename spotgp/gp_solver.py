@@ -408,16 +408,18 @@ class GPSolver:
 
     Parameters
     ----------
-    x : array_like, shape (N,)
-        Observation times [days].
-    y : array_like, shape (N,)
-        Observed flux values.
-    yerr : array_like, shape (N,) or float
-        Measurement uncertainties (1-sigma).
-    hparam : dict
-        Kernel hyperparameters. Required keys: peq, kappa, inc, lspot,
-        tau_spot. For amplitude, provide either sigma_k directly or all of
-        nspot, fspot, and alpha_max (sigma_k computed automatically).
+    data_or_x : TimeSeriesData or array_like, shape (N,)
+        Either a ``TimeSeriesData`` object, or observation times [days].
+        When a ``TimeSeriesData`` is passed, ``y`` and ``yerr`` must be
+        None (they are read from the data object).
+    y : array_like, shape (N,), optional
+        Observed flux values. Required when ``data_or_x`` is an array.
+    yerr : array_like, shape (N,) or float, optional
+        Measurement uncertainties (1-sigma). Required when ``data_or_x``
+        is an array.
+    model_or_hparam : SpotEvolutionModel or dict
+        Either a SpotEvolutionModel (new API) or a raw hparam dict
+        (backward-compatible old API).
     kernel_type : {"analytic"}
         Which kernel to use (default: "analytic").
     mean : float or callable or None
@@ -448,25 +450,29 @@ class GPSolver:
         "sigma_n":   (1e-6, 0.1),
     }
 
-    def __init__(self, x, y, yerr, model_or_hparam, kernel_type="analytic",
+    def __init__(self, data_or_x, y=None, yerr=None, model_or_hparam=None,
+                 kernel_type="analytic",
                  mean=None, fit_sigma_n=False, bounds=None,
                  log_prior=None, matrix_solver="cholesky_banded",
                  bandwidth=None, save_dir=None, **kernel_kwargs):
-        """
-        Parameters
-        ----------
-        model_or_hparam : SpotEvolutionModel or dict
-            Either a SpotEvolutionModel (new API) or a raw hparam dict
-            (backward-compatible old API).
-        """
 
-        self.x = jnp.asarray(x, dtype=jnp.float64)
-        self.y = jnp.asarray(y, dtype=jnp.float64)
-        yerr_arr = jnp.atleast_1d(jnp.asarray(yerr, dtype=jnp.float64))
-        if yerr_arr.size == 1:
-            self.yerr = jnp.full_like(self.x, yerr_arr.item())
+        # ── Parse data source ────────────────────────────────────────────
+        from .observations import TimeSeriesData
+
+        if isinstance(data_or_x, TimeSeriesData):
+            # New API: GPSolver(data, model_or_hparam, ...)
+            self.data = data_or_x
+            # The second positional arg is the model, not y
+            if model_or_hparam is None:
+                model_or_hparam = y
+                y = None
         else:
-            self.yerr = yerr_arr
+            # Legacy API: GPSolver(x, y, yerr, model_or_hparam, ...)
+            self.data = TimeSeriesData(data_or_x, y, yerr)
+
+        self.x = jnp.asarray(self.data.x, dtype=jnp.float64)
+        self.y = jnp.asarray(self.data.y, dtype=jnp.float64)
+        self.yerr = jnp.asarray(self.data.yerr, dtype=jnp.float64)
         self.N = len(self.x)
 
         # Accept SpotEvolutionModel or legacy hparam dict
@@ -1044,52 +1050,45 @@ class GPSolver:
     # ACF and kernel evaluation
     # =================================================================
 
-    def compute_acf(self, tlags, normalize=True):
+    def compute_acf(self, tlags=None, n_bins=50, normalize=True):
         """
-        Compute the empirical autocorrelation function of (x, y, yerr)
-        by binning data pairs into time-lag bins.
+        Compute the empirical autocorrelation function of the data.
+
+        Delegates to ``self.data.compute_acf()``.
 
         Parameters
         ----------
-        tlags : array_like, shape (M,)
-            Bin edges for time lags [days]. The ACF is evaluated at
-            bin centers: 0.5*(tlags[:-1] + tlags[1:]).
+        tlags : array_like, optional
+            Bin edges for time lags [days]. If provided, ``n_bins`` is
+            inferred as ``len(tlags) - 1``.  If None, ``n_bins`` linearly
+            spaced bins from 0 to half the baseline are used.
+        n_bins : int
+            Number of lag bins (used when ``tlags`` is None, default 50).
         normalize : bool
-            If True (default), normalize so ACF(0) = variance of y.
+            If True (default), normalize so ACF(0) ~ 1.
 
         Returns
         -------
-        lag_centers : ndarray, shape (M-1,)
+        lag_centers : ndarray, shape (n_bins,)
             Bin centers.
-        acf : ndarray, shape (M-1,)
+        acf : ndarray, shape (n_bins,)
             Empirical ACF at each bin center.
         """
-        tlags = np.asarray(tlags, dtype=np.float64)
-        x = np.asarray(self.x)
-        resid = np.asarray(self.y) - float(self.mean_val)
+        if tlags is not None:
+            tlags = np.asarray(tlags, dtype=np.float64)
+            max_lag = float(tlags[-1])
+            n_bins = len(tlags) - 1
+        else:
+            max_lag = self.data.baseline / 2.0
 
-        n_bins = len(tlags) - 1
-        acf_sum = np.zeros(n_bins)
-        acf_count = np.zeros(n_bins)
+        lag_centers, acf = self.data.compute_acf(
+            n_bins=n_bins, max_lag=max_lag)
 
-        # Compute all pairwise lags and products
-        dt = np.abs(x[:, None] - x[None, :])
-        prod = resid[:, None] * resid[None, :]
+        if not normalize:
+            var = np.var(np.asarray(self.y) - float(self.mean_val))
+            acf = acf * var
 
-        for k in range(n_bins):
-            mask = (dt >= tlags[k]) & (dt < tlags[k + 1])
-            acf_count[k] = np.sum(mask)
-            if acf_count[k] > 0:
-                acf_sum[k] = np.sum(prod[mask]) / acf_count[k]
-
-        lag_centers = 0.5 * (tlags[:-1] + tlags[1:])
-
-        if normalize:
-            var = np.mean(resid ** 2)
-            if var > 0:
-                acf_sum = acf_sum / var
-
-        return lag_centers, acf_sum
+        return lag_centers, acf
 
     def compute_kernel(self, tlags):
         """
@@ -1180,7 +1179,8 @@ class GPSolver:
             tlags = np.linspace(0, baseline / 2, n_bins + 1)
 
         # Compute empirical ACF (unnormalized so units match the kernel)
-        lag_centers, acf_data = self.compute_acf(tlags, normalize=False)
+        lag_centers, acf_data = self.compute_acf(tlags=tlags, n_bins=n_bins,
+                                                  normalize=False)
         lag_centers_jax = jnp.asarray(lag_centers)
         acf_data_jax = jnp.asarray(acf_data)
 
@@ -1706,7 +1706,8 @@ class GPSolver:
             baseline = float(jnp.max(self.x) - jnp.min(self.x))
             tlags = np.linspace(0, baseline / 2, n_bins + 1)
 
-        lag_centers, acf_data = self.compute_acf(tlags, normalize=normalize)
+        lag_centers, acf_data = self.compute_acf(tlags=tlags, n_bins=n_bins,
+                                                    normalize=normalize)
 
         if ax is None:
             fig, ax = plt.subplots()
@@ -1779,7 +1780,6 @@ class GPSolver:
         ax : matplotlib Axes
         """
         import matplotlib.pyplot as plt
-        from scipy.signal import lombscargle
 
         x = np.asarray(self.x)
         resid = np.asarray(self.y) - self.mean_val
@@ -1789,12 +1789,15 @@ class GPSolver:
         dt_med = float(np.median(np.diff(x)))
         freq_min = 1.0 / baseline
         freq_max = 1.0 / (2.0 * dt_med)
-        freqs = np.linspace(freq_min, freq_max, n_freq)
 
-        # Lomb-Scargle uses angular frequencies internally
-        pgram = lombscargle(x, resid, 2.0 * np.pi * freqs, normalize=False)
+        # Data PSD via TimeSeriesData
+        freqs, psd_data = self.data.compute_psd(
+            normalization="psd", n_freq=n_freq,
+            freq_min=freq_min, freq_max=freq_max)
         # Normalize so ∫PSD df = var(data)
-        psd_data = pgram * var / np.trapezoid(pgram, freqs)
+        integral = np.trapezoid(psd_data, freqs)
+        if integral > 0:
+            psd_data = psd_data * var / integral
 
         if ax is None:
             fig, ax = plt.subplots()

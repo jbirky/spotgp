@@ -55,6 +55,7 @@ overview
 tutorials/lightcurve_demo
 tutorials/jax_jit
 tutorials/gp_optimization
+tutorials/data_preprocessing
 ```
 
 ```{toctree}

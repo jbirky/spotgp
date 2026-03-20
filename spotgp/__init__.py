@@ -8,4 +8,5 @@ from .numerical_kernel import *
 from .psd import *
 from .gp_solver import *
 from .mcmc import *
+from .observations import *
 from .plotting import *
