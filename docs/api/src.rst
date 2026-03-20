@@ -6,7 +6,7 @@ API Reference (``src``)
 Lightcurve Model
 ----------------
 
-.. autoclass:: src.starspot.LightcurveModel
+.. autoclass:: src.lightcurve.LightcurveModel
    :members:
    :undoc-members:
    :show-inheritance:

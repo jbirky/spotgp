@@ -29,6 +29,7 @@ extensions = [
     "sphinx.ext.viewcode",
     "myst_nb",
     "sphinx_copybutton",
+    "sphinxcontrib.mermaid",
 ]
 
 source_suffix = {
@@ -80,7 +81,13 @@ html_theme_options = {
     "pygments_dark_style": "ayu-mirage",
 }
 
-# -- myst-nb -----------------------------------------------------------------
+# -- myst-nb / myst-parser ---------------------------------------------------
+
+# Enable dollar-sign math delimiters ($...$ and $$...$$) in Markdown and notebooks.
+myst_enable_extensions = [
+    "dollarmath",
+    "colon_fence",
+]
 
 # Never execute notebooks during the build.
 nb_execution_mode = "off"

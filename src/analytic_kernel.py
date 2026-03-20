@@ -166,7 +166,7 @@ class AnalyticKernel:
         lag-sized buffer is live at a time — O(M) instead of O(n_lat·M).
 
         When the visibility function is an EdgeOnVisibilityFunction, the
-        latitude-averaged |c_n|^2 are known constants and the latitude
+        latitude-averaged \|c_n\|^2 are known constants and the latitude
         loop is bypassed entirely.
 
         Parameters

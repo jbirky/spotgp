@@ -79,18 +79,26 @@ class NumericalKernel(object):
     """
     Gaussian Process for Stellar Rotation
 
-    Parameters:
-    - hparam: dict of hyperparameters.
-              Required keys: peq, kappa, inc, lspot, tau_spot, alpha_max.
-              For the kernel amplitude, provide EITHER:
-                - sigma_k : overall amplitude prefactor, OR
-                - nspot + fspot : number of spots and spot contrast, from which
-                  sigma_k is computed as sqrt(N_spot) * (1 - f_spot) / pi.
-              Note: nspot is always required for the numerical simulations.
-    - tsim: simulation time (default: 20)
-    - tsamp: time sampling (default: 0.05)
-    - nsim: number of simulations (default: 1e3)
-    - verbose: whether to print verbose output (default: True)
+    Parameters
+    ----------
+    hparam : dict
+        Dict of hyperparameters.
+        Required keys: peq, kappa, inc, lspot, tau_spot, alpha_max.
+        For the kernel amplitude, provide EITHER:
+
+        - sigma_k : overall amplitude prefactor, OR
+        - nspot + fspot : number of spots and spot contrast, from which
+          sigma_k is computed as sqrt(N_spot) * (1 - f_spot) / pi.
+
+        Note: nspot is always required for the numerical simulations.
+    tsim : float
+        Simulation time (default: 20).
+    tsamp : float
+        Time sampling (default: 0.05).
+    nsim : int
+        Number of simulations (default: 1e3).
+    verbose : bool
+        Whether to print verbose output (default: True).
 
     """
     def __init__(self, model_or_hparam, tsim=20, tsamp=0.05, nsim=1e3, verbose=True):

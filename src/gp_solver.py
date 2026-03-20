@@ -2070,6 +2070,7 @@ class GPSolver:
                 as the free variables to optimize; the rest are held
                 fixed. Extra keys not in ``param_keys`` are ignored.
               - array_like: full theta vector (length ``n_params``).
+
             Ignored when ``nopt > 1`` (starting points are randomised).
         keys : list of str, optional
             Which parameters to vary during optimization. Overrides
@@ -2364,7 +2365,7 @@ class GPSolver:
         Estimate the inverse mass matrix from the Hessian of the
         negative log-likelihood at the MAP.
 
-        M^{-1} = H^{-1}  where  H = d^2(-log L)/d theta^2 |_{MAP}
+        ``M^{-1} = H^{-1}``  where  ``H = d^2(-log L)/d theta^2`` at the MAP.
 
         Parameters
         ----------

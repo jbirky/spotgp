@@ -232,7 +232,7 @@ summaries, corner plots, convergence diagnostics, and checkpointing.
 
 ## Data flow: fitting a lightcurve
 
-```
+```text
 Observed flux (t, y, yerr)
          │
          ▼
