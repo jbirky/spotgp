@@ -29,6 +29,7 @@ docs = [
     "sphinx-copybutton>=0.5",
     "myst-nb>=1.0",
     "sphinxcontrib-mermaid>=0.9",
+    "pygments-styles>=0.3",
 ]
 
 [tool.setuptools.packages.find]
