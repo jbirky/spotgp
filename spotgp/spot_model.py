@@ -17,6 +17,11 @@ _UNSET = object()  # sentinel to distinguish "not passed" from explicit None
 import jax.numpy as jnp
 
 try:
+    from .distributions import as_distribution, is_distributed, DeltaDistribution
+except ImportError:
+    from distributions import as_distribution, is_distributed, DeltaDistribution
+
+try:
     from .envelope import (
         EnvelopeFunction,
         TrapezoidSymmetricEnvelope,
@@ -163,19 +168,39 @@ class SpotEvolutionModel:
         self.alpha_max = float(alpha_max) if alpha_max is not None else None
 
         if sigma_k is not None:
-            self.sigma_k = float(sigma_k)
+            self._sigma_k_dist = as_distribution(sigma_k)
         elif nspot_rate is not None and alpha_max is not None:
-            self.sigma_k = (
+            computed = (
                 float(np.sqrt(float(nspot_rate)))
                 * (1.0 - float(fspot))
                 * float(alpha_max) ** 2
             )
+            self._sigma_k_dist = as_distribution(computed)
         else:
             raise ValueError(
                 "SpotEvolutionModel requires either sigma_k or "
                 "(nspot_rate, fspot, alpha_max).")
 
     # ── Convenience accessors ───────────────────────────────────────────────
+
+    @property
+    def sigma_k(self) -> float:
+        """Point estimate (mean) of sigma_k. Backward-compatible float."""
+        return self._sigma_k_dist.mean
+
+    @sigma_k.setter
+    def sigma_k(self, value):
+        self._sigma_k_dist = as_distribution(value)
+
+    @property
+    def sigma_k_distribution(self):
+        """The full ParameterDistribution for sigma_k."""
+        return self._sigma_k_dist
+
+    @property
+    def sigma_k_sq_expected(self) -> float:
+        """E[sigma_k^2] under the distribution. Exact for DeltaDistribution."""
+        return self._sigma_k_dist.expectation(lambda x: x ** 2)
 
     @property
     def peq(self) -> float:

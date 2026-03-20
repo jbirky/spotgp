@@ -132,6 +132,48 @@ class TestSigmaClip:
         assert ts.yerr[1] == pytest.approx(0.1)
 
 
+class TestDownsample:
+    def test_reduces_points(self):
+        x = np.linspace(0, 10, 100)
+        y = np.ones(100)
+        ts = TimeSeriesData(x, y, 0.01, normalize=False)
+        ts.downsample(dt=1.0)
+        assert ts.N < 100
+        assert ts.N == 10
+
+    def test_preserves_constant_signal(self):
+        x = np.linspace(0, 10, 200)
+        y = np.ones(200) * 5.0
+        ts = TimeSeriesData(x, y, 0.1, normalize=False)
+        ts.downsample(dt=2.0)
+        np.testing.assert_allclose(ts.y, 5.0, rtol=1e-10)
+
+    def test_yerr_decreases(self):
+        """Binning N points should reduce yerr by ~sqrt(N)."""
+        x = np.linspace(0, 10, 100)
+        y = np.ones(100)
+        yerr = np.full(100, 0.1)
+        ts = TimeSeriesData(x, y, yerr, normalize=False)
+        ts.downsample(dt=1.0)
+        # ~10 points per bin, so yerr ~ 0.1/sqrt(10) ~ 0.0316
+        assert np.all(ts.yerr < 0.05)
+        assert np.all(ts.yerr > 0.01)
+
+    def test_arrays_aligned(self):
+        x = np.linspace(0, 10, 50)
+        y = np.sin(x) + 1.0
+        ts = TimeSeriesData(x, y, 0.01, normalize=False)
+        ts.downsample(dt=2.5)
+        assert len(ts.x) == len(ts.y) == len(ts.yerr)
+
+    def test_times_monotonic(self):
+        x = np.linspace(0, 20, 200)
+        y = np.ones(200)
+        ts = TimeSeriesData(x, y, 0.01, normalize=False)
+        ts.downsample(dt=3.0)
+        assert np.all(np.diff(ts.x) > 0)
+
+
 class TestTimeSeriesDataProperties:
     def test_baseline(self):
         ts = TimeSeriesData(np.array([0, 5, 10]), np.ones(3), 0.01)

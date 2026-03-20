@@ -21,6 +21,11 @@ import jax
 import jax.numpy as jnp
 from abc import ABC, abstractmethod
 
+try:
+    from .distributions import as_distribution, is_distributed
+except ImportError:
+    from distributions import as_distribution, is_distributed
+
 __all__ = [
     "EnvelopeFunction",
     "TrapezoidSymmetricEnvelope",
@@ -693,32 +698,51 @@ class TrapezoidSymmetricEnvelope(EnvelopeFunction):
 
     Parameters
     ----------
-    lspot : float
+    lspot : float or ParameterDistribution
         Plateau duration [days].
-    tau_spot : float
+    tau_spot : float or ParameterDistribution
         Rise/decay timescale [days].
+
+    When either parameter is a ``ParameterDistribution``, ``R_Gamma``
+    returns the marginalized autocorrelation integrated over the
+    distribution(s).  The ``lspot`` and ``tau_spot`` properties return
+    the distribution means for backward compatibility.
     """
 
-    def __init__(self, lspot: float, tau_spot: float):
-        self._lspot = float(lspot)
-        self._tau_spot = float(tau_spot)
+    def __init__(self, lspot, tau_spot):
+        self._lspot_dist = as_distribution(lspot)
+        self._tau_spot_dist = as_distribution(tau_spot)
+        self._is_marginalized = (
+            is_distributed(self._lspot_dist)
+            or is_distributed(self._tau_spot_dist)
+        )
 
     @property
     def tau_spot(self) -> float:
-        return self._tau_spot
+        return self._tau_spot_dist.mean
 
     @property
     def lspot(self) -> float:
-        return self._lspot
+        return self._lspot_dist.mean
+
+    @property
+    def lspot_distribution(self):
+        """The full ParameterDistribution for lspot."""
+        return self._lspot_dist
+
+    @property
+    def tau_spot_distribution(self):
+        """The full ParameterDistribution for tau_spot."""
+        return self._tau_spot_dist
 
     @property
     def param_dict(self) -> dict:
-        return {"lspot": self._lspot, "tau_spot": self._tau_spot}
+        return {"lspot": self.lspot, "tau_spot": self.tau_spot}
 
     def Gamma(self, t):
         t = jnp.asarray(t, dtype=float)
-        half = self._lspot / 2.0
-        tau_spot = self._tau_spot
+        half = self.lspot / 2.0
+        tau_spot = self.tau_spot
         return jnp.where(
             t < -(half + tau_spot), 0.0,
             jnp.where(
@@ -730,17 +754,58 @@ class TrapezoidSymmetricEnvelope(EnvelopeFunction):
                         0.0))))
 
     def Gamma_hat(self, omega):
-        return _Gamma_hat(jnp.asarray(omega, dtype=float), self._lspot, self._tau_spot)
+        return _Gamma_hat(jnp.asarray(omega, dtype=float), self.lspot, self.tau_spot)
 
     def Gamma_hat_sq(self, omega):
-        gh = _Gamma_hat(jnp.asarray(omega, dtype=float), self._lspot, self._tau_spot)
+        gh = _Gamma_hat(jnp.asarray(omega, dtype=float), self.lspot, self.tau_spot)
         return gh ** 2
 
     def R_Gamma(self, lag):
-        return _R_Gamma_symmetric(jnp.asarray(lag), self._lspot, self._tau_spot)
+        lag = jnp.asarray(lag)
+        if not self._is_marginalized:
+            return _R_Gamma_symmetric(lag, self.lspot, self.tau_spot)
+        return self._marginalized_R_Gamma(lag)
+
+    def _marginalized_R_Gamma(self, lag, n_quad=16):
+        """
+        R_Gamma averaged over the distributions of lspot and/or tau_spot.
+
+        Uses a tensor-product quadrature grid: for each combination
+        (lspot_i, tau_j), evaluate R_Gamma and take the weighted average.
+        """
+        # Build 1D quadrature for each parameter
+        l_dist = self._lspot_dist
+        t_dist = self._tau_spot_dist
+
+        def _quad_1d(dist, n):
+            lo, hi = dist.support
+            if lo == hi:
+                return np.array([lo]), np.array([1.0])
+            nodes, weights = np.polynomial.legendre.leggauss(n)
+            x = 0.5 * (hi - lo) * nodes + 0.5 * (hi + lo)
+            w = 0.5 * (hi - lo) * weights
+            pdf = np.array([dist(float(xi)) for xi in x])
+            w = w * pdf
+            w = w / np.sum(w)
+            return x, w
+
+        l_pts, l_wts = _quad_1d(l_dist, n_quad)
+        t_pts, t_wts = _quad_1d(t_dist, n_quad)
+
+        R_sum = jnp.zeros_like(lag)
+        for i, (li, lw) in enumerate(zip(l_pts, l_wts)):
+            for j, (tj, tw) in enumerate(zip(t_pts, t_wts)):
+                R_sum = R_sum + float(lw * tw) * _R_Gamma_symmetric(
+                    lag, float(li), float(tj))
+        return R_sum
 
     def kernel_support(self) -> float:
-        return self._lspot + 2.0 * self._tau_spot
+        # Use upper end of distributions for conservative support
+        if self._is_marginalized:
+            l_hi = self._lspot_dist.support[1]
+            t_hi = self._tau_spot_dist.support[1]
+            return l_hi + 2.0 * t_hi
+        return self.lspot + 2.0 * self.tau_spot
 
     def sympy_Gamma(self):
         import sympy as sp
