@@ -11,3 +11,4 @@ from .gp_solver import *
 from .mcmc import *
 from .observations import *
 from .plotting import *
+from .sensitivity import *

@@ -828,7 +828,7 @@ class GPSolver:
     # JAX compilation warmup
     # =================================================================
 
-    def build_jax(self):
+    def build_jax(self, recompute=True):
         """
         Pre-compile and warm up all JAX JIT functions for this solver.
 
@@ -859,12 +859,13 @@ class GPSolver:
         jax.block_until_ready(self.grad_neg_log_posterior(theta0))
         print(f"JAX GP solver compiled in {np.round(time.time() - t0, 2)}s")
 
-        t0 = time.time()
-        jax.block_until_ready(self.log_posterior(theta0))
-        jax.block_until_ready(self.neg_log_posterior(theta0))
-        jax.block_until_ready(self.grad_log_posterior(theta0))
-        jax.block_until_ready(self.grad_neg_log_posterior(theta0))
-        print(f"JAX GP solver recompute in {np.round(time.time() - t0, 2)}s")
+        if recompute:
+            t0 = time.time()
+            jax.block_until_ready(self.log_posterior(theta0))
+            jax.block_until_ready(self.neg_log_posterior(theta0))
+            jax.block_until_ready(self.grad_log_posterior(theta0))
+            jax.block_until_ready(self.grad_neg_log_posterior(theta0))
+            print(f"JAX GP solver recompute in {np.round(time.time() - t0, 2)}s")
 
         return self
 

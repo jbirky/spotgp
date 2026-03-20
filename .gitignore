@@ -1,4 +1,5 @@
 *.pyc
+*.csv
 __pycache__/
 scripts/results/*
 docs/_build/
