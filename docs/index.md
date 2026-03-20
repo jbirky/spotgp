@@ -46,6 +46,7 @@ tutorials/gp_optimization
 :caption: Advanced 
 
 tutorials/custom_envelope_gaussian
+tutorials/custom_visibility_function
 tutorials/custom_latitude_distribution
 tutorials/mcmc_sampling
 tutorials/cramer_rao_bound

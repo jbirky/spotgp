@@ -1,21 +1,19 @@
 """
-spot_model.py — VisibilityFunction and SpotEvolutionModel.
-
-VisibilityFunction encapsulates the Fourier-series representation of the
-stellar visibility function: how much flux a spot at latitude phi
-contributes as the star rotates, decomposed into rotation harmonics.
+spot_model.py — SpotEvolutionModel.
 
 SpotEvolutionModel combines an EnvelopeFunction and a VisibilityFunction
 with an amplitude parameter (sigma_k) to fully describe the statistical
 spot evolution model used by AnalyticKernel, NumericalKernel, GPSolver,
 and LightcurveModel.
+
+LatitudeDistributionFunction, VisibilityFunction, EdgeOnVisibilityFunction,
+and low-level helpers are re-exported here for backward compatibility.
 """
 from __future__ import annotations
 
 import numpy as np
 
 _UNSET = object()  # sentinel to distinguish "not passed" from explicit None
-import jax
 import jax.numpy as jnp
 
 try:
@@ -29,6 +27,15 @@ try:
         _R_Gamma_asymmetric,
     )
     from .params import resolve_hparam
+    from .latitude import LatitudeDistributionFunction
+    from .visibility import (
+        VisibilityFunction,
+        EdgeOnVisibilityFunction,
+        FullGeometryVisibilityFunction,
+        _cn_general_jax,
+        _cn_squared_coefficients_jax,
+        _gauss_legendre_grid,
+    )
 except ImportError:
     from envelope import (
         EnvelopeFunction,
@@ -40,426 +47,28 @@ except ImportError:
         _R_Gamma_asymmetric,
     )
     from params import resolve_hparam
+    from latitude import LatitudeDistributionFunction
+    from visibility import (
+        VisibilityFunction,
+        EdgeOnVisibilityFunction,
+        FullGeometryVisibilityFunction,
+        _cn_general_jax,
+        _cn_squared_coefficients_jax,
+        _gauss_legendre_grid,
+    )
 
 __all__ = [
+    # Re-exported for backward compatibility
     "LatitudeDistributionFunction",
     "VisibilityFunction",
     "EdgeOnVisibilityFunction",
-    "SpotEvolutionModel",
-    # low-level helpers re-exported for backward compat
+    "FullGeometryVisibilityFunction",
     "_cn_general_jax",
     "_cn_squared_coefficients_jax",
     "_gauss_legendre_grid",
+    # Defined here
+    "SpotEvolutionModel",
 ]
-
-
-# ── Low-level JAX helpers (Fourier visibility coefficients) ─────────────────
-
-def _safe_arccos(x):
-    """arccos safe for autodiff at x = ±1."""
-    return jnp.arccos(jnp.clip(x, -1.0 + 1e-7, 1.0 - 1e-7))
-
-
-@jax.jit
-def _cn_general_jax(n, inc, phi):
-    """
-    Fourier coefficient c_n of the visibility function.
-    JAX-compatible; uses safe_arccos for finite gradients at boundaries.
-    """
-    a0 = jnp.cos(inc) * jnp.sin(phi)
-    a1 = jnp.sin(inc) * jnp.cos(phi)
-
-    safe_a1 = jnp.where(jnp.abs(a1) < 1e-15, 1.0, a1)
-    ratio = -a0 / safe_a1
-
-    always_visible = ratio <= -1.0
-    never_visible = ratio >= 1.0
-    tiny_a1 = jnp.abs(a1) < 1e-15
-
-    theta_vis = jnp.where(
-        tiny_a1, 0.0,
-        jnp.where(always_visible, jnp.pi,
-                  jnp.where(never_visible, 0.0,
-                            _safe_arccos(ratio))))
-
-    c0 = jnp.where(tiny_a1, a0,
-                   (a0 * theta_vis + a1 * jnp.sin(theta_vis)) / jnp.pi)
-    c0 = jnp.where(never_visible & ~tiny_a1, 0.0, c0)
-
-    c1 = (a0 * jnp.sin(theta_vis)
-          + a1 / 2 * (theta_vis + jnp.sin(theta_vis) * jnp.cos(theta_vis))) / jnp.pi
-    c1 = jnp.where(tiny_a1 | never_visible, 0.0, c1)
-
-    n_f = jnp.float64(n) if hasattr(jnp, 'float64') else jnp.float32(n)
-    nm1 = n_f - 1
-    np1 = n_f + 1
-    safe_nm1 = jnp.where(jnp.abs(nm1) < 1e-15, 1.0, nm1)
-    safe_np1 = jnp.where(jnp.abs(np1) < 1e-15, 1.0, np1)
-
-    term1 = a0 * jnp.sin(n_f * theta_vis) / (n_f + 1e-30)
-    term2 = a1 / 2 * (jnp.sin(safe_nm1 * theta_vis) / safe_nm1
-                       + jnp.sin(safe_np1 * theta_vis) / safe_np1)
-    cn_general = (term1 + term2) / jnp.pi
-    cn_general = jnp.where(tiny_a1 | never_visible, 0.0, cn_general)
-
-    return jnp.where(n == 0, c0, jnp.where(n == 1, c1, cn_general))
-
-
-def _cn_squared_coefficients_jax(inc, phi, n_harmonics=2):
-    """Compute |c_n|² for n = 0, 1, ..., n_harmonics."""
-    ns = jnp.arange(n_harmonics + 1)
-    cn_vals = jax.vmap(lambda n: _cn_general_jax(n, inc, phi))(ns)
-    return cn_vals ** 2
-
-
-def _gauss_legendre_grid(n, a, b):
-    """
-    Gauss-Legendre nodes and weights on [a, b].
-
-    Returns
-    -------
-    nodes : jnp.ndarray, shape (n,)
-    weights : jnp.ndarray, shape (n,)
-    """
-    nodes_ref, weights_ref = np.polynomial.legendre.leggauss(n)
-    nodes = 0.5 * (b - a) * nodes_ref + 0.5 * (a + b)
-    weights = 0.5 * (b - a) * weights_ref
-    return jnp.array(nodes), jnp.array(weights)
-
-
-# ── LatitudeDistributionFunction ────────────────────────────────────────────
-
-class LatitudeDistributionFunction:
-    """
-    Base class for starspot latitude distributions.
-
-    Defines the probability density p(phi) over stellar latitude phi and
-    the latitude range over which spots are placed.
-
-    The default implementation is a uniform distribution over
-    [-pi/2, pi/2].  To define a custom distribution, subclass this class
-    and override ``__call__`` and optionally ``lat_range``.
-
-    Examples
-    --------
-    Equatorial band (spots confined to |phi| < 30 deg):
-
-    >>> class EquatorialBand(LatitudeDistributionFunction):
-    ...     @property
-    ...     def lat_range(self):
-    ...         return (-np.pi / 6, np.pi / 6)
-    ...     def __call__(self, phi):
-    ...         return 1.0
-
-    Gaussian centred on the equator:
-
-    >>> class GaussianLatitude(LatitudeDistributionFunction):
-    ...     def __init__(self, sigma=np.pi / 6):
-    ...         self.sigma = sigma
-    ...     def __call__(self, phi):
-    ...         return np.exp(-0.5 * (phi / self.sigma) ** 2)
-    """
-
-    @property
-    def lat_range(self) -> tuple:
-        """(min, max) latitude in radians."""
-        return (-np.pi / 2, np.pi / 2)
-
-    def __call__(self, phi: float) -> float:
-        """
-        Unnormalized probability density at latitude phi.
-
-        Normalization is handled internally by the kernel integrator.
-
-        Parameters
-        ----------
-        phi : float
-            Stellar latitude [radians].
-
-        Returns
-        -------
-        float
-            Relative probability density at phi.
-        """
-        return 1.0
-
-    def sympy_pdf(self):
-        """
-        Return the sympy expression for the latitude PDF p(phi).
-
-        Subclasses should override this to provide their analytic form.
-        The base implementation returns 1 (uniform distribution).
-
-        Returns
-        -------
-        sympy.Expr or None
-            Sympy expression for p(phi), or None if no analytic form exists.
-        """
-        try:
-            import sympy as sp
-        except ImportError:
-            raise ImportError(
-                "sympy is required for get_sympy(). "
-                "Install with: pip install sympy")
-        return sp.Integer(1)
-
-    def get_sympy(self, display=True, status=None):
-        """
-        Display the sympy expression for the latitude PDF p(phi).
-
-        Requires sympy (``pip install sympy``).
-
-        Parameters
-        ----------
-        display : bool, optional
-            If True (default), render equations as formatted LaTeX in a
-            Jupyter notebook (via IPython.display) or print them as LaTeX
-            strings in a plain terminal.
-        status : str or None, optional
-            If provided, appended to the class name header in brackets,
-            e.g. ``"default"`` renders as
-            ``LatitudeDistributionFunction [default]``.
-
-        Returns
-        -------
-        dict
-            ``{"pdf": expr_or_None}``
-        """
-        try:
-            import sympy as sp
-        except ImportError:
-            raise ImportError(
-                "sympy is required for get_sympy(). "
-                "Install with: pip install sympy")
-
-        expr = self.sympy_pdf()
-        exprs = {"pdf": expr}
-
-        if display:
-            rhs = r"\text{[numerical]}" if expr is None else sp.latex(expr)
-            status_tag = r" \text{[" + status + r"]}" if status else ""
-            header = r"\textbf{" + type(self).__name__ + r"}" + status_tag
-            try:
-                from IPython.display import display as ipy_display, Math
-                ipy_display(Math(header))
-                ipy_display(Math(r"p(\phi) = " + rhs))
-            except ImportError:
-                status_str = f" [{status}]" if status else ""
-                print(f"{type(self).__name__}{status_str}")
-                print(f"  $p(\\phi) = {rhs}$")
-
-        return exprs
-
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"lat_range=[{self.lat_range[0]:.3f}, {self.lat_range[1]:.3f}])")
-
-
-# ── VisibilityFunction ──────────────────────────────────────────────────────
-
-class VisibilityFunction:
-    """
-    Stellar visibility function parameterized by rotation and inclination.
-
-    The visibility function V(phi, lon) describes the flux contribution from
-    a spot at latitude phi as the star rotates.  It is expanded in a Fourier
-    series over rotation harmonics, with coefficients c_n(inc, phi).
-
-    Parameters
-    ----------
-    peq : float
-        Equatorial rotation period [days].
-    kappa : float
-        Differential rotation shear (dimensionless).
-    inc : float
-        Stellar inclination [radians].
-    """
-
-    def __init__(self, peq: float, kappa: float, inc: float):
-        self.peq = float(peq)
-        self.kappa = float(kappa)
-        self.inc = float(inc)
-
-    @property
-    def param_dict(self) -> dict:
-        """Visibility parameters as {name: value}."""
-        return {"peq": self.peq, "kappa": self.kappa, "inc": self.inc}
-
-    @property
-    def param_keys(self) -> tuple:
-        """Ordered parameter names."""
-        return ("peq", "kappa", "inc")
-
-    def omega0(self, phi):
-        """Latitude-dependent rotation angular frequency [rad/day]."""
-        return 2.0 * jnp.pi * (1.0 - self.kappa * jnp.sin(phi) ** 2) / self.peq
-
-    def cn_squared(self, phi, n_harmonics: int = 3):
-        """
-        Squared Fourier coefficients |c_n|² at stellar latitude phi.
-
-        Returns
-        -------
-        cn_sq : jnp.ndarray, shape (n_harmonics + 1,)
-        """
-        return _cn_squared_coefficients_jax(self.inc, phi, n_harmonics)
-
-    def get_sympy(self, display=True, status=None):
-        """
-        Display the sympy expressions for the visibility function.
-
-        Renders or prints LaTeX for:
-          - omega_0(phi): latitude-dependent rotation angular frequency.
-          - a_0, a_1, theta_v: intermediate visibility geometry variables.
-          - c_0, c_1: special-case Fourier coefficients.
-          - c_n: general Fourier coefficient (n >= 2).
-
-        Intermediate symbols are introduced so each equation stays compact
-        and human-readable.
-
-        Requires sympy (``pip install sympy``).
-
-        Parameters
-        ----------
-        display : bool, optional
-            If True (default), render equations as formatted LaTeX in a
-            Jupyter notebook (via IPython.display) or print them as LaTeX
-            strings in a plain terminal.
-        status : str or None, optional
-            If provided, appended to the class name header in brackets,
-            e.g. ``"user defined"`` renders as
-            ``VisibilityFunction [user defined]``.
-
-        Returns
-        -------
-        dict
-            ``{"omega0": expr, "a0": expr, "a1": expr,
-               "theta_v": expr, "c0": expr, "c1": expr, "cn": expr}``
-        """
-        try:
-            import sympy as sp
-        except ImportError:
-            raise ImportError(
-                "sympy is required for get_sympy(). "
-                "Install with: pip install sympy")
-
-        phi   = sp.Symbol(r'\phi', real=True)
-        inc   = sp.Symbol('i', positive=True)
-        P_eq  = sp.Symbol(r'P_{\rm eq}', positive=True)
-        kappa = sp.Symbol(r'\kappa', real=True)
-        n     = sp.Symbol('n', positive=True, integer=True)
-
-        # Intermediate geometry symbols (keeps c_n expressions readable)
-        a0_sym  = sp.Symbol('a_0', real=True)
-        a1_sym  = sp.Symbol('a_1', real=True)
-        tv_sym  = sp.Symbol(r'\theta_v', nonnegative=True)
-
-        # Definitions
-        omega0   = 2 * sp.pi * (1 - kappa * sp.sin(phi)**2) / P_eq
-        a0_def   = sp.cos(inc) * sp.sin(phi)
-        a1_def   = sp.sin(inc) * sp.cos(phi)
-        theta_def = sp.acos(-a0_sym / a1_sym)
-
-        # Fourier coefficients in terms of the intermediate symbols
-        c0 = (a0_sym * tv_sym + a1_sym * sp.sin(tv_sym)) / sp.pi
-        c1 = (a0_sym * sp.sin(tv_sym)
-              + a1_sym / 2 * (tv_sym + sp.sin(tv_sym) * sp.cos(tv_sym))) / sp.pi
-        cn = (a0_sym * sp.sin(n * tv_sym) / n
-              + a1_sym / 2 * (sp.sin((n - 1) * tv_sym) / (n - 1)
-                              + sp.sin((n + 1) * tv_sym) / (n + 1))) / sp.pi
-
-        exprs = {
-            "omega0": omega0, "a0": a0_def, "a1": a1_def,
-            "theta_v": theta_def, "c0": c0, "c1": c1, "cn": cn,
-        }
-
-        lhs = {
-            "omega0":   r"\omega_0(\phi)",
-            "a0":       r"a_0",
-            "a1":       r"a_1",
-            "theta_v":  r"\theta_v",
-            "c0":       r"c_0",
-            "c1":       r"c_1",
-            "cn":       r"c_n \; (n \geq 2)",
-        }
-
-        if display:
-            status_tag = r" \text{[" + status + r"]}" if status else ""
-            header = r"\textbf{VisibilityFunction}" + status_tag
-            try:
-                from IPython.display import display as ipy_display, Math
-                ipy_display(Math(header))
-                for key, expr in exprs.items():
-                    ipy_display(Math(lhs[key] + " = " + sp.latex(expr)))
-            except ImportError:
-                status_str = f" [{status}]" if status else ""
-                print(f"VisibilityFunction{status_str}")
-                for key, expr in exprs.items():
-                    print(f"  ${lhs[key]} = {sp.latex(expr)}$")
-
-        return exprs
-
-
-class EdgeOnVisibilityFunction(VisibilityFunction):
-    """
-    Closed-form visibility for edge-on viewing (I = pi/2) with solid-body
-    rotation (kappa = 0) and a uniform latitude distribution.
-
-    For this special case, the latitude-averaged squared Fourier coefficients
-    are known analytically (Eq. 68 of Birky et al.):
-
-        <|c_0|^2> = 1 / (2 * pi^2)
-        <|c_1|^2> = 1 / 16
-        <|c_2|^2> = 1 / (9 * pi^2)
-
-    and the rotation frequency is latitude-independent:
-        omega_0 = 2 * pi / P_eq.
-
-    This eliminates the need for numerical latitude quadrature, making
-    kernel evaluation significantly faster.
-
-    Parameters
-    ----------
-    peq : float
-        Equatorial rotation period [days].
-    """
-
-    # Pre-computed latitude-averaged |c_n|^2 = g_n^2 / 2
-    # where g_0 = 1/pi, g_1 = 1/4, g_2 = 1/(3*pi)
-    _CN_SQ = None  # lazily built as JAX array
-
-    def __init__(self, peq: float):
-        super().__init__(peq=peq, kappa=0.0, inc=jnp.pi / 2)
-
-    @property
-    def param_dict(self) -> dict:
-        return {"peq": self.peq}
-
-    @property
-    def param_keys(self) -> tuple:
-        return ("peq",)
-
-    def omega0(self, phi):
-        """Rotation frequency (latitude-independent for kappa=0)."""
-        return 2.0 * jnp.pi / self.peq
-
-    def cn_squared(self, phi, n_harmonics: int = 3):
-        """Latitude-averaged |c_n|^2 (independent of phi).
-
-        Returns the closed-form coefficients for n = 0, 1, 2 and zero
-        for higher harmonics.
-        """
-        cn_sq = jnp.zeros(n_harmonics + 1)
-        pi2 = jnp.pi ** 2
-        # n=0: g_0 = 1/pi  => g_0^2/2 = 1/(2*pi^2)
-        cn_sq = cn_sq.at[0].set(1.0 / (2.0 * pi2))
-        # n=1: g_1 = 1/4   => g_1^2/2 = 1/32
-        if n_harmonics >= 1:
-            cn_sq = cn_sq.at[1].set(1.0 / 32.0)
-        # n=2: g_2 = 1/(3*pi) => g_2^2/2 = 1/(18*pi^2)
-        if n_harmonics >= 2:
-            cn_sq = cn_sq.at[2].set(1.0 / (18.0 * pi2))
-        return cn_sq
 
 
 # ── SpotEvolutionModel ──────────────────────────────────────────────────────
@@ -681,7 +290,6 @@ class SpotEvolutionModel:
 
         else:
             # Generic fallback via precomputed grid (like skew-normal)
-            import functools
             env = self.envelope
             tau_ref = env.tau_spot if env.tau_spot > 0 else 1.0
             env_np = lambda t_arr: np.asarray(env.Gamma(jnp.array(t_arr)))
