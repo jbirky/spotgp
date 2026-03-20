@@ -101,6 +101,41 @@ class TimeSeriesData:
         self.y = self.y[mask]
         self.yerr = self.yerr[mask]
 
+    def downsample(self, dt):
+        """
+        Downsample the time series into non-overlapping bins of width ``dt``.
+
+        Within each bin the flux is the inverse-variance weighted mean
+        and the uncertainty is propagated as:
+
+            yerr_bin = 1 / sqrt(sum(1 / yerr_i^2))
+
+        Bins containing zero points are dropped.
+
+        Parameters
+        ----------
+        dt : float
+            Bin width in the same units as ``x``.
+        """
+        dt = float(dt)
+        bin_edges = np.arange(self.x[0], self.x[-1] + dt, dt)
+        bin_idx = np.digitize(self.x, bin_edges) - 1
+
+        x_new, y_new, yerr_new = [], [], []
+        for i in range(len(bin_edges) - 1):
+            mask = bin_idx == i
+            if not np.any(mask):
+                continue
+            w = 1.0 / self.yerr[mask] ** 2
+            w_sum = np.sum(w)
+            x_new.append(np.mean(self.x[mask]))
+            y_new.append(np.sum(w * self.y[mask]) / w_sum)
+            yerr_new.append(1.0 / np.sqrt(w_sum))
+
+        self.x = np.array(x_new)
+        self.y = np.array(y_new)
+        self.yerr = np.array(yerr_new)
+
     def compute_psd(self, normalization="psd", freq_min=None, freq_max=None,
                     n_freq=None, samples_per_peak=5):
         """
