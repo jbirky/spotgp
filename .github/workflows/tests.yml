@@ -25,9 +25,16 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[jax]"
-          pip install pytest
+          pip install pytest pytest-cov
 
-      - name: Run tests
+      - name: Run tests with coverage
         env:
           JAX_PLATFORMS: cpu
-        run: pytest tests/ -v
+        run: pytest tests/ -v --cov=src --cov-report=xml --cov-report=term
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
