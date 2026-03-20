@@ -48,6 +48,7 @@ tutorials/gp_optimization
 tutorials/custom_envelope_gaussian
 tutorials/custom_latitude_distribution
 tutorials/mcmc_sampling
+tutorials/cramer_rao_bound
 ```
 
 ```{toctree}
