@@ -53,6 +53,8 @@ tutorials/time_domain
 tutorials/fourier_domain
 overview
 tutorials/lightcurve_demo
+tutorials/sympy_tools
+tutorials/analytic_vs_numerical_kernel
 tutorials/jax_jit
 tutorials/gp_optimization
 tutorials/data_preprocessing
