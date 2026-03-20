@@ -99,6 +99,14 @@ class TestExponentialEnvelopeAdvanced:
 
 
 class TestCheckFunctions:
+    @pytest.fixture(autouse=True)
+    def _disable_tex(self):
+        """Disable LaTeX rendering so tests work without a TeX installation."""
+        import matplotlib
+        matplotlib.rcParams["text.usetex"] = False
+        yield
+        matplotlib.rcParams["text.usetex"] = False
+
     def test_trapezoid_symmetric(self):
         env = TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=1.0)
         result = env.check_functions(show=False)

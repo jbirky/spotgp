@@ -1,0 +1,110 @@
+\documentclass[tikz,border=10pt]{standalone}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usetikzlibrary{positioning, fit, backgrounds, arrows.meta, calc}
+
+\definecolor{datalayerborder}{HTML}{70ad47}
+\definecolor{datalayerfill}{HTML}{e2f0d9}
+\definecolor{modelborder}{HTML}{d6b656}
+\definecolor{modelfill}{HTML}{fff2cc}
+\definecolor{kernelborder}{HTML}{5b9bd5}
+\definecolor{kernelfill}{HTML}{dce9f5}
+\definecolor{simborder}{HTML}{ed7d31}
+\definecolor{simfill}{HTML}{fce4d6}
+\definecolor{infborder}{HTML}{c44569}
+\definecolor{inffill}{HTML}{f8e8ee}
+
+\tikzset{
+    box/.style={
+        draw=#1, fill=white, rounded corners=3pt,
+        minimum height=0.85cm, minimum width=3.2cm,
+        font=\small\sffamily, align=center,
+        line width=0.6pt,
+    },
+    layer/.style 2 args={
+        draw=#1, fill=#2, rounded corners=6pt,
+        inner sep=10pt, line width=0.8pt,
+    },
+    layerlabel/.style={
+        font=\small\sffamily\bfseries, #1,
+    },
+    arrow/.style={
+        -{Stealth[length=5pt]}, line width=0.6pt, color=#1,
+    },
+    darrow/.style={
+        -{Stealth[length=5pt]}, line width=0.6pt, densely dashed, color=#1,
+    },
+}
+
+\begin{document}
+\begin{tikzpicture}[node distance=0.5cm and 0.8cm]
+
+% ── Model layer ──────────────────────────────────────────────
+% Three components at the same height
+\node[box=modelborder] (envbase) {EnvelopeFunction\\[-1pt]{\scriptsize envelope.py}};
+\node[box=modelborder, right=0.8cm of envbase] (latdist) {LatitudeDistribution\\[-1pt]{\scriptsize latitude.py}};
+\node[box=modelborder, right=0.8cm of latdist] (visbase) {VisibilityFunction\\[-1pt]{\scriptsize visibility.py}};
+
+% SpotEvolutionModel below, centered
+\node[box=modelborder, below=0.7cm of latdist] (spotmodel) {\textbf{SpotEvolutionModel}\\[-1pt]{\scriptsize spot\_model.py}};
+
+\begin{scope}[on background layer]
+\node[layer={modelborder}{modelfill},
+      fit=(envbase)(latdist)(visbase)(spotmodel),
+      label={[layerlabel=modelborder]above:Model layer}] (mbox) {};
+\end{scope}
+
+% Composition arrows into SpotEvolutionModel
+\draw[arrow=modelborder] (envbase.south) -- ++(0,-0.15) -| ([xshift=-8pt]spotmodel.north);
+\draw[arrow=modelborder] (latdist.south) -- (spotmodel.north);
+\draw[arrow=modelborder] (visbase.south) -- ++(0,-0.15) -| ([xshift=8pt]spotmodel.north);
+
+% ── Inference layer (placed first to define horizontal center) ─
+\node[box=infborder, below=4.5cm of spotmodel, xshift=-1.2cm] (gp) {\textbf{GPSolver}\\[-1pt]{\scriptsize gp\_solver.py}};
+\node[box=infborder, right=0.6cm of gp] (mcmc) {MCMCSampler\\[-1pt]{\scriptsize mcmc.py}};
+
+\begin{scope}[on background layer]
+\node[layer={infborder}{inffill},
+      fit=(gp)(mcmc),
+      label={[layerlabel=infborder]above:Inference layer}] (ibox) {};
+\end{scope}
+
+% ── Data layer (left of inference, same height) ──────────────
+\node[box=datalayerborder, left=1.2cm of gp] (obs) {TimeSeriesData\\[-1pt]{\scriptsize observations.py}};
+
+% ── Kernel layer (centered above inference) ──────────────────
+\node[box=kernelborder, above=1.8cm of gp] (ak) {AnalyticKernel\\[-1pt]{\scriptsize analytic\_kernel.py}};
+\node[box=kernelborder, right=0.6cm of ak] (nk) {NumericalKernel\\[-1pt]{\scriptsize numerical\_kernel.py}};
+
+\begin{scope}[on background layer]
+\node[layer={kernelborder}{kernelfill},
+      fit=(ak)(nk),
+      label={[layerlabel=kernelborder]above:Kernel layer}] (kbox) {};
+\end{scope}
+
+% ── Simulation (same gap right of kernel as data is left of inference) ─
+\node[box=simborder, right=1.2cm of nk] (lc) {LightcurveModel\\[-1pt]{\scriptsize lightcurve.py}};
+
+\begin{scope}[on background layer]
+\node[layer={simborder}{simfill},
+      fit=(lc),
+      label={[layerlabel=simborder]above:Simulation}] (sbox) {};
+\end{scope}
+
+\begin{scope}[on background layer]
+\node[layer={datalayerborder}{datalayerfill},
+      fit=(obs),
+      label={[layerlabel=datalayerborder]above:Data layer}] (dbox) {};
+\end{scope}
+
+% ── Cross-layer arrows ───────────────────────────────────────
+\draw[arrow=datalayerborder] (obs.east) -- (gp.west);
+\draw[arrow=modelborder] (spotmodel) -- (ak);
+\draw[arrow=modelborder] (spotmodel.east) -| (lc.north);
+\draw[arrow=kernelborder] (ak) -- (gp);
+\draw[arrow=simborder] (lc.west) -- (nk.east);
+\draw[darrow=gray] (nk.west) -- node[midway, font=\tiny\sffamily, gray, rotate=90, anchor=south, xshift=0pt, yshift=-5pt]{benchmark} (ak.east);
+\draw[arrow=infborder] (gp) -- (mcmc);
+
+\end{tikzpicture}
+\end{document}

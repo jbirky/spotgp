@@ -9,54 +9,9 @@ rotation periods, differential rotation, spot lifetimes, and inclination.
 
 ## Module architecture
 
-```{mermaid}
-flowchart TD
-    subgraph foundation ["Foundation"]
-        PA[params.py\nhparam validation]
-        BC[banded_cholesky.py\nsparse linear algebra]
-        PSD[psd.py\nLomb–Scargle PSD]
-    end
-
-    subgraph model ["Model layer  —  spot_model.py + envelope.py"]
-        EF["EnvelopeFunction\n(abstract base)"]
-        TE[TrapezoidSymmetricEnvelope]
-        AE[TrapezoidAsymmetricEnvelope]
-        SE[SkewedGaussianEnvelope]
-        EE[ExponentialEnvelope]
-        CE["... custom subclass"]
-        TE & AE & SE & EE & CE -->|inherits| EF
-
-        LD["LatitudeDistributionFunction\n(base / subclass)"]
-        VF[VisibilityFunction]
-        SM[SpotEvolutionModel]
-
-        EF --> SM
-        VF --> SM
-        LD --> SM
-    end
-
-    subgraph kernel ["Kernel layer"]
-        AK[AnalyticKernel\nanalytic_kernel.py]
-        NK[NumericalKernel\nnumerical_kernel.py]
-    end
-
-    subgraph sim ["Simulation"]
-        LC[LightcurveModel\nlightcurve.py]
-    end
-
-    subgraph inference ["Inference layer"]
-        GP[GPSolver\ngp_solver.py]
-        MC[MCMCSampler / BlackJAXSampler\nmcmc.py]
-    end
-
-    PA -->|resolve_hparam| SM
-    SM --> AK
-    SM --> LC
-    AK --> GP
-    LC --> NK
-    NK -.->|benchmark| AK
-    BC --> GP
-    GP --> MC
+```{image} _static/architecture.svg
+:width: 100%
+:alt: Module architecture
 ```
 
 ---
@@ -73,11 +28,20 @@ flowchart TD
 
 ---
 
+### Data layer
+
+| Module | Key exports | Role |
+|---|---|---|
+| `observations.py` | `TimeSeriesData` | Container for observed time series (x, y, yerr). Handles NaN masking, normalization, sigma clipping. Provides `compute_psd()`, `compute_acf()`, `from_lightkurve()`, and plotting methods. |
+| `plotting.py` | `crb_corner_plot` | Corner plots for Cramér–Rao bound and posterior visualization. |
+
+---
+
 ### Model layer
 
 The model layer defines the **physics** of spot evolution and stellar geometry.
-It is composed of three independent components that are combined into a single
-`SpotEvolutionModel`.
+It is composed of three independent components — defined in separate modules —
+that are combined into a single `SpotEvolutionModel`.
 
 #### `envelope.py` — Spot size evolution
 
@@ -107,7 +71,7 @@ Built-in envelopes:
 | `SkewedGaussianEnvelope` | `sigma_sn`, `n_sn` | Skew-normal shape |
 | `ExponentialEnvelope` | `tau_spot` | Analytic `Gamma_hat`, `R_Gamma` |
 
-#### `spot_model.py` — Rotation geometry and model assembly
+#### `visibility.py` — Stellar visibility function
 
 **`VisibilityFunction`** encodes how much flux a spot at latitude φ contributes
 as the star rotates under differential rotation. The contribution is expanded as
@@ -115,6 +79,13 @@ a Fourier series in rotation harmonics with coefficients cₙ(inc, φ).
 
 Parameters: `peq` (equatorial period), `kappa` (differential rotation shear),
 `inc` (stellar inclination).
+
+| Subclass | Description |
+|---|---|
+| `EdgeOnVisibilityFunction` | Closed-form coefficients for edge-on (I = π/2), solid-body rotation |
+| `FullGeometryVisibilityFunction` | Exact piecewise projected area (Eq. 5) without the small-spot approximation; coefficients computed numerically via DFT |
+
+#### `latitude.py` — Latitude distribution
 
 **`LatitudeDistributionFunction`** defines the probability density p(φ) over
 stellar latitude. The default is uniform over [−π/2, π/2]. Subclass and
@@ -127,6 +98,8 @@ override `__call__` and/or `lat_range` to define a custom distribution.
 
 The PDF weights the latitude integral inside `AnalyticKernel`, and `lat_range`
 sets the uniform sampling bounds for spot placement in `LightcurveModel`.
+
+#### `spot_model.py` — Model assembly
 
 **`SpotEvolutionModel`** assembles the three components:
 
@@ -206,7 +179,8 @@ Cholesky solver (default) uses the kernel support to determine bandwidth and
 achieves O(n·b) memory and O(n·b²) time.
 
 ```python
-gp = GPSolver(t, flux, flux_err, model, bounds=bounds).build_jax()
+data = TimeSeriesData(t, flux, flux_err)
+gp = GPSolver(data, model, bounds=bounds).build_jax()
 theta_map, result = gp.fit_map(nopt=5)
 ```
 
@@ -236,15 +210,19 @@ summaries, corner plots, convergence diagnostics, and checkpointing.
 Observed flux (t, y, yerr)
          │
          ▼
-   SpotEvolutionModel           ← EnvelopeFunction
-   (peq, kappa, inc,            ← VisibilityFunction
-    lspot, tau_spot, sigma_k)   ← LatitudeDistributionFunction
+   TimeSeriesData               ← normalize, sigma_clip
+   (observations.py)            ← compute_psd, compute_acf
+         │
+         ▼
+   SpotEvolutionModel           ← EnvelopeFunction  (envelope.py)
+   (spot_model.py)              ← VisibilityFunction (visibility.py)
+                                ← LatitudeDistributionFunction (latitude.py)
          │
          ▼
    AnalyticKernel.kernel(lag)
          │
          ▼
-   GPSolver.build_jax()
+   GPSolver(data, model)
          │
          ├─ fit_map()           → theta_MAP (point estimate)
          │
@@ -255,15 +233,18 @@ Observed flux (t, y, yerr)
 
 ## Extending the library
 
-Three extension points allow custom physics without modifying core code:
+Four extension points allow custom physics without modifying core code:
 
 | Extension point | Base class | Minimum required |
 |---|---|---|
 | Custom spot shape | `EnvelopeFunction` | `tau_spot`, `Gamma(t)` |
+| Custom visibility geometry | `VisibilityFunction` | `cn_squared(phi, n_harmonics)` |
 | Custom latitude distribution | `LatitudeDistributionFunction` | `__call__(phi)` |
 | Custom amplitude parameterization | pass `sigma_k` directly | — |
 
 See the tutorials for worked examples:
 
+- [Data preprocessing](tutorials/data_preprocessing.ipynb)
 - [Custom Gaussian envelope](tutorials/custom_envelope_gaussian.ipynb)
+- [Custom visibility function](tutorials/custom_visibility_function.ipynb)
 - [Custom latitude distribution](tutorials/custom_latitude_distribution.ipynb)
