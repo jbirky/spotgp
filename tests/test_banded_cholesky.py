@@ -5,7 +5,7 @@ import pytest
 import jax
 import jax.numpy as jnp
 
-from src.banded_cholesky import (
+from spotgp.banded_cholesky import (
     banded_cholesky_compact,
     banded_solve_compact,
     banded_cholesky,

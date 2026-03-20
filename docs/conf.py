@@ -3,8 +3,7 @@
 import os
 import sys
 
-# Add source directories to path
-sys.path.insert(0, os.path.abspath(os.path.join("..", "src")))
+# Add project root to path so autodoc can find the spotgp package
 sys.path.insert(0, os.path.abspath(".."))
 
 # Mock imports for packages that are heavy / unavailable on RTD

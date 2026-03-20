@@ -3,9 +3,9 @@
 import numpy as np
 import pytest
 
-from src.lightcurve import LightcurveModel, compute_sigmak
-from src.envelope import TrapezoidSymmetricEnvelope
-from src.spot_model import SpotEvolutionModel, VisibilityFunction
+from spotgp.lightcurve import LightcurveModel, compute_sigmak
+from spotgp.envelope import TrapezoidSymmetricEnvelope
+from spotgp.spot_model import SpotEvolutionModel, VisibilityFunction
 
 
 class TestComputeSigmak:

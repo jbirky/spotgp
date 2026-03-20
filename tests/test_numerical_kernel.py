@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from src.numerical_kernel import NumericalKernel, generate_sims, avg_covariance_tlag
+from spotgp.numerical_kernel import NumericalKernel, generate_sims, avg_covariance_tlag
 
 
 class TestGenerateSims:

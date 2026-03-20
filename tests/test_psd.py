@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from src.psd import compute_psd
+from spotgp.psd import compute_psd
 
 
 class TestComputePSD:

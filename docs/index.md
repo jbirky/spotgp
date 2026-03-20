@@ -8,16 +8,32 @@
 
 ## Installation
 
+### From PyPI
+
+```bash
+pip install spotgp
+```
+
+With JAX acceleration (recommended):
+
+```bash
+pip install "spotgp[jax]"
+```
+
+### From source
+
 ```bash
 git clone https://github.com/jbirky/spotgp.git
 cd spotgp
-pip install -e .
+pip install -e ".[jax]"
 ```
 
-For JAX acceleration:
+Alternatively, clone the repo and add it to your Python path:
 
 ```bash
-pip install -e ".[jax]"
+git clone https://github.com/jbirky/spotgp.git
+echo 'export PYTHONPATH="$PYTHONPATH:/path/to/spotgp"' >> ~/.bashrc
+source ~/.bashrc
 ```
 
 ## Development 
@@ -56,5 +72,5 @@ tutorials/cramer_rao_bound
 :maxdepth: 2
 :caption: API Reference
 
-api/src
+api/spotgp
 ```

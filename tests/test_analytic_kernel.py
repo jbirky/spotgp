@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 import jax.numpy as jnp
 
-from src.analytic_kernel import AnalyticKernel
-from src.envelope import TrapezoidSymmetricEnvelope, TrapezoidAsymmetricEnvelope
-from src.spot_model import (
+from spotgp.analytic_kernel import AnalyticKernel
+from spotgp.envelope import TrapezoidSymmetricEnvelope, TrapezoidAsymmetricEnvelope
+from spotgp.spot_model import (
     SpotEvolutionModel, VisibilityFunction, EdgeOnVisibilityFunction,
 )
 

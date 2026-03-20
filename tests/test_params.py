@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from src.params import (
+from spotgp.params import (
     resolve_hparam,
     BASE_REQUIRED_KEYS,
     KERNEL_HPARAM_KEYS,

@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from src.gp_solver import GPSolver
-from src.mcmc import MCMCSampler, BlackJAXSampler
+from spotgp.gp_solver import GPSolver
+from spotgp.mcmc import MCMCSampler, BlackJAXSampler
 
 
 class TestMCMCSampler:

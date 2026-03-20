@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 import jax.numpy as jnp
 
-from src.gp_solver import GPSolver
-from src.envelope import TrapezoidSymmetricEnvelope
-from src.spot_model import SpotEvolutionModel, VisibilityFunction
+from spotgp.gp_solver import GPSolver
+from spotgp.envelope import TrapezoidSymmetricEnvelope
+from spotgp.spot_model import SpotEvolutionModel, VisibilityFunction
 
 
 class TestGPSolverInit:

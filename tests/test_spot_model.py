@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import jax.numpy as jnp
 
-from src.spot_model import (
+from spotgp.spot_model import (
     VisibilityFunction,
     EdgeOnVisibilityFunction,
     LatitudeDistributionFunction,
@@ -13,7 +13,7 @@ from src.spot_model import (
     _cn_squared_coefficients_jax,
     _gauss_legendre_grid,
 )
-from src.envelope import TrapezoidSymmetricEnvelope
+from spotgp.envelope import TrapezoidSymmetricEnvelope
 
 
 # =====================================================================

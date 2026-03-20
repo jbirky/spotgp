@@ -33,4 +33,4 @@ docs = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["src*"]
+include = ["spotgp*"]

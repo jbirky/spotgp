@@ -1,12 +1,12 @@
-API Reference (``src``)
+API Reference (``spotgp``)
 ============================
 
-.. module:: src
+.. module:: spotgp
 
 Lightcurve Model
 ----------------
 
-.. autoclass:: src.lightcurve.LightcurveModel
+.. autoclass:: spotgp.lightcurve.LightcurveModel
    :members:
    :undoc-members:
    :show-inheritance:
@@ -14,7 +14,7 @@ Lightcurve Model
 Analytic Kernel
 ---------------
 
-.. autoclass:: src.analytic_kernel.AnalyticKernel
+.. autoclass:: spotgp.analytic_kernel.AnalyticKernel
    :members:
    :undoc-members:
    :show-inheritance:
@@ -22,19 +22,19 @@ Analytic Kernel
 Numerical Kernel
 ----------------
 
-.. autoclass:: src.numerical_kernel.NumericalKernel
+.. autoclass:: spotgp.numerical_kernel.NumericalKernel
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autofunction:: src.numerical_kernel.generate_sims
+.. autofunction:: spotgp.numerical_kernel.generate_sims
 
-.. autofunction:: src.numerical_kernel.avg_covariance_tlag
+.. autofunction:: spotgp.numerical_kernel.avg_covariance_tlag
 
 GP Solver
 ---------
 
-.. autoclass:: src.gp_solver.GPSolver
+.. autoclass:: spotgp.gp_solver.GPSolver
    :members:
    :undoc-members:
    :show-inheritance:
@@ -42,17 +42,17 @@ GP Solver
 Power Spectral Density
 ----------------------
 
-.. autofunction:: src.psd.compute_psd
+.. autofunction:: spotgp.psd.compute_psd
 
 MCMC Sampler
 ------------
 
-.. autoclass:: src.mcmc.MCMCSampler
+.. autoclass:: spotgp.mcmc.MCMCSampler
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: src.mcmc.BlackJAXSampler
+.. autoclass:: spotgp.mcmc.BlackJAXSampler
    :members:
    :undoc-members:
    :show-inheritance:

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import jax.numpy as jnp
 
-from src.envelope import (
+from spotgp.envelope import (
     TrapezoidSymmetricEnvelope,
     TrapezoidAsymmetricEnvelope,
     SkewedGaussianEnvelope,
