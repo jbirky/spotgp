@@ -27,14 +27,14 @@ extensions = [
     "sphinx.ext.mathjax",
     "sphinx.ext.intersphinx",
     "sphinx.ext.viewcode",
-    "nbsphinx",
-    "myst_parser",
+    "myst_nb",
     "sphinx_copybutton",
 ]
 
 source_suffix = {
     ".rst": "restructuredtext",
-    ".md": "markdown",
+    ".md": "myst-nb",
+    ".ipynb": "myst-nb",
 }
 
 templates_path = ["_templates"]
@@ -80,24 +80,10 @@ html_theme_options = {
     "pygments_dark_style": "ayu-mirage",
 }
 
-# -- nbsphinx ----------------------------------------------------------------
+# -- myst-nb -----------------------------------------------------------------
 
-# Never execute notebooks during the build; render code cells as-is with
-# Python syntax highlighting regardless of whether outputs are present.
-nbsphinx_execute = "never"
-nbsphinx_kernel_name = "python3"
-
-# Force Python syntax highlighting for all notebook code cells.
-# This applies even when notebook metadata is incomplete or absent.
-nbsphinx_codecell_lexer = "ipython3"
-
-# Embed the notebook filename as a hidden meta tag so JS can build the
-# download link without hard-coding paths.
-nbsphinx_prolog = r"""
-.. raw:: html
-
-    <meta name="notebook-source" content="{{ env.docname.split('/')|last }}.ipynb">
-"""
+# Never execute notebooks during the build.
+nb_execution_mode = "off"
 
 html_js_files = ["notebook_download.js"]
 
