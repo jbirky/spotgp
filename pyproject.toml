@@ -23,7 +23,13 @@ dependencies = [
 
 [project.optional-dependencies]
 jax = ["jax", "jaxopt"]
-docs = ["sphinx>=7.0", "furo>=2024.1.29", "numpydoc>=1.6", "sphinx-autodoc-typehints>=2.0"]
+docs = [
+    "sphinx>=7.0",
+    "sphinx-book-theme>=1.0",
+    "sphinx-copybutton>=0.5",
+    "myst-nb>=1.0",
+    "sphinxcontrib-mermaid>=0.9",
+]
 
 [tool.setuptools.packages.find]
 include = ["src*"]
