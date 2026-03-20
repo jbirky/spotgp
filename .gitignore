@@ -4,3 +4,6 @@ scripts/results/*
 docs/_build/
 .coverage
 coverage.xml
+animations/
+notebooks/
+spotgp.egg-info/
