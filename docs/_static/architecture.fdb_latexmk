@@ -1,7 +1,7 @@
 # Fdb version 4
-["pdflatex"] 1773995029.72427 "/home/jbirky/Tresorit/packages/spotgp/docs/_static/architecture.tex" "architecture.pdf" "architecture" 1773995030.18474 0
-  "/etc/texmf/web2c/texmf.cnf" 1771657288.47245 475 c0e671620eb5563b2130f56340a5fde8 ""
-  "/home/jbirky/Tresorit/packages/spotgp/docs/_static/architecture.tex" 1773995029.53953 4680 798e69ccd3f5e7874eb4d06ebfdc96a9 ""
+["pdflatex"] 1774048507.95649 "/home/jbirky/packages/spotgp/docs/_static/architecture.tex" "architecture.pdf" "architecture" 1774048508.68688 0
+  "/etc/texmf/web2c/texmf.cnf" 1771553901.9487 475 c0e671620eb5563b2130f56340a5fde8 ""
+  "/home/jbirky/packages/spotgp/docs/_static/architecture.tex" 1774048496.89324 6109 db3846f89c36f3dcebc4487e1e9b6320 ""
   "/usr/share/texlive/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/jknappen/ec/ecrm1000.tfm" 1136768653 3584 adb004a0c8e7c46ee66cad73671f37b4 ""
   "/usr/share/texlive/texmf-dist/tex/context/base/mkii/supp-pdf.mkii" 1461363279 71627 94eb9990bed73c364d7f53f960cc8c5b ""
@@ -112,10 +112,10 @@
   "/usr/share/texmf/tex/latex/lm/t1lmss.fd" 1616454256 1641 f48673bce41ac279099d0c9523459753 ""
   "/usr/share/texmf/tex/latex/preview/preview.sty" 1700521141 13873 f20e5546ad38d2ac6052703bc753a668 ""
   "/usr/share/texmf/web2c/texmf.cnf" 1707919699 40399 f2c302f7d2af602abb742093540a5834 ""
-  "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1771892669.5705 5472669 54eaf61a88b6b7896ebd0dac973cb29c ""
-  "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1771892702 8212460 6d804f8865f48010e3c77d0bac11744b ""
-  "architecture.aux" 1773995030.13778 32 3985256e7290058c681f74d7a3565a19 "pdflatex"
-  "architecture.tex" 1773995029.53953 4680 798e69ccd3f5e7874eb4d06ebfdc96a9 ""
+  "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1771553933.97309 5472669 54eaf61a88b6b7896ebd0dac973cb29c ""
+  "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1771553972 8214474 6eb6f982c6655466a9c0e87611dc6a38 ""
+  "architecture.aux" 1774048508.62267 32 3985256e7290058c681f74d7a3565a19 "pdflatex"
+  "architecture.tex" 1774048496.89324 6109 db3846f89c36f3dcebc4487e1e9b6320 ""
   (generated)
   "architecture.aux"
   "architecture.log"

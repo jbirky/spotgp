@@ -13,8 +13,6 @@
 \definecolor{simfill}{HTML}{fce4d6}
 \definecolor{infborder}{HTML}{c44569}
 \definecolor{inffill}{HTML}{f8e8ee}
-\definecolor{paramlayerborder}{HTML}{7030a0}
-\definecolor{paramlayerfill}{HTML}{ede7f6}
 
 \tikzset{
     box/.style={
@@ -42,13 +40,13 @@
 \begin{tikzpicture}[node distance=0.5cm and 0.8cm]
 
 % ── Model layer ──────────────────────────────────────────────
-% Top row: EnvelopeFunction and VisibilityFunction
+% Three components at the same height
 \node[box=modelborder] (envbase) {EnvelopeFunction\\[-1pt]{\scriptsize envelope.py}};
-\node[box=modelborder, right=1.6cm of envbase] (visbase) {VisibilityFunction\\[-1pt]{\scriptsize visibility.py}};
+\node[box=modelborder, right=0.8cm of envbase] (latdist) {LatitudeDistribution\\[-1pt]{\scriptsize latitude.py}};
+\node[box=modelborder, right=0.8cm of latdist] (visbase) {VisibilityFunction\\[-1pt]{\scriptsize visibility.py}};
 
-% Bottom row: LatitudeDistribution left of SpotEvolutionModel
-\node[box=modelborder, below=0.7cm of visbase] (spotmodel) {\textbf{SpotEvolutionModel}\\[-1pt]{\scriptsize spot\_model.py}};
-\node[box=modelborder, left=0.8cm of spotmodel] (latdist) {LatitudeDistribution\\[-1pt]{\scriptsize latitude.py}};
+% SpotEvolutionModel below, centered
+\node[box=modelborder, below=0.7cm of latdist] (spotmodel) {\textbf{SpotEvolutionModel}\\[-1pt]{\scriptsize spot\_model.py}};
 
 \begin{scope}[on background layer]
 \node[layer={modelborder}{modelfill},
@@ -56,29 +54,10 @@
       label={[layerlabel=modelborder]above:Model layer}] (mbox) {};
 \end{scope}
 
-% ── Parameter layer ──────────────────────────────────────────
-% spot timescales -> EnvelopeFunction
-\node[box=paramlayerborder, fill=paramlayerfill, above=2.0cm of envbase] (param_timescales) {spot timescales};
-
-% rotation params -> VisibilityFunction
-\node[box=paramlayerborder, fill=paramlayerfill] (param_inc)       at (visbase.north |- param_timescales.center) {inclination};
-\node[box=paramlayerborder, fill=paramlayerfill, right=0.8cm of param_inc]      (param_rotperiod) {rotation period};
-\node[box=paramlayerborder, fill=paramlayerfill, below=0.25cm of param_rotperiod] (param_diffrot) {differential\\[-2pt]rotation};
-
-% spot amplitude -> SpotEvolutionModel (right of VisibilityFunction, same height as visbase)
-\node[box=paramlayerborder, fill=paramlayerfill, right=0.8cm of visbase] (param_amp) {spot amplitude};
-
-% Parameter arrows
-\draw[arrow=paramlayerborder] (param_timescales.south) -- (envbase.north);
-\draw[arrow=paramlayerborder] (param_inc.south)         -- ([xshift=-8pt]visbase.north);
-\draw[arrow=paramlayerborder] (param_rotperiod.south west) -- ([xshift=8pt]visbase.north);
-\draw[arrow=paramlayerborder] (param_diffrot.south west)   -- (visbase.north);
-\draw[arrow=paramlayerborder] (param_amp.south west) -- (spotmodel.north east);
-
 % Composition arrows into SpotEvolutionModel
-\draw[arrow=modelborder] (envbase.south east) -- (spotmodel.north west);
-\draw[arrow=modelborder] (latdist.east) -- (spotmodel.west);
-\draw[arrow=modelborder] (visbase.south) -- (spotmodel.north);
+\draw[arrow=modelborder] (envbase.south) -- ++(0,-0.15) -| ([xshift=-8pt]spotmodel.north);
+\draw[arrow=modelborder] (latdist.south) -- (spotmodel.north);
+\draw[arrow=modelborder] (visbase.south) -- ++(0,-0.15) -| ([xshift=8pt]spotmodel.north);
 
 % ── Inference layer (placed first to define horizontal center) ─
 \node[box=infborder, below=4.5cm of spotmodel, xshift=-1.2cm] (gp) {\textbf{GPSolver}\\[-1pt]{\scriptsize gp\_solver.py}};

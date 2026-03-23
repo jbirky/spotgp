@@ -2407,7 +2407,7 @@ class GPSolver:
     # Mass matrix estimation: Method 2 -- Fisher information (analytic)
     # =================================================================
 
-    def mass_matrix_fisher(self, theta_map=None):
+    def mass_matrix_fisher(self, theta_map=None, eigval_clip=1e-6, white_noise=1e-8):
         """
         Estimate the inverse mass matrix from the Fisher information.
 
@@ -2450,7 +2450,7 @@ class GPSolver:
             H = jax.block_until_ready(hessian_fn(theta_map))
 
             eigvals, eigvecs = jnp.linalg.eigh(H)
-            eigvals = jnp.maximum(eigvals, 1e-6)
+            eigvals = jnp.maximum(eigvals, eigval_clip)
             fisher_reg = eigvecs @ jnp.diag(eigvals) @ eigvecs.T
 
             self.inverse_mass_matrix = jnp.linalg.inv(fisher_reg)
@@ -2486,7 +2486,7 @@ class GPSolver:
                                   quad_nodes=qn, quad_weights=qw)
             K = K_flat.reshape(N, N)
             noise_var = self.yerr ** 2 + sigma_n ** 2
-            K_noise = K + jnp.diag(noise_var) + 1e-8 * jnp.eye(N)
+            K_noise = K + jnp.diag(noise_var) + white_noise * jnp.eye(N)
             return K_noise.ravel()
 
         jacfwd_fn = jax.jit(jax.jacfwd(K_noise_flat_from_theta))
@@ -2502,7 +2502,7 @@ class GPSolver:
 
         # Regularize
         eigvals, eigvecs = jnp.linalg.eigh(fisher)
-        eigvals = jnp.maximum(eigvals, 1e-6)
+        eigvals = jnp.maximum(eigvals, eigval_clip)
         fisher_reg = eigvecs @ jnp.diag(eigvals) @ eigvecs.T
 
         self.inverse_mass_matrix = jnp.linalg.inv(fisher_reg)
@@ -2513,7 +2513,7 @@ class GPSolver:
     # Mass matrix estimation: Method 3 -- Laplace approximation
     # =================================================================
 
-    def mass_matrix_laplace(self, theta_map=None):
+    def mass_matrix_laplace(self, theta_map=None, eigval_clip=1e-6):
         """
         Laplace approximation: inverse mass matrix = inverse Hessian
         of the negative log-likelihood at the MAP.
@@ -2545,7 +2545,7 @@ class GPSolver:
 
         # Regularize
         eigvals, eigvecs = jnp.linalg.eigh(H)
-        eigvals = jnp.maximum(eigvals, 1e-6)
+        eigvals = jnp.maximum(eigvals, eigval_clip)
         H_reg = eigvecs @ jnp.diag(eigvals) @ eigvecs.T
 
         self.inverse_mass_matrix = jnp.linalg.inv(H_reg)
