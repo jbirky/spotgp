@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-__all__ = ["LatitudeDistributionFunction"]
+__all__ = ["LatitudeDistributionFunction", "UniformDoubleHemisphereBand"]
 
 
 class LatitudeDistributionFunction:
@@ -136,3 +136,28 @@ class LatitudeDistributionFunction:
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"lat_range=[{self.lat_range[0]:.3f}, {self.lat_range[1]:.3f}])")
+
+
+class UniformDoubleHemisphereBand(LatitudeDistributionFunction):
+    """Uniform distribution confined to min_lat < |phi| < max_lat."""
+
+    def __init__(self, min_lat_deg: float = 0.0, max_lat_deg: float = 90.0):
+        self._min_lat = float(np.deg2rad(min_lat_deg))
+        self._max_lat = float(np.deg2rad(max_lat_deg))
+
+    @property
+    def lat_range(self) -> tuple:
+        return (self._min_lat, self._max_lat)
+
+    def __call__(self, phi: float) -> float:
+        return 1.0 if self._min_lat < np.abs(phi) < self._max_lat else 0.0
+
+    def sympy_pdf(self):
+        import sympy as sp
+        phi = sp.Symbol(r'\phi', real=True)
+        lo = sp.Float(self._min_lat)
+        hi = sp.Float(self._max_lat)
+        return sp.Piecewise(
+            (sp.Integer(1), (sp.Abs(phi) > lo) & (sp.Abs(phi) < hi)),
+            (sp.Integer(0), True),
+        )

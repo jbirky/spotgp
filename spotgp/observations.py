@@ -126,11 +126,18 @@ class TimeSeriesData:
             mask = bin_idx == i
             if not np.any(mask):
                 continue
-            w = 1.0 / self.yerr[mask] ** 2
-            w_sum = np.sum(w)
+            err_bin = self.yerr[mask]
+            y_bin = self.y[mask]
             x_new.append(np.mean(self.x[mask]))
-            y_new.append(np.sum(w * self.y[mask]) / w_sum)
-            yerr_new.append(1.0 / np.sqrt(w_sum))
+            if np.all(err_bin == 0):
+                n = np.sum(mask)
+                y_new.append(np.mean(y_bin))
+                yerr_new.append(np.std(y_bin) / np.sqrt(n) if n > 1 else 0.0)
+            else:
+                w = 1.0 / err_bin ** 2
+                w_sum = np.sum(w)
+                y_new.append(np.sum(w * y_bin) / w_sum)
+                yerr_new.append(1.0 / np.sqrt(w_sum))
 
         self.x = np.array(x_new)
         self.y = np.array(y_new)

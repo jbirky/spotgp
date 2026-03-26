@@ -1,9 +1,9 @@
 """
 envelope.py — Spot envelope function hierarchy.
 
-Defines the abstract base class EnvelopeFunction and four concrete
+Defines the abstract base class EnvelopeFunction and five concrete
 implementations: TrapezoidSymmetricEnvelope, TrapezoidAsymmetricEnvelope,
-SkewedGaussianEnvelope, and ExponentialEnvelope.
+SkewedGaussianEnvelope, ExponentialEnvelope, and ExponentialAsymmetricEnvelope.
 
 To define a custom envelope, subclass EnvelopeFunction and implement:
   - tau_spot  (property)  : characteristic timescale [days]   [REQUIRED]
@@ -32,6 +32,7 @@ __all__ = [
     "TrapezoidAsymmetricEnvelope",
     "SkewedGaussianEnvelope",
     "ExponentialEnvelope",
+    "ExponentialAsymmetricEnvelope",
     # low-level helpers (re-exported for backward compat with analytic_kernel)
     "compute_R_Gamma_numerical",
     "_Gamma_hat",
@@ -1076,3 +1077,59 @@ class ExponentialEnvelope(EnvelopeFunction):
         tau_lag = sp.Symbol(r'\tau', real=True)
         tau     = sp.Symbol(r'\tau_{\rm spot}', positive=True)
         return (tau + sp.Abs(tau_lag)) * sp.exp(-sp.Abs(tau_lag) / tau)
+
+
+class ExponentialAsymmetricEnvelope(EnvelopeFunction):
+    """
+    Asymmetric exponential envelope with separate rise and decay timescales.
+
+    Gamma(t) = exp( t / tau_em)   for t < 0   (emergence / rise)
+    Gamma(t) = exp(-t / tau_dec)  for t >= 0  (decay)
+
+    The spot emerges with timescale tau_em and decays with timescale tau_dec.
+    There is no plateau (lspot = 0).
+
+    Analytical Fourier transform:
+
+        Gamma_hat(omega) = tau_em / (1 + (omega * tau_em)^2)
+                         + tau_dec / (1 + (omega * tau_dec)^2)
+
+    Parameters
+    ----------
+    tau_em : float
+        Emergence (rise) timescale [days].
+    tau_dec : float
+        Decay timescale [days].
+    """
+
+    def __init__(self, tau_em: float, tau_dec: float):
+        self._tau_em = float(tau_em)
+        self._tau_dec = float(tau_dec)
+
+    @property
+    def tau_spot(self) -> float:
+        """Effective timescale: max of the two timescales."""
+        return max(self._tau_em, self._tau_dec)
+
+    @property
+    def lspot(self) -> float:
+        return 0.0
+
+    @property
+    def param_dict(self) -> dict:
+        return {"tau_em": self._tau_em, "tau_dec": self._tau_dec}
+
+    def Gamma(self, t):
+        t = jnp.asarray(t, dtype=float)
+        return jnp.where(t < 0,
+                         jnp.exp(t / self._tau_em),
+                         jnp.exp(-t / self._tau_dec))
+
+    def Gamma_hat(self, omega):
+        """Sum of two Lorentzians (one per timescale)."""
+        omega = jnp.asarray(omega, dtype=float)
+        return (self._tau_em / (1.0 + (omega * self._tau_em) ** 2)
+                + self._tau_dec / (1.0 + (omega * self._tau_dec) ** 2))
+
+    def kernel_support(self) -> float:
+        return 6.0 * (self._tau_em + self._tau_dec)
