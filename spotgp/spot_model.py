@@ -32,7 +32,7 @@ try:
         _R_Gamma_asymmetric,
     )
     from .params import resolve_hparam
-    from .latitude import LatitudeDistributionFunction
+    from .latitude import LatitudeDistributionFunction, UniformDoubleHemisphereBand
     from .visibility import (
         VisibilityFunction,
         EdgeOnVisibilityFunction,
@@ -52,7 +52,7 @@ except ImportError:
         _R_Gamma_asymmetric,
     )
     from params import resolve_hparam
-    from latitude import LatitudeDistributionFunction
+    from latitude import LatitudeDistributionFunction, UniformDoubleHemisphereBand
     from visibility import (
         VisibilityFunction,
         EdgeOnVisibilityFunction,
@@ -238,7 +238,8 @@ class SpotEvolutionModel:
         vis_keys = self.visibility.param_keys if self.visibility is not None else ()
         env_keys = (tuple(self.envelope.param_dict.keys())
                     if self.envelope is not None else ())
-        return vis_keys + env_keys + ("sigma_k",)
+        lat_keys = self.latitude_distribution.param_keys
+        return vis_keys + env_keys + lat_keys + ("sigma_k",)
 
     @property
     def theta0(self) -> np.ndarray:
@@ -248,6 +249,7 @@ class SpotEvolutionModel:
             vals.update(self.visibility.param_dict)
         if self.envelope is not None:
             vals.update(self.envelope.param_dict)
+        vals.update(self.latitude_distribution.param_dict)
         vals["sigma_k"] = self.sigma_k
         return np.array([float(vals[k]) for k in self.param_keys])
 
@@ -325,6 +327,39 @@ class SpotEvolutionModel:
                 return jnp.interp(jnp.abs(lag), lag_grid, R_vals)
 
         return r_gamma
+
+    # ── JAX-compilable latitude weight function ────────────────────────────
+
+    def get_lat_weight_func(self):
+        """
+        Return a JAX-traceable function ``f(theta_arr, phi_grid) -> weights``
+        that computes per-node latitude weights from the theta vector.
+
+        When the latitude distribution has no free parameters, returns None
+        (the caller should use the static weights precomputed at init).
+
+        The theta_arr layout follows ``self.param_keys``.
+        """
+        lat_dist = self.latitude_distribution
+        if not lat_dist.param_dict:
+            return None
+
+        # Index of first latitude param in theta_arr
+        n_vis = len(self.visibility.param_keys) if self.visibility is not None else 0
+        n_env = len(self.envelope.param_dict) if self.envelope is not None else 0
+        lat_offset = n_vis + n_env
+
+        if isinstance(lat_dist, UniformDoubleHemisphereBand):
+            def lat_weight_fn(theta_arr, phi_grid):
+                lat_min = theta_arr[lat_offset]
+                lat_max = theta_arr[lat_offset + 1]
+                abs_phi = jnp.abs(phi_grid)
+                return jnp.where((abs_phi > lat_min) & (abs_phi < lat_max),
+                                 1.0, 0.0)
+            return lat_weight_fn
+
+        # Generic fallback: not JAX-traceable, but works for fixed params
+        return None
 
     # ── Bandwidth support ───────────────────────────────────────────────────
 

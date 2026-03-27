@@ -44,6 +44,16 @@ class LatitudeDistributionFunction:
     """
 
     @property
+    def param_dict(self) -> dict:
+        """Free latitude parameters as ``{name: value}``. Default: none."""
+        return {}
+
+    @property
+    def param_keys(self) -> tuple:
+        """Ordered parameter names for the theta vector."""
+        return tuple(self.param_dict.keys())
+
+    @property
     def lat_range(self) -> tuple:
         """(min, max) latitude in radians."""
         return (-np.pi / 2, np.pi / 2)
@@ -144,6 +154,10 @@ class UniformDoubleHemisphereBand(LatitudeDistributionFunction):
     def __init__(self, min_lat_deg: float = 0.0, max_lat_deg: float = 90.0):
         self._min_lat = float(np.deg2rad(min_lat_deg))
         self._max_lat = float(np.deg2rad(max_lat_deg))
+
+    @property
+    def param_dict(self) -> dict:
+        return {"lat_min": self._min_lat, "lat_max": self._max_lat}
 
     @property
     def lat_range(self) -> tuple:

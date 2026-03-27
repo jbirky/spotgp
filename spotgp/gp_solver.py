@@ -94,7 +94,8 @@ def _kernel_eval_edgeon(theta_arr, lag_flat, n_harmonics,
 def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
                   quad_nodes=None, quad_weights=None,
                   r_gamma_func=None,
-                  edgeon_cn_sq=None):
+                  edgeon_cn_sq=None,
+                  lat_weight_func=None):
     """
     Pure-functional kernel evaluation: theta_arr -> kernel values.
 
@@ -126,6 +127,11 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
         If None, uses the symmetric-trapezoid closed-form (backward compat).
     edgeon_cn_sq : jnp.ndarray or None
         If not None, use the edge-on fast path with these fixed |c_n|^2.
+    lat_weight_func : callable or None
+        JAX-traceable function ``f(theta_arr, phi_grid) -> weights`` that
+        computes per-node latitude weights from the theta vector. If None,
+        all quadrature nodes are weighted equally (or by the static
+        quad_weights).
 
     Returns
     -------
@@ -155,13 +161,18 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
     if quad_nodes is not None:
         phi_grid = quad_nodes
         weights = quad_weights
-        norm = jnp.sum(weights)
     else:
         phi_min, phi_max = lat_range
         phi_grid = jnp.linspace(phi_min, phi_max, n_lat)
         dphi = phi_grid[1] - phi_grid[0]
         weights = jnp.ones_like(phi_grid) * dphi
-        norm = phi_max - phi_min
+
+    # Apply dynamic latitude weights from theta (e.g. band boundaries)
+    if lat_weight_func is not None:
+        lat_w = lat_weight_func(theta_arr, phi_grid)
+        weights = weights * lat_w
+
+    norm = jnp.sum(weights)
 
     # Precompute cn_sq for all latitudes at once: shape (n_lat, n_harmonics+1).
     # Outer vmap over latitudes, inner vmap over harmonics — avoids tracing
@@ -196,7 +207,8 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
                        fit_sigma_n, n_kernel=6,
                        r_gamma_func=None,
                        quad_nodes=None, quad_weights=None,
-                       edgeon_cn_sq=None):
+                       edgeon_cn_sq=None,
+                       lat_weight_func=None):
     """
     Pure-functional GP marginal log-likelihood.
 
@@ -243,7 +255,8 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
                            n_harmonics, n_lat, lat_range,
                            quad_nodes=quad_nodes, quad_weights=quad_weights,
                            r_gamma_func=r_gamma_func,
-                           edgeon_cn_sq=edgeon_cn_sq)
+                           edgeon_cn_sq=edgeon_cn_sq,
+                           lat_weight_func=lat_weight_func)
 
     # Reconstruct symmetric matrix from upper triangle
     K = jnp.zeros((N, N))
@@ -267,7 +280,8 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
                               n_harmonics, n_lat, lat_range,
                               r_gamma_func=None,
                               quad_nodes=None, quad_weights=None,
-                              edgeon_cn_sq=None):
+                              edgeon_cn_sq=None,
+                              lat_weight_func=None):
     """
     Build the kernel covariance directly in compact (b+1, N) banded storage.
 
@@ -305,7 +319,8 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
                           n_harmonics, n_lat, lat_range,
                           quad_nodes=quad_nodes, quad_weights=quad_weights,
                           r_gamma_func=r_gamma_func,
-                          edgeon_cn_sq=edgeon_cn_sq)
+                          edgeon_cn_sq=edgeon_cn_sq,
+                          lat_weight_func=lat_weight_func)
     cb = K_flat.reshape(b + 1, N)
     cb = jnp.where(valid, cb, 0.0)
     return cb
@@ -317,7 +332,8 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                n_kernel=6,
                                r_gamma_func=None,
                                quad_nodes=None, quad_weights=None,
-                               edgeon_cn_sq=None):
+                               edgeon_cn_sq=None,
+                               lat_weight_func=None):
     """
     Pure-functional GP marginal log-likelihood using banded Cholesky.
 
@@ -354,7 +370,8 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                    r_gamma_func=r_gamma_func,
                                    quad_nodes=quad_nodes,
                                    quad_weights=quad_weights,
-                                   edgeon_cn_sq=edgeon_cn_sq)
+                                   edgeon_cn_sq=edgeon_cn_sq,
+                                   lat_weight_func=lat_weight_func)
 
     # Add noise to diagonal (row 0 of compact storage)
     noise_var = yerr ** 2 + sigma_n ** 2
@@ -446,6 +463,8 @@ class GPSolver:
         "tau_dec":   (0.05, 10.0),
         "sigma_sn":  (0.05, 10.0),
         "n_sn":      (-10.0, 10.0),
+        "lat_min":   (0.0, np.pi / 2),
+        "lat_max":   (0.0, np.pi / 2),
         "sigma_k":   (1e-6, 1.0),
         "sigma_n":   (1e-6, 0.1),
     }
@@ -461,11 +480,17 @@ class GPSolver:
 
         if isinstance(data_or_x, TimeSeriesData):
             # New API: GPSolver(data, model_or_hparam, ...)
+            #   GPSolver(data, model)
+            #   GPSolver(data, model, bounds)
             self.data = data_or_x
             # The second positional arg is the model, not y
             if model_or_hparam is None:
                 model_or_hparam = y
                 y = None
+            # The third positional arg may be bounds (dict/array), not yerr
+            if isinstance(yerr, (dict, np.ndarray)) and bounds is None:
+                bounds = yerr
+                yerr = None
         else:
             # Legacy API: GPSolver(x, y, yerr, model_or_hparam, ...)
             self.data = TimeSeriesData(data_or_x, y, yerr)
@@ -588,7 +613,12 @@ class GPSolver:
         # Kernel config (extract from kernel object)
         self.n_harmonics = self.kernel.n_harmonics
         self.n_lat = self.kernel.n_lat
-        self.lat_range = self.kernel.lat_range
+        # When latitude params are free, the quadrature grid must cover
+        # the full hemisphere so the dynamic weights can select any sub-range.
+        if self.spot_model.latitude_distribution.param_dict:
+            self.lat_range = (-np.pi / 2, np.pi / 2)
+        else:
+            self.lat_range = self.kernel.lat_range
 
         # Quadrature nodes — precomputed at init so they are captured as
         # array constants in JIT closures rather than recomputed per trace.
@@ -603,10 +633,19 @@ class GPSolver:
         # ones) = n_lat*dphi != phi_max-phi_min = (n_lat-1)*dphi, which
         # would silently change the kernel normalization by n_lat/(n_lat-1).
         if self.kernel.quadrature == "gauss-legendre":
-            raw_w = self.kernel._quad_weights
-            _norm = float(jnp.sum(raw_w))
-            self._quad_nodes = self.kernel._quad_nodes
-            self._quad_weights = raw_w / _norm   # sum = 1.0
+            if self.spot_model.latitude_distribution.param_dict:
+                # Latitude params are free: recompute GL nodes/weights
+                # over the full hemisphere without baked-in lat_dist weights.
+                gl_nodes, gl_weights = _gauss_legendre_grid(
+                    self.n_lat, -np.pi / 2, np.pi / 2)
+                _norm = float(jnp.sum(gl_weights))
+                self._quad_nodes = gl_nodes
+                self._quad_weights = gl_weights / _norm
+            else:
+                raw_w = self.kernel._quad_weights
+                _norm = float(jnp.sum(raw_w))
+                self._quad_nodes = self.kernel._quad_nodes
+                self._quad_weights = raw_w / _norm   # sum = 1.0
         else:  # trapezoid: keep None, XLA constant-folds the else branch
             self._quad_nodes = None
             self._quad_weights = None
@@ -777,6 +816,8 @@ class GPSolver:
 
         # Envelope-specific R_Gamma function (JAX-traceable, captured in closure)
         r_gamma_fn = self.spot_model.get_r_gamma_func()
+        # Latitude weight function (JAX-traceable, or None for static weights)
+        lat_wt_fn = self.spot_model.get_lat_weight_func()
         # Number of kernel params (excludes sigma_n)
         n_kernel = len(self.spot_model.param_keys)
 
@@ -799,7 +840,8 @@ class GPSolver:
                     n_h, n_l, lr, fit_sn, b,
                     n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
-                    edgeon_cn_sq=eo_cn)
+                    edgeon_cn_sq=eo_cn,
+                    lat_weight_func=lat_wt_fn)
                 lp = (custom_prior(theta_arr) if custom_prior is not None
                       else _default_log_prior(theta_arr, bounds))
                 return ll + lp
@@ -810,7 +852,8 @@ class GPSolver:
                                         n_h, n_l, lr, fit_sn,
                                         n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
                                         quad_nodes=qn, quad_weights=qw,
-                                        edgeon_cn_sq=eo_cn)
+                                        edgeon_cn_sq=eo_cn,
+                                        lat_weight_func=lat_wt_fn)
                 lp = (custom_prior(theta_arr) if custom_prior is not None
                       else _default_log_prior(theta_arr, bounds))
                 return ll + lp
@@ -1232,6 +1275,7 @@ class GPSolver:
         qn, qw = self._quad_nodes, self._quad_weights
         n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
         r_gamma_fn = self.spot_model.get_r_gamma_func()
+        lat_wt_fn = self.spot_model.get_lat_weight_func()
 
         @jax.jit
         def loss_u(u_arr):
@@ -1241,7 +1285,8 @@ class GPSolver:
             K_model = _kernel_eval(theta_full, lag_centers_jax,
                                    n_h, n_l, lr,
                                    quad_nodes=qn, quad_weights=qw,
-                                   r_gamma_func=r_gamma_fn)
+                                   r_gamma_func=r_gamma_fn,
+                                   lat_weight_func=lat_wt_fn)
             return jnp.sum((acf_data_jax - K_model) ** 2)
 
         vg_fn = jax.jit(jax.value_and_grad(loss_u))
@@ -1487,6 +1532,7 @@ class GPSolver:
         qn, qw = self._quad_nodes, self._quad_weights
         n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
         r_gamma_fn = self.spot_model.get_r_gamma_func()
+        lat_wt_fn = self.spot_model.get_lat_weight_func()
         w_acf = float(acf_weight)
         w_psd = float(psd_weight)
 
@@ -1575,14 +1621,16 @@ class GPSolver:
             if w_acf != 0.0:
                 K_acf    = _kernel_eval(theta_phys, lag_jax, n_h, n_l, lr,
                                         quad_nodes=qn, quad_weights=qw,
-                                        r_gamma_func=r_gamma_fn)
+                                        r_gamma_func=r_gamma_fn,
+                                        lat_weight_func=lat_wt_fn)
                 acf_loss = jnp.mean(((acf_jax - K_acf) / acf_rms) ** 2)
                 loss = loss + w_acf * acf_loss
 
             if w_psd != 0.0:
                 K_tau = _kernel_eval(theta_phys, tau_jax, n_h, n_l, lr,
                                      quad_nodes=qn, quad_weights=qw,
-                                     r_gamma_func=r_gamma_fn)
+                                     r_gamma_func=r_gamma_fn,
+                                     lat_weight_func=lat_wt_fn)
                 psd_model = jnp.maximum(
                     dt_kernel * (K_tau[0] + 2.0 * jnp.dot(K_tau[1:], cos_mat[1:])),
                     0.0)
@@ -1722,7 +1770,8 @@ class GPSolver:
                 theta_arr, jnp.asarray(lag_fine),
                 self.n_harmonics, self.n_lat, self.lat_range,
                 quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
-                r_gamma_func=self.spot_model.get_r_gamma_func()))
+                r_gamma_func=self.spot_model.get_r_gamma_func(),
+                lat_weight_func=self.spot_model.get_lat_weight_func()))
             if normalize:
                 var = np.mean((np.asarray(self.y) - self.mean_val) ** 2)
                 if var > 0:
@@ -1814,7 +1863,9 @@ class GPSolver:
             K = np.asarray(_kernel_eval(
                 theta_arr, jnp.asarray(tau_grid),
                 self.n_harmonics, self.n_lat, self.lat_range,
-                quad_nodes=self._quad_nodes, quad_weights=self._quad_weights))
+                quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
+                r_gamma_func=self.spot_model.get_r_gamma_func(),
+                lat_weight_func=self.spot_model.get_lat_weight_func()))
             # Extend to two-sided symmetric sequence, then rfft → one-sided PSD
             K_twosided = np.concatenate([K[::-1], K[1:]])
             psd_model = np.abs(np.fft.rfft(K_twosided)) * dt_kernel
@@ -1903,7 +1954,8 @@ class GPSolver:
                 theta_arr, lags,
                 self.n_harmonics, self.n_lat, self.lat_range,
                 quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
-                r_gamma_func=self.spot_model.get_r_gamma_func()))
+                r_gamma_func=self.spot_model.get_r_gamma_func(),
+                lat_weight_func=self.spot_model.get_lat_weight_func()))
             K[i_idx, j_idx] = K_diag
             if d > 0:
                 K[j_idx, i_idx] = K_diag
@@ -1993,10 +2045,21 @@ class GPSolver:
         """
         if keys is None:
             return list(range(len(self.param_keys))), [], jnp.array([])
+        # Normalize user-supplied keys: accept both log_ and physical forms
+        # by mapping to whichever name is in self.param_keys.
+        pk_set = set(self.param_keys)
+        normalized = []
         for k in keys:
-            if k not in self.param_keys:
+            if k in pk_set:
+                normalized.append(k)
+            elif k.startswith("log_") and k[4:] in pk_set:
+                normalized.append(k[4:])
+            elif f"log_{k}" in pk_set:
+                normalized.append(f"log_{k}")
+            else:
                 raise ValueError(
                     f"Unknown key '{k}'. Valid keys: {self.param_keys}")
+        keys = normalized
         free_idx = [i for i, k in enumerate(self.param_keys) if k in keys]
         fixed_idx = [i for i, k in enumerate(self.param_keys) if k not in keys]
         fixed_vals = self.theta0[jnp.array(fixed_idx)] if fixed_idx else jnp.array([])
@@ -2015,14 +2078,58 @@ class GPSolver:
         """Convert a full theta array to a labeled dictionary."""
         return {k: float(theta_arr[i]) for i, k in enumerate(self.param_keys)}
 
+    def _update_model_from_theta(self, theta_dict):
+        """Update the SpotEvolutionModel components from a theta-style dict.
+
+        The keys in *theta_dict* must be a subset of
+        ``self.spot_model.param_keys`` (physical names like ``tau_em``,
+        ``lat_min``, ``sigma_k``).  Each component (visibility, envelope,
+        latitude distribution) is reconstructed with updated values.
+        """
+        model = self.spot_model
+        # Visibility
+        if model.visibility is not None:
+            for k in model.visibility.param_keys:
+                if k in theta_dict:
+                    setattr(model.visibility, k, float(theta_dict[k]))
+        # Envelope: reconstruct from updated param_dict to handle
+        # varying internal storage (distributions vs plain floats)
+        if model.envelope is not None:
+            env_params = dict(model.envelope.param_dict)
+            env_params.update({k: float(theta_dict[k])
+                               for k in env_params if k in theta_dict})
+            model.envelope = type(model.envelope)(**env_params)
+        # Latitude distribution: reconstruct with updated values
+        lat = model.latitude_distribution
+        if lat.param_dict:
+            lat_params = dict(lat.param_dict)
+            lat_params.update({k: float(theta_dict[k])
+                               for k in lat_params if k in theta_dict})
+            # Convert from radians to degrees for constructor
+            init_args = {}
+            for k, v in lat_params.items():
+                if "lat" in k:
+                    init_args[k.replace("lat_", "") + "_lat_deg"] = float(np.rad2deg(v))
+                else:
+                    init_args[k] = v
+            model.latitude_distribution = type(lat)(**init_args)
+        if "sigma_k" in theta_dict:
+            model.sigma_k = float(theta_dict["sigma_k"])
+
     def update_hparam(self, hparam):
         """Update hyperparameters and rebuild kernel and covariance.
 
-        Accepts either a SpotEvolutionModel or a hparam dict.
+        Accepts a SpotEvolutionModel, an hparam dict (legacy keys like
+        ``lspot``), or a theta-style dict whose keys match
+        ``self.spot_model.param_keys`` (e.g. ``tau_em``, ``lat_min``).
         """
         if isinstance(hparam, SpotEvolutionModel):
             self.spot_model = hparam
             self.hparam = hparam.to_hparam()
+        elif set(hparam.keys()) <= set(self.spot_model.param_keys):
+            # Theta-style dict: update the existing model components directly
+            self._update_model_from_theta(hparam)
+            self.hparam = self.spot_model.to_hparam()
         else:
             _validate_hparam(hparam)
             self.hparam = dict(hparam)
@@ -2483,7 +2590,9 @@ class GPSolver:
             K_flat = _kernel_eval(theta_kernel, lag_flat,
                                   self.n_harmonics, self.n_lat,
                                   self.lat_range,
-                                  quad_nodes=qn, quad_weights=qw)
+                                  quad_nodes=qn, quad_weights=qw,
+                                  r_gamma_func=self.spot_model.get_r_gamma_func(),
+                                  lat_weight_func=self.spot_model.get_lat_weight_func())
             K = K_flat.reshape(N, N)
             noise_var = self.yerr ** 2 + sigma_n ** 2
             K_noise = K + jnp.diag(noise_var) + white_noise * jnp.eye(N)
