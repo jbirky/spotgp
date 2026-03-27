@@ -313,6 +313,12 @@ class BlackJAXSampler(MCMCSampler):
     MCMCSampler.  Adds ``run_nuts`` for gradient-based No-U-Turn
     sampling with dual-averaging step-size adaptation.
 
+    When multiple chains are requested, sampling is parallelized across
+    available devices via ``jax.pmap``.  Chains are distributed evenly
+    across devices (``n_chains`` must be divisible by
+    ``jax.device_count()``).  On a single GPU this behaves identically
+    to the previous ``jax.vmap`` implementation.
+
     Parameters
     ----------
     gp : GPSolver
@@ -330,6 +336,7 @@ class BlackJAXSampler(MCMCSampler):
             import os
             os.makedirs(save_dir, exist_ok=True)
         self.save_dir = save_dir
+        self._n_devices = jax.device_count()
 
     def run_nuts(self, n_samples=1000, n_warmup=500, theta_init=None,
                  mass_matrix_method="hessian_map", step_size=None,
@@ -347,8 +354,9 @@ class BlackJAXSampler(MCMCSampler):
         Warmup always runs a single chain to adapt the step size and
         mass matrix.  When ``n_chains > 1``, the adapted parameters
         are shared across all chains, which are initialized with
-        jittered copies of the warmup endpoint and sampled in parallel
-        via ``jax.vmap``.
+        jittered copies of the warmup endpoint and distributed across
+        devices via ``jax.pmap`` (with ``jax.vmap`` over chains
+        within each device).
 
         Parameters
         ----------
@@ -372,8 +380,10 @@ class BlackJAXSampler(MCMCSampler):
             lax.scan sampling loop (default False).
         n_chains : int
             Number of independent chains to run in parallel via
-            ``jax.vmap`` (default 1).  All chains share the same
-            adapted step size and mass matrix from a single warmup.
+            ``jax.pmap`` across devices (default 1).  Must be
+            divisible by ``jax.device_count()``.  All chains share
+            the same adapted step size and mass matrix from a single
+            warmup.
         checkpoint_file : str, optional
             Default file path for ``save_checkpoint``.  When set,
             calling ``save_checkpoint()`` with no arguments will
@@ -391,6 +401,13 @@ class BlackJAXSampler(MCMCSampler):
         import blackjax
 
         gp = self.gp
+        n_devices = self._n_devices
+
+        if n_chains > 1 and n_chains % n_devices != 0:
+            raise ValueError(
+                f"n_chains ({n_chains}) must be divisible by the number of "
+                f"available devices ({n_devices}). Use n_chains in "
+                f"{[n_devices * i for i in range(1, 5)]}.")
 
         if rng_key is None:
             rng_key = jax.random.PRNGKey(0)
@@ -471,6 +488,10 @@ class BlackJAXSampler(MCMCSampler):
         del adapt_results, adapt_info, warmup
         jax.clear_caches()
 
+        # Warm up the log_posterior JIT kernel so CUDA timers are
+        # accurate when the sampling scan launches.
+        jax.block_until_ready(gp.log_posterior(theta_init))
+
         # -- Sampling via lax.scan -----------------------------------
         def _run_one_chain(state, chain_key):
             """Sample one chain via lax.scan."""
@@ -495,7 +516,10 @@ class BlackJAXSampler(MCMCSampler):
             return final_st, total_div, positions, infos, chain_keys[-1]
 
         if n_chains > 1:
-            print(f"Sampling {n_samples} iterations x {n_chains} chains...")
+            chains_per_device = n_chains // n_devices
+
+            print(f"Sampling {n_samples} iterations x {n_chains} chains "
+                  f"across {n_devices} device(s)...")
 
             # Jitter the warmup endpoint to create independent starting
             # positions for each chain
@@ -516,9 +540,25 @@ class BlackJAXSampler(MCMCSampler):
 
             sample_keys = jax.random.split(sample_key, n_chains)
 
-            all_final, all_div, all_pos, all_infos, all_last_keys = jax.vmap(
-                _run_one_chain
+            # Reshape for pmap: (n_devices, chains_per_device, ...)
+            states = jax.tree.map(
+                lambda x: x.reshape(n_devices, chains_per_device, *x.shape[1:]),
+                states)
+            sample_keys = sample_keys.reshape(n_devices, chains_per_device, -1)
+
+            # pmap over devices, vmap over chains within each device
+            all_final, all_div, all_pos, all_infos, all_last_keys = jax.pmap(
+                jax.vmap(_run_one_chain)
             )(states, sample_keys)
+
+            # Flatten device dimension: (n_devices, chains_per_device, ...) -> (n_chains, ...)
+            all_final = jax.tree.map(
+                lambda x: x.reshape(n_chains, *x.shape[2:]), all_final)
+            all_div = all_div.reshape(n_chains)
+            all_pos = all_pos.reshape(n_chains, n_samples, -1)
+            all_infos = jax.tree.map(
+                lambda x: x.reshape(n_chains, *x.shape[2:]), all_infos)
+            all_last_keys = all_last_keys.reshape(n_chains, -1)
 
             # Shape: (n_chains, n_samples, n_params)
             self.samples = all_pos
@@ -807,9 +847,24 @@ class BlackJAXSampler(MCMCSampler):
             n_chains = getattr(self, "_n_chains", 1)
         else:
             self._n_chains = n_chains
+
+        n_devices = self._n_devices
+        if n_chains > 1 and n_chains % n_devices != 0:
+            raise ValueError(
+                f"n_chains ({n_chains}) must be divisible by the number of "
+                f"available devices ({n_devices}). Use n_chains in "
+                f"{[n_devices * i for i in range(1, 5)]}.")
+
         gp = self.gp
         step_size = self._adapted_step_size
         inv_mass = jnp.asarray(self._adapted_inv_mass)
+
+        # Warm up the log_posterior JIT kernel so CUDA timers are
+        # accurate when the sampling scan launches.
+        warmup_pos = self._last_state.position
+        if warmup_pos.ndim > 1:
+            warmup_pos = warmup_pos[0]
+        jax.block_until_ready(gp.log_posterior(warmup_pos))
 
         def _run_one_chain(state, chain_key):
             kernel = blackjax.nuts(
@@ -833,16 +888,60 @@ class BlackJAXSampler(MCMCSampler):
             return final_st, total_div, positions, infos, chain_keys[-1]
 
         if n_chains > 1:
+            chains_per_device = n_chains // n_devices
+
             states = self._last_state
 
             if rng_key is None:
-                rng_key = jax.random.fold_in(self._last_rng_key[0], 1)
+                last_key = self._last_rng_key
+                # If resuming from a single-chain warmup checkpoint, the
+                # stored key is a single PRNGKey rather than an array of
+                # per-chain keys.  Use it directly instead of indexing.
+                if last_key.ndim == 1:
+                    rng_key = jax.random.fold_in(last_key, 1)
+                else:
+                    rng_key = jax.random.fold_in(last_key[0], 1)
+
+            # If the checkpoint is from a single-chain warmup, expand
+            # into multi-chain states by jittering the position.
+            is_single_chain_state = states.position.ndim == 1
+            if is_single_chain_state:
+                jitter_key, rng_key = jax.random.split(rng_key)
+                jitter_scale = 0.01 * jnp.sqrt(inv_mass)
+                noise = jax.random.normal(
+                    jitter_key,
+                    shape=(n_chains, len(states.position)))
+                init_positions = (states.position[None, :]
+                                  + jitter_scale[None, :] * noise)
+                init_fn = blackjax.nuts(
+                    gp.log_posterior,
+                    step_size=step_size,
+                    inverse_mass_matrix=inv_mass,
+                ).init
+                states = jax.vmap(init_fn)(init_positions)
+
             chain_keys = jax.random.split(rng_key, n_chains)
 
-            print(f"Resuming: {n_chains} chains x {n_samples} samples...")
+            print(f"Resuming: {n_chains} chains x {n_samples} samples "
+                  f"across {n_devices} device(s)...")
+
+            # Reshape for pmap: (n_devices, chains_per_device, ...)
+            states = jax.tree.map(
+                lambda x: x.reshape(n_devices, chains_per_device, *x.shape[1:]),
+                states)
+            chain_keys = chain_keys.reshape(n_devices, chains_per_device, -1)
 
             all_final, all_div, all_pos, all_infos, all_last_keys = \
-                jax.vmap(_run_one_chain)(states, chain_keys)
+                jax.pmap(jax.vmap(_run_one_chain))(states, chain_keys)
+
+            # Flatten device dimension back to (n_chains, ...)
+            all_final = jax.tree.map(
+                lambda x: x.reshape(n_chains, *x.shape[2:]), all_final)
+            all_div = all_div.reshape(n_chains)
+            all_pos = all_pos.reshape(n_chains, n_samples, -1)
+            all_infos = jax.tree.map(
+                lambda x: x.reshape(n_chains, *x.shape[2:]), all_infos)
+            all_last_keys = all_last_keys.reshape(n_chains, -1)
 
             self.samples = all_pos
             self._info = {

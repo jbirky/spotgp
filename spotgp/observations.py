@@ -117,6 +117,7 @@ class TimeSeriesData:
         dt : float
             Bin width in the same units as ``x``.
         """
+        
         dt = float(dt)
         bin_edges = np.arange(self.x[0], self.x[-1] + dt, dt)
         bin_idx = np.digitize(self.x, bin_edges) - 1
@@ -138,6 +139,10 @@ class TimeSeriesData:
                 w_sum = np.sum(w)
                 y_new.append(np.sum(w * y_bin) / w_sum)
                 yerr_new.append(1.0 / np.sqrt(w_sum))
+
+        self._x_full = self.x
+        self._y_full = self.y
+        self._yerr_full = self.yerr
 
         self.x = np.array(x_new)
         self.y = np.array(y_new)
@@ -166,8 +171,10 @@ class TimeSeriesData:
         power : ndarray
             PSD at each frequency.
         """
+        x = getattr(self, '_x_full', self.x)
+        y = getattr(self, '_y_full', self.y)
         freq, power = compute_psd(
-            self.y, t=self.x,
+            y, t=x,
             normalization=normalization,
             freq_min=freq_min, freq_max=freq_max,
             n_freq=n_freq, samples_per_peak=samples_per_peak,
@@ -200,8 +207,9 @@ class TimeSeriesData:
         acf : ndarray, shape (n_bins,)
             Normalized autocorrelation in each bin.
         """
-        x, y = self.x, self.y
-        N = self.N
+        x = getattr(self, '_x_full', self.x)
+        y = getattr(self, '_y_full', self.y)
+        N = len(x)
         y_centered = y - np.mean(y)
         var = np.var(y)
 

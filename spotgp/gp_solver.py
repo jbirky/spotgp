@@ -2401,12 +2401,18 @@ class GPSolver:
                                  ftol=ftol, gtol=gtol, disp=disp,
                                  _save=False)
 
-        # Run in parallel using threads (JAX releases the GIL during
-        # compiled computation, so threads give real parallelism here
-        # without pickling issues)
-        with ThreadPoolExecutor(max_workers=ncore) as pool:
-            futures = [pool.submit(_run_one, s) for s in starts]
-            results = [f.result() for f in futures]
+        # Run the first trial sequentially to warm up JAX/CUDA kernels
+        # before launching threads.  This avoids simultaneous JIT
+        # compilations on the GPU which cause CUDA timer warnings.
+        results = [_run_one(starts[0])]
+
+        # Run remaining trials in parallel using threads (JAX releases
+        # the GIL during compiled computation, so threads give real
+        # parallelism here without pickling issues)
+        if len(starts) > 1:
+            with ThreadPoolExecutor(max_workers=ncore) as pool:
+                futures = [pool.submit(_run_one, s) for s in starts[1:]]
+                results.extend(f.result() for f in futures)
 
         # Sort by objective value (lower is better for neg_log_posterior)
         results.sort(key=lambda tr: float(tr[1].fun))
