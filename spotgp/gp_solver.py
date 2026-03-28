@@ -1090,6 +1090,146 @@ class GPSolver:
 
         return rng.multivariate_normal(mu_pred, cov_pred, size=n_samples)
 
+    def sample_lightcurves(self, theta=None, xpred=None, n_samples=5,
+                           n_points=2000, source="prior", rng=None):
+        """
+        Sample lightcurves from the GP prior or posterior.
+
+        Parameters
+        ----------
+        theta : dict or array_like, optional
+            Kernel parameters.  Accepts a physical dict with keys from
+            ``param_keys``, a sampling-space dict with ``log_``-prefixed
+            keys, or a flat array matching ``param_keys``.
+            If None, uses the current internal hyperparameters.
+        xpred : array_like, optional
+            Times at which to evaluate the samples.  If None, uses
+            ``n_points`` evenly spaced times spanning the data baseline.
+        n_samples : int
+            Number of lightcurve samples to draw (default 5).
+        n_points : int
+            Number of prediction points when ``xpred`` is None (default
+            2000).
+        source : {'prior', 'posterior'}
+            Whether to sample from the GP prior or posterior (default
+            'prior').
+        rng : numpy.random.Generator, optional
+            Random number generator for reproducibility.
+
+        Returns
+        -------
+        xpred : ndarray, shape (M,)
+            Prediction times.
+        samples : ndarray, shape (n_samples, M)
+            Sampled lightcurves.
+        """
+        if theta is not None:
+            phys = {}
+            for k, v in (theta.items() if isinstance(theta, dict)
+                         else zip(self.spot_model.param_keys, theta)):
+                if isinstance(k, str) and k.startswith("log_"):
+                    phys[k[4:]] = 10.0 ** float(v)
+                else:
+                    phys[k] = float(v)
+            self.update_hparam(phys)
+
+        if xpred is None:
+            xpred = np.linspace(float(self.x[0]), float(self.x[-1]),
+                                n_points)
+        else:
+            xpred = np.asarray(xpred)
+
+        if source == "prior":
+            samples = self.sample_prior(xpred, n_samples=n_samples, rng=rng)
+        elif source == "posterior":
+            samples = self.sample_posterior(xpred, n_samples=n_samples,
+                                           rng=rng)
+        else:
+            raise ValueError(f"source must be 'prior' or 'posterior', "
+                             f"got {source!r}")
+
+        return xpred, samples
+
+    def plot_samples(self, theta=None, xpred=None, n_samples=5,
+                     n_points=2000, source="prior", rng=None,
+                     ax=None, show_data=True, data_color="k",
+                     sample_alpha=0.7, sample_lw=1.0, cmap="tab10",
+                     show_legend=True, xlim=None, ylim=None):
+        """
+        Plot sampled lightcurves from the GP prior or posterior.
+
+        Parameters
+        ----------
+        theta : dict or array_like, optional
+            Kernel parameters (see ``sample_lightcurves``).
+        xpred : array_like, optional
+            Prediction times.  If None, ``n_points`` evenly spaced.
+        n_samples : int
+            Number of samples to draw and plot (default 5).
+        n_points : int
+            Number of prediction points when ``xpred`` is None.
+        source : {'prior', 'posterior'}
+            Sample from the GP prior or posterior (default 'prior').
+        rng : numpy.random.Generator, optional
+            Random number generator for reproducibility.
+        ax : matplotlib Axes, optional
+            Axes to plot on.  If None, creates a new figure.
+        show_data : bool
+            Whether to overlay the observed data (default True).
+        data_color : str
+            Color for data points (default 'k').
+        sample_alpha : float
+            Opacity for sample curves (default 0.7).
+        sample_lw : float
+            Line width for sample curves (default 1.0).
+        cmap : str
+            Matplotlib colormap name for sample colors (default 'tab10').
+        show_legend : bool
+            Whether to draw a legend (default True).
+        xlim, ylim : tuple, optional
+            Axis limits.
+
+        Returns
+        -------
+        ax : matplotlib Axes
+        """
+        import matplotlib.pyplot as plt
+
+        xpred, samples = self.sample_lightcurves(
+            theta=theta, xpred=xpred, n_samples=n_samples,
+            n_points=n_points, source=source, rng=rng,
+        )
+
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(12, 4))
+
+        colormap = plt.get_cmap(cmap)
+        for i, sample in enumerate(samples):
+            label = f"Sample {i + 1}" if i < 10 else None
+            ax.plot(xpred, sample, color=colormap(i % colormap.N),
+                    alpha=sample_alpha, lw=sample_lw, label=label)
+
+        if show_data:
+            ax.errorbar(np.asarray(self.x), np.asarray(self.y),
+                        yerr=np.asarray(self.yerr),
+                        fmt=".", color=data_color, capsize=0, alpha=0.4,
+                        label="Data", zorder=0)
+
+        if xlim is not None:
+            ax.set_xlim(xlim)
+        else:
+            ax.set_xlim(float(self.x[0]), float(self.x[-1]))
+        if ylim is not None:
+            ax.set_ylim(ylim)
+
+        ax.set_xlabel("Time [days]", fontsize=22)
+        ax.set_ylabel("Flux", fontsize=22)
+        ax.set_title(f"GP {source} samples", fontsize=16)
+        if show_legend:
+            ax.legend()
+
+        return ax
+
     # =================================================================
     # ACF and kernel evaluation
     # =================================================================

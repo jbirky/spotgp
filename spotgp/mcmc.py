@@ -310,8 +310,9 @@ class BlackJAXSampler(MCMCSampler):
     NUTS sampler using the BlackJAX library.
 
     Inherits diagnostics, summary, plotting, and dict conversion from
-    MCMCSampler.  Adds ``run_nuts`` for gradient-based No-U-Turn
-    sampling with dual-averaging step-size adaptation.
+    MCMCSampler.  Adds ``run_map``, ``run_warmup``, and
+    ``run_sampling`` for gradient-based No-U-Turn sampling with
+    dual-averaging step-size adaptation.
 
     When multiple chains are requested, sampling is parallelized across
     available devices via ``jax.pmap``.  Chains are distributed evenly
@@ -337,6 +338,73 @@ class BlackJAXSampler(MCMCSampler):
             os.makedirs(save_dir, exist_ok=True)
         self.save_dir = save_dir
         self._n_devices = jax.device_count()
+
+    def run_map(self, nopt=10, keys=None, map_file=None, **kwargs):
+        """
+        Find MAP solutions via parallel multi-start optimization.
+
+        Runs ``GPSolver.fit_map_parallel`` and stores the results.
+        If ``map_file`` already exists on disk, loads from it instead
+        of re-running the optimization.
+
+        Parameters
+        ----------
+        nopt : int
+            Number of independent optimization restarts (default 10).
+        keys : list of str, optional
+            Parameter names to optimize. If None, uses all bounded
+            parameters from GPSolver.
+        map_file : str, optional
+            Path to save/load MAP solutions as ``.npz``.  Defaults to
+            ``save_dir/map_solution.npz`` if ``save_dir`` is set.
+        **kwargs
+            Additional keyword arguments passed to
+            ``GPSolver.fit_map_parallel`` (e.g. ``method``,
+            ``maxiter``).
+
+        Returns
+        -------
+        all_theta_maps : list of dict
+            All MAP solutions sorted by objective (best first).
+        """
+        import os
+
+        if map_file is None and self.save_dir is not None:
+            map_file = os.path.join(self.save_dir, "map_solution.npz")
+
+        # Try loading from disk
+        if map_file is not None and os.path.exists(
+                map_file if map_file.endswith(".npz") else map_file + ".npz"):
+            _path = map_file if map_file.endswith(".npz") else map_file + ".npz"
+            data = np.load(_path, allow_pickle=True)
+            all_theta_maps = list(data["all_theta_maps"])
+            data.close()
+            print(f"Loaded {len(all_theta_maps)} MAP solutions from {_path}")
+            self.all_theta_maps = all_theta_maps
+            self.theta_map = all_theta_maps[0]
+            return all_theta_maps
+
+        # Run optimization
+        gp = self.gp
+        if keys is None:
+            keys = list(gp.param_keys)
+
+        print(f"Finding MAP solution ({nopt} restarts, returning all)...")
+        all_theta_maps, all_results = gp.fit_map_parallel(
+            nopt=nopt, keys=keys, return_all=True, **kwargs)
+        self.all_theta_maps = all_theta_maps
+        self.theta_map = all_theta_maps[0]
+
+        print(f"MAP solution: {self.theta_map}")
+
+        # Save to disk
+        if map_file is not None:
+            np.savez(map_file,
+                     theta_map=self.theta_map,
+                     all_theta_maps=all_theta_maps)
+            print(f"MAP solutions saved to {map_file}")
+
+        return all_theta_maps
 
     def _run_pathfinder_warmup(self, rng_key, theta_inits, log_posterior_fn,
                               target_accept=0.8, maxiter=100, maxcor=10,
@@ -430,83 +498,59 @@ class BlackJAXSampler(MCMCSampler):
 
         return best.position, inv_mass_diag, step_size, all_positions
 
-    def run_nuts(self, n_samples=1000, n_warmup=500, theta_init=None,
-                 mass_matrix_method="hessian_map", step_size=None,
-                 rng_key=None, target_accept=0.8, progress_bar=False,
-                 n_chains=1, checkpoint_file=None,
-                 warmup_method="window_adaptation",
-                 pathfinder_maxiter=100, pathfinder_maxcor=10,
-                 pathfinder_num_elbo=200):
+    def run_warmup(self, n_warmup=500, theta_init=None,
+                   mass_matrix_method="hessian_map", step_size=None,
+                   rng_key=None, target_accept=0.8, progress_bar=False,
+                   n_chains=1, checkpoint_file=None,
+                   warmup_method="window_adaptation",
+                   pathfinder_maxiter=100, pathfinder_maxcor=10,
+                   pathfinder_num_elbo=200):
         """
-        Run BlackJAX NUTS sampler.
+        Run warmup phase: adapt step size and mass matrix.
 
-        Uses ``blackjax.window_adaptation`` for JIT-compiled warmup
-        (step-size and mass-matrix adaptation), then ``jax.lax.scan``
-        for the sampling loop.  Both paths avoid Python-level loops,
-        minimizing retracing overhead and memory from accumulated
-        intermediates.
+        Supports three warmup strategies:
 
-        Warmup always runs a single chain to adapt the step size and
-        mass matrix.  When ``n_chains > 1``, the adapted parameters
-        are shared across all chains, which are initialized with
-        jittered copies of the warmup endpoint and distributed across
-        devices via ``jax.pmap`` (with ``jax.vmap`` over chains
-        within each device).
+        - ``"window_adaptation"`` (default): BlackJAX's standard
+          dual-averaging window adaptation of both step size and
+          mass matrix.
+        - ``"pathfinder"``: multi-path Pathfinder via L-BFGS.
+        - ``"dual_averaging"``: fixes the mass matrix (from Hessian
+          at MAP) and only adapts the step size.
+
+        After warmup, adapted parameters are stored on the sampler
+        and a checkpoint is saved (if ``checkpoint_file`` is set).
 
         Parameters
         ----------
-        n_samples : int
-            Number of post-warmup samples per chain (default 1000).
         n_warmup : int
-            Number of warmup steps for step-size adaptation (default 500).
+            Number of warmup steps (default 500).
         theta_init : dict or array_like, optional
             Initial position. If None, uses GPSolver's MAP estimate.
+            Can also be a list of dicts or 2-D array for per-chain
+            starting points.
         mass_matrix_method : {"hessian_map", "fisher", "laplace", "diagonal", None}
-            Method to estimate the mass matrix (delegated to GPSolver).
+            Method to estimate the mass matrix.
         step_size : float, optional
-            Initial NUTS step size before adaptation. If None, a
-            heuristic based on the mass matrix scale is used.
+            Initial NUTS step size. If None, a heuristic is used.
         rng_key : jax.random.PRNGKey, optional
             Random key. Default: PRNGKey(0).
         target_accept : float
-            Target acceptance rate for dual averaging (default 0.8).
+            Target acceptance rate (default 0.8).
         progress_bar : bool
-            If True, print periodic progress updates during the
-            lax.scan sampling loop (default False).
+            If True, show progress during window adaptation.
         n_chains : int
-            Number of independent chains to run in parallel via
-            ``jax.pmap`` across devices (default 1).  Must be
-            divisible by ``jax.device_count()``.  All chains share
-            the same adapted step size and mass matrix from a single
-            warmup.
+            Number of chains (used to validate device count and
+            store per-chain init positions).
         checkpoint_file : str, optional
-            Default file path for ``save_checkpoint``.  When set,
-            calling ``save_checkpoint()`` with no arguments will
-            use this path.
+            Default file path for ``save_checkpoint``.
         warmup_method : {"window_adaptation", "pathfinder", "dual_averaging"}
-            Warmup strategy. ``"window_adaptation"`` (default) uses
-            BlackJAX's standard dual-averaging window adaptation.
-            ``"pathfinder"`` runs multi-path Pathfinder from each
-            initial position to estimate the mass matrix and step
-            size via L-BFGS, which is typically much faster.
-            ``"dual_averaging"`` fixes the mass matrix (computed from
-            the Hessian at the MAP) and only adapts the step size
-            via dual averaging.  This is the cheapest option when
-            starting from a good MAP solution.
+            Warmup strategy.
         pathfinder_maxiter : int
-            Maximum L-BFGS iterations per path when using Pathfinder
-            warmup (default 100).
+            Max L-BFGS iterations for Pathfinder (default 100).
         pathfinder_maxcor : int
             L-BFGS history size for Pathfinder (default 10).
-
-        Returns
-        -------
-        samples : jnp.ndarray
-            Shape ``(n_samples, n_params)`` when ``n_chains=1``, or
-            ``(n_chains, n_samples, n_params)`` when ``n_chains > 1``.
-        info : dict
-            Sampling diagnostics (arrays have a leading chain
-            dimension when ``n_chains > 1``).
+        pathfinder_num_elbo : int
+            Number of ELBO samples for Pathfinder (default 200).
         """
         import blackjax
 
@@ -551,6 +595,8 @@ class BlackJAXSampler(MCMCSampler):
                 theta_init = _per_chain_inits[0]  # best MAP for warmup
 
         self._n_chains = n_chains
+        self._per_chain_inits = _per_chain_inits
+        self._theta_init = theta_init
         if checkpoint_file is not None:
             self._checkpoint_file = checkpoint_file
 
@@ -578,7 +624,7 @@ class BlackJAXSampler(MCMCSampler):
                 adapted_step_size = step_size
 
             # Override per-chain inits with pathfinder best positions
-            _per_chain_inits = pf_positions
+            self._per_chain_inits = pf_positions
 
             # Create a NUTS state at the best position for single-chain path
             warmup_state = blackjax.nuts(
@@ -627,14 +673,14 @@ class BlackJAXSampler(MCMCSampler):
                 warmup_key, step_key = jax.random.split(warmup_key)
                 warmup_state, info = kernel.step(step_key, warmup_state)
                 da_state = da_update(da_state, info.acceptance_rate)
-                new_step_size = jnp.exp(da_state.log_x)
+                new_step_size = jnp.exp(da_state.log_step_size)
                 kernel = blackjax.nuts(
                     gp.log_posterior,
                     step_size=new_step_size,
                     inverse_mass_matrix=inv_mass_diag,
                 )
 
-            adapted_step_size = jnp.exp(da_state.log_x_avg)
+            adapted_step_size = jnp.exp(da_state.log_step_size_avg)
             adapted_inv_mass = inv_mass_diag
 
             print(f"  Adapted step size: {float(adapted_step_size):.6f}")
@@ -711,6 +757,40 @@ class BlackJAXSampler(MCMCSampler):
         # accurate when the sampling scan launches.
         jax.block_until_ready(gp.log_posterior(theta_init))
 
+    def run_sampling(self, n_samples=1000):
+        """
+        Run NUTS sampling using adapted parameters from ``run_warmup``.
+
+        Must be called after ``run_warmup`` (or will use parameters
+        restored from a checkpoint).
+
+        Parameters
+        ----------
+        n_samples : int
+            Number of post-warmup samples per chain (default 1000).
+
+        Returns
+        -------
+        samples : jnp.ndarray
+            Shape ``(n_samples, n_params)`` when ``n_chains=1``, or
+            ``(n_chains, n_samples, n_params)`` when ``n_chains > 1``.
+        info : dict
+            Sampling diagnostics (arrays have a leading chain
+            dimension when ``n_chains > 1``).
+        """
+        import blackjax
+
+        gp = self.gp
+        n_devices = self._n_devices
+        n_chains = self._n_chains
+        adapted_step_size = self._adapted_step_size
+        adapted_inv_mass = self._adapted_inv_mass
+        warmup_state = self._last_state
+        sample_key = self._last_rng_key
+        n_warmup = self._info["n_warmup"]
+        _per_chain_inits = getattr(self, "_per_chain_inits", None)
+        theta_init = getattr(self, "_theta_init", warmup_state.position)
+
         # -- Sampling via lax.scan -----------------------------------
         def _run_one_chain(state, chain_key):
             """Sample one chain via lax.scan."""
@@ -740,29 +820,37 @@ class BlackJAXSampler(MCMCSampler):
             print(f"Sampling {n_samples} iterations x {n_chains} chains "
                   f"across {n_devices} device(s)...")
 
-            # Create independent starting positions for each chain.
-            # If per-chain init positions were provided, use them directly;
-            # otherwise jitter the warmup endpoint.
-            if _per_chain_inits is not None and _per_chain_inits.shape[0] >= n_chains:
-                init_positions = _per_chain_inits[:n_chains]
-                print(f"  Using {n_chains} distinct MAP solutions as chain init positions")
+            # If the state is already multi-chain (from a previous
+            # run_sampling call), reuse it directly.  Otherwise
+            # initialize per-chain states from MAP solutions or jitter.
+            is_multi_chain_state = warmup_state.position.ndim > 1
+            if is_multi_chain_state:
+                states = warmup_state
+                if sample_key.ndim > 1:
+                    rng_key = jax.random.fold_in(sample_key[0], 1)
+                else:
+                    rng_key = jax.random.fold_in(sample_key, 1)
+                sample_keys = jax.random.split(rng_key, n_chains)
             else:
-                jitter_key, sample_key = jax.random.split(sample_key)
-                jitter_scale = 0.01 * jnp.sqrt(adapted_inv_mass)
-                noise = jax.random.normal(
-                    jitter_key, shape=(n_chains, len(theta_init)))
-                init_positions = warmup_state.position[None, :] \
-                    + jitter_scale[None, :] * noise
+                if _per_chain_inits is not None and _per_chain_inits.shape[0] >= n_chains:
+                    init_positions = _per_chain_inits[:n_chains]
+                    print(f"  Using {n_chains} distinct MAP solutions as chain init positions")
+                else:
+                    jitter_key, sample_key = jax.random.split(sample_key)
+                    jitter_scale = 0.01 * jnp.sqrt(adapted_inv_mass)
+                    noise = jax.random.normal(
+                        jitter_key, shape=(n_chains, len(theta_init)))
+                    init_positions = warmup_state.position[None, :] \
+                        + jitter_scale[None, :] * noise
 
-            # Initialize NUTS states for each chain from jittered positions
-            init_fn = blackjax.nuts(
-                gp.log_posterior,
-                step_size=adapted_step_size,
-                inverse_mass_matrix=adapted_inv_mass,
-            ).init
-            states = jax.vmap(init_fn)(init_positions)
-
-            sample_keys = jax.random.split(sample_key, n_chains)
+                # Initialize NUTS states for each chain from init positions
+                init_fn = blackjax.nuts(
+                    gp.log_posterior,
+                    step_size=adapted_step_size,
+                    inverse_mass_matrix=adapted_inv_mass,
+                ).init
+                states = jax.vmap(init_fn)(init_positions)
+                sample_keys = jax.random.split(sample_key, n_chains)
 
             # Reshape for pmap: (n_devices, chains_per_device, ...)
             states = jax.tree.map(
@@ -853,7 +941,7 @@ class BlackJAXSampler(MCMCSampler):
         ----------
         path : str, optional
             File path (saved as ``.npz``).  If None, uses the
-            ``checkpoint_file`` set in ``run_nuts``, or
+            ``checkpoint_file`` set in ``run_warmup``, or
             ``save_dir/checkpoint.npz`` if ``save_dir`` was set.
         append_samples : bool
             If True, append current ``self.samples`` to any samples
@@ -867,7 +955,7 @@ class BlackJAXSampler(MCMCSampler):
         """
         import os
         if self._last_state is None:
-            raise RuntimeError("No sampler state to save. Run run_nuts first.")
+            raise RuntimeError("No sampler state to save. Run run_warmup first.")
         if path is None:
             path = self._checkpoint_file
         if path is None and self.save_dir is not None:
@@ -875,7 +963,7 @@ class BlackJAXSampler(MCMCSampler):
         if path is None:
             raise ValueError(
                 "No path provided, no checkpoint_file set, and no save_dir. "
-                "Pass a path, set checkpoint_file in run_nuts, or set save_dir.")
+                "Pass a path, set checkpoint_file in run_warmup, or set save_dir.")
 
         samples_to_save = np.asarray(self.samples) if self.samples is not None else None
 
@@ -1030,195 +1118,3 @@ class BlackJAXSampler(MCMCSampler):
             samples = samples.reshape(n_chains * n_samp, n_params)
         return samples
 
-    def resume_nuts(self, n_samples=1000, n_chains=None, rng_key=None, progress_bar=False):
-        """
-        Continue NUTS sampling from a previous run or loaded checkpoint.
-
-        Skips warmup entirely and uses the previously adapted step size
-        and mass matrix (shared across all chains).  Returns only the
-        new batch of samples.  Call ``save_checkpoint`` afterward to
-        append the batch to disk and free memory.
-
-        Parameters
-        ----------
-        n_samples : int
-            Number of additional samples per chain (default 1000).
-        n_chains : int, optional
-            Number of chains to run.  If None (default), uses the value
-            stored in the sampler state (from ``run_nuts`` or
-            ``load_checkpoint``).
-        rng_key : jax.random.PRNGKey, optional
-            Random key.  If None, advances from the last key used.
-        progress_bar : bool
-            If True, print periodic progress updates (default False).
-            Only supported for single-chain runs.
-
-        Returns
-        -------
-        samples : jnp.ndarray
-            Shape ``(n_samples, n_params)`` for single chain, or
-            ``(n_chains, n_samples, n_params)`` for multiple chains.
-        info : dict
-            Diagnostics for this batch.
-        """
-        import blackjax
-
-        if self._last_state is None:
-            raise RuntimeError(
-                "No previous state. Run run_nuts or load_checkpoint first.")
-
-        if n_chains is None:
-            n_chains = getattr(self, "_n_chains", 1)
-        else:
-            self._n_chains = n_chains
-
-        n_devices = self._n_devices
-        if n_chains > 1 and n_chains % n_devices != 0:
-            raise ValueError(
-                f"n_chains ({n_chains}) must be divisible by the number of "
-                f"available devices ({n_devices}). Use n_chains in "
-                f"{[n_devices * i for i in range(1, 5)]}.")
-
-        gp = self.gp
-        step_size = self._adapted_step_size
-        inv_mass = jnp.asarray(self._adapted_inv_mass)
-
-        # Warm up the log_posterior JIT kernel so CUDA timers are
-        # accurate when the sampling scan launches.
-        warmup_pos = self._last_state.position
-        if warmup_pos.ndim > 1:
-            warmup_pos = warmup_pos[0]
-        jax.block_until_ready(gp.log_posterior(warmup_pos))
-
-        def _run_one_chain(state, chain_key):
-            kernel = blackjax.nuts(
-                gp.log_posterior,
-                step_size=step_size,
-                inverse_mass_matrix=inv_mass,
-            )
-            chain_keys = jax.random.split(chain_key, n_samples)
-
-            def one_step(carry, key_idx):
-                st, n_div = carry
-                key, _idx = key_idx
-                st, info = kernel.step(key, st)
-                n_div = n_div + info.is_divergent.astype(jnp.int32)
-                return (st, n_div), (st.position, info)
-
-            indices = jnp.arange(n_samples)
-            (final_st, total_div), (positions, infos) = jax.lax.scan(
-                one_step, (state, jnp.int32(0)), (chain_keys, indices),
-            )
-            return final_st, total_div, positions, infos, chain_keys[-1]
-
-        if n_chains > 1:
-            chains_per_device = n_chains // n_devices
-
-            states = self._last_state
-
-            if rng_key is None:
-                last_key = self._last_rng_key
-                # If resuming from a single-chain warmup checkpoint, the
-                # stored key is a single PRNGKey rather than an array of
-                # per-chain keys.  Use it directly instead of indexing.
-                if last_key.ndim == 1:
-                    rng_key = jax.random.fold_in(last_key, 1)
-                else:
-                    rng_key = jax.random.fold_in(last_key[0], 1)
-
-            # If the checkpoint is from a single-chain warmup, expand
-            # into multi-chain states by jittering the position.
-            is_single_chain_state = states.position.ndim == 1
-            if is_single_chain_state:
-                jitter_key, rng_key = jax.random.split(rng_key)
-                jitter_scale = 0.01 * jnp.sqrt(inv_mass)
-                noise = jax.random.normal(
-                    jitter_key,
-                    shape=(n_chains, len(states.position)))
-                init_positions = (states.position[None, :]
-                                  + jitter_scale[None, :] * noise)
-                init_fn = blackjax.nuts(
-                    gp.log_posterior,
-                    step_size=step_size,
-                    inverse_mass_matrix=inv_mass,
-                ).init
-                states = jax.vmap(init_fn)(init_positions)
-
-            chain_keys = jax.random.split(rng_key, n_chains)
-
-            print(f"Resuming: {n_chains} chains x {n_samples} samples "
-                  f"across {n_devices} device(s)...")
-
-            # Reshape for pmap: (n_devices, chains_per_device, ...)
-            states = jax.tree.map(
-                lambda x: x.reshape(n_devices, chains_per_device, *x.shape[1:]),
-                states)
-            chain_keys = chain_keys.reshape(n_devices, chains_per_device, -1)
-
-            all_final, all_div, all_pos, all_infos, all_last_keys = \
-                jax.pmap(jax.vmap(_run_one_chain))(states, chain_keys)
-
-            # Flatten device dimension back to (n_chains, ...)
-            all_final = jax.tree.map(
-                lambda x: x.reshape(n_chains, *x.shape[2:]), all_final)
-            all_div = all_div.reshape(n_chains)
-            all_pos = all_pos.reshape(n_chains, n_samples, -1)
-            all_infos = jax.tree.map(
-                lambda x: x.reshape(n_chains, *x.shape[2:]), all_infos)
-            all_last_keys = all_last_keys.reshape(n_chains, -1)
-
-            self.samples = all_pos
-            self._info = {
-                "divergences": np.asarray(all_infos.is_divergent),
-                "acceptance_rate": np.asarray(all_infos.acceptance_rate),
-                "num_steps": np.asarray(
-                    all_infos.num_integration_steps),
-                "step_size": step_size,
-                "n_warmup": self._info.get("n_warmup", 0),
-                "n_samples": n_samples,
-                "n_chains": n_chains,
-                "n_divergent": int(jnp.sum(all_div)),
-            }
-
-            self._last_state = all_final
-            self._last_rng_key = all_last_keys
-
-            total_div = int(jnp.sum(all_div))
-            mean_accept = float(jnp.mean(
-                jnp.array(self._info["acceptance_rate"])))
-            print(f"Resume complete: {n_chains} chains x {n_samples} "
-                  f"new samples, {total_div} divergences, "
-                  f"mean acceptance rate = {mean_accept:.3f}")
-        else:
-            state = self._last_state
-
-            if rng_key is None:
-                rng_key = jax.random.split(self._last_rng_key)[0]
-
-            print(f"Resuming: {n_samples} additional samples "
-                  f"(step_size={step_size:.6f})...")
-
-            final_state, new_div, new_positions, new_infos, last_key = \
-                _run_one_chain(state, rng_key)
-
-            self.samples = new_positions
-            self._info = {
-                "step_size": step_size,
-                "n_warmup": self._info.get("n_warmup", 0),
-                "n_samples": n_samples,
-                "n_chains": 1,
-                "n_divergent": int(new_div),
-                "divergences": np.asarray(new_infos.is_divergent),
-                "acceptance_rate": np.asarray(new_infos.acceptance_rate),
-                "num_steps": np.asarray(new_infos.num_integration_steps),
-            }
-
-            self._last_state = final_state
-            self._last_rng_key = last_key
-
-            mean_accept = float(np.mean(self._info["acceptance_rate"]))
-            print(f"Resume complete: {n_samples} new samples, "
-                  f"{int(new_div)} divergences, "
-                  f"mean acceptance rate = {mean_accept:.3f}")
-
-        return self.samples, self._info
