@@ -338,10 +338,105 @@ class BlackJAXSampler(MCMCSampler):
         self.save_dir = save_dir
         self._n_devices = jax.device_count()
 
+    def _run_pathfinder_warmup(self, rng_key, theta_inits, log_posterior_fn,
+                              target_accept=0.8, maxiter=100, maxcor=10,
+                              num_elbo_samples=200):
+        """Multi-path Pathfinder warmup: run single-path Pathfinder from
+        each starting position, select the best by ELBO, and extract a
+        diagonal mass matrix from the L-BFGS inverse Hessian factors.
+
+        Parameters
+        ----------
+        rng_key : jax.random.PRNGKey
+        theta_inits : jnp.ndarray, shape (n_paths, n_params)
+            Starting positions (e.g. top MAP solutions).
+        log_posterior_fn : callable
+            Un-normalized log-density.
+        target_accept : float
+            Target NUTS acceptance rate (used for step-size selection).
+        maxiter : int
+            Maximum L-BFGS iterations per path (default 100).
+        maxcor : int
+            L-BFGS history size (default 10).
+        num_elbo_samples : int
+            Samples per path for ELBO estimation (default 200).
+
+        Returns
+        -------
+        best_position : jnp.ndarray, shape (n_params,)
+            Position from the path with highest ELBO.
+        inv_mass_diag : jnp.ndarray, shape (n_params,)
+            Diagonal inverse mass matrix from the best path's
+            L-BFGS inverse Hessian approximation.
+        step_size : float
+            Initial NUTS step size derived from the mass matrix.
+        all_positions : jnp.ndarray, shape (n_paths, n_params)
+            Best position from each path (for chain initialization).
+        """
+        from blackjax.vi.pathfinder import approximate as pf_approximate
+
+        n_paths = theta_inits.shape[0]
+        n_params = theta_inits.shape[1]
+        print(f"Pathfinder warmup: {n_paths} paths, "
+              f"maxiter={maxiter}, maxcor={maxcor}...")
+
+        best_states = []
+        for i in range(n_paths):
+            path_key = jax.random.fold_in(rng_key, i)
+            state, info = pf_approximate(
+                path_key,
+                log_posterior_fn,
+                theta_inits[i],
+                num_samples=num_elbo_samples,
+                maxiter=maxiter,
+                maxcor=maxcor,
+            )
+            best_states.append(state)
+            print(f"  Path {i}: ELBO = {float(state.elbo):.2f}")
+
+        # Select best path by ELBO
+        elbos = jnp.array([s.elbo for s in best_states])
+        best_idx = int(jnp.argmax(elbos))
+        best = best_states[best_idx]
+        print(f"  Best path: {best_idx} (ELBO = {float(best.elbo):.2f})")
+
+        # Extract diagonal inverse mass matrix from L-BFGS factors.
+        # The approximate inverse Hessian is:
+        #   H^{-1} = diag(alpha) + beta @ gamma @ beta^T
+        # We take the diagonal for a diagonal mass matrix.
+        alpha = best.alpha
+        beta = best.beta
+        gamma = best.gamma
+        bg = beta @ gamma               # (n_params, 2*maxcor)
+        bgbt_diag = jnp.sum(bg * beta, axis=1)  # diag(beta @ gamma @ beta^T)
+        inv_mass_diag = alpha + bgbt_diag
+
+        # Clamp extreme values for stability (same logic as window_adaptation path)
+        median_var = jnp.median(inv_mass_diag)
+        inv_mass_diag = jnp.clip(inv_mass_diag,
+                                  median_var * 1e-4, median_var * 1e4)
+        # Ensure all positive
+        inv_mass_diag = jnp.maximum(inv_mass_diag, 1e-10)
+
+        # Step size heuristic: use dual averaging target rate
+        step_size = float(jnp.median(jnp.sqrt(inv_mass_diag)))
+        step_size = max(step_size, 1e-5)
+
+        all_positions = jnp.array([s.position for s in best_states])
+
+        print(f"  Adapted step size: {step_size:.6f}")
+        print(f"  Inv mass diag range: [{float(inv_mass_diag.min()):.2e}, "
+              f"{float(inv_mass_diag.max()):.2e}]")
+
+        return best.position, inv_mass_diag, step_size, all_positions
+
     def run_nuts(self, n_samples=1000, n_warmup=500, theta_init=None,
                  mass_matrix_method="hessian_map", step_size=None,
                  rng_key=None, target_accept=0.8, progress_bar=False,
-                 n_chains=1, checkpoint_file=None):
+                 n_chains=1, checkpoint_file=None,
+                 warmup_method="window_adaptation",
+                 pathfinder_maxiter=100, pathfinder_maxcor=10,
+                 pathfinder_num_elbo=200):
         """
         Run BlackJAX NUTS sampler.
 
@@ -388,6 +483,17 @@ class BlackJAXSampler(MCMCSampler):
             Default file path for ``save_checkpoint``.  When set,
             calling ``save_checkpoint()`` with no arguments will
             use this path.
+        warmup_method : {"window_adaptation", "pathfinder"}
+            Warmup strategy. ``"window_adaptation"`` (default) uses
+            BlackJAX's standard dual-averaging window adaptation.
+            ``"pathfinder"`` runs multi-path Pathfinder from each
+            initial position to estimate the mass matrix and step
+            size via L-BFGS, which is typically much faster.
+        pathfinder_maxiter : int
+            Maximum L-BFGS iterations per path when using Pathfinder
+            warmup (default 100).
+        pathfinder_maxcor : int
+            L-BFGS history size for Pathfinder (default 10).
 
         Returns
         -------
@@ -440,48 +546,82 @@ class BlackJAXSampler(MCMCSampler):
                 _per_chain_inits = theta_init
                 theta_init = _per_chain_inits[0]  # best MAP for warmup
 
-        # Estimate mass matrix (delegated to GPSolver)
-        inv_mass = gp._get_mass_matrix(mass_matrix_method, theta_init)
-
-        # For NUTS, use diagonal mass matrix (more robust than full)
-        inv_mass_diag = jnp.diag(inv_mass)
-        # Clamp extreme values for stability
-        median_var = jnp.median(inv_mass_diag)
-        inv_mass_diag = jnp.clip(inv_mass_diag,
-                                  median_var * 1e-4, median_var * 1e4)
-
-        # Initial step size: heuristic based on mass matrix scale
-        if step_size is None:
-            step_size = float(0.5 * jnp.min(jnp.sqrt(inv_mass_diag)))
-            step_size = max(step_size, 1e-5)
-
         self._n_chains = n_chains
         if checkpoint_file is not None:
             self._checkpoint_file = checkpoint_file
 
-        # -- Warmup (single chain) -----------------------------------
-        print(f"Warmup: {n_warmup} steps (window adaptation, "
-              f"init step_size={step_size:.6f})...")
-
         warmup_key, sample_key = jax.random.split(rng_key)
 
-        warmup = blackjax.window_adaptation(
-            blackjax.nuts,
-            gp.log_posterior,
-            is_mass_matrix_diagonal=True,
-            initial_step_size=step_size,
-            target_acceptance_rate=target_accept,
-            progress_bar=progress_bar,
-        )
-        adapt_results, adapt_info = warmup.run(
-            warmup_key, theta_init, num_steps=n_warmup,
-        )
+        if warmup_method == "pathfinder":
+            # -- Pathfinder warmup ------------------------------------
+            # Build init array for multi-path: use per-chain inits if
+            # available, otherwise tile the single init.
+            if _per_chain_inits is not None:
+                pf_inits = _per_chain_inits
+            else:
+                pf_inits = theta_init[None, :]  # single path
 
-        adapted_step_size = adapt_results.parameters["step_size"]
-        adapted_inv_mass = adapt_results.parameters["inverse_mass_matrix"]
-        warmup_state = adapt_results.state
+            best_pos, adapted_inv_mass, adapted_step_size, pf_positions = \
+                self._run_pathfinder_warmup(
+                    warmup_key, pf_inits, gp.log_posterior,
+                    target_accept=target_accept,
+                    maxiter=pathfinder_maxiter,
+                    maxcor=pathfinder_maxcor,
+                    num_elbo_samples=pathfinder_num_elbo,
+                )
 
-        print(f"  Adapted step size: {float(adapted_step_size):.6f}")
+            if step_size is not None:
+                adapted_step_size = step_size
+
+            # Override per-chain inits with pathfinder best positions
+            _per_chain_inits = pf_positions
+
+            # Create a NUTS state at the best position for single-chain path
+            warmup_state = blackjax.nuts(
+                gp.log_posterior,
+                step_size=adapted_step_size,
+                inverse_mass_matrix=adapted_inv_mass,
+            ).init(best_pos)
+
+        else:
+            # -- Window adaptation warmup (default) -------------------
+            # Estimate mass matrix (delegated to GPSolver)
+            inv_mass = gp._get_mass_matrix(mass_matrix_method, theta_init)
+
+            # For NUTS, use diagonal mass matrix (more robust than full)
+            inv_mass_diag = jnp.diag(inv_mass)
+            # Clamp extreme values for stability
+            median_var = jnp.median(inv_mass_diag)
+            inv_mass_diag = jnp.clip(inv_mass_diag,
+                                      median_var * 1e-4, median_var * 1e4)
+
+            # Initial step size: heuristic based on mass matrix scale
+            if step_size is None:
+                step_size = float(0.5 * jnp.min(jnp.sqrt(inv_mass_diag)))
+                step_size = max(step_size, 1e-5)
+
+            print(f"Warmup: {n_warmup} steps (window adaptation, "
+                  f"init step_size={step_size:.6f})...")
+
+            warmup = blackjax.window_adaptation(
+                blackjax.nuts,
+                gp.log_posterior,
+                is_mass_matrix_diagonal=True,
+                initial_step_size=step_size,
+                target_acceptance_rate=target_accept,
+                progress_bar=progress_bar,
+            )
+            adapt_results, adapt_info = warmup.run(
+                warmup_key, theta_init, num_steps=n_warmup,
+            )
+
+            adapted_step_size = adapt_results.parameters["step_size"]
+            adapted_inv_mass = adapt_results.parameters["inverse_mass_matrix"]
+            warmup_state = adapt_results.state
+
+            print(f"  Adapted step size: {float(adapted_step_size):.6f}")
+
+            del adapt_results, adapt_info, warmup
 
         # Store adapted parameters and checkpoint between warmup and
         # sampling so that warmup intermediates can be freed.
@@ -501,7 +641,6 @@ class BlackJAXSampler(MCMCSampler):
             self.save_checkpoint(append_samples=False)
             print("  Warmup checkpoint saved; clearing warmup memory...")
 
-        del adapt_results, adapt_info, warmup
         jax.clear_caches()
 
         # Warm up the log_posterior JIT kernel so CUDA timers are
