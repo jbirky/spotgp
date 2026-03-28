@@ -8,6 +8,7 @@ sampling via the BlackJAX library.
 import jax
 jax.config.update("jax_enable_x64", True)
 
+import os
 import jax.numpy as jnp
 import numpy as np
 
@@ -329,23 +330,32 @@ class BlackJAXSampler(MCMCSampler):
         plots, covariance plots, etc.).  Created automatically if it
         does not exist.  When set, ``save_checkpoint`` will default to
         saving the checkpoint inside this directory.
+    checkpoint_file : str, optional
+        Path to the checkpoint file.  When provided, overrides the
+        default ``save_dir/mcmc_checkpoint.npz``.  If neither
+        ``checkpoint_file`` nor ``save_dir`` is given, no checkpoint
+        file is set until one is passed to a later method.
     """
 
-    def __init__(self, gp, save_dir=None):
+    def __init__(self, gp, save_dir="results", checkpoint_file="mcmc_checkpoint.npz"):
         super().__init__(gp)
         if save_dir is not None:
             import os
             os.makedirs(save_dir, exist_ok=True)
         self.save_dir = save_dir
+        if checkpoint_file is not None:
+            self._checkpoint_file = os.path.join(save_dir, checkpoint_file)
+        else:
+            self._checkpoint_file = None
         self._n_devices = jax.device_count()
 
-    def run_map(self, nopt=10, keys=None, map_file=None, **kwargs):
+    def run_map(self, nopt=10, keys=None, checkpoint_file=None, **kwargs):
         """
         Find MAP solutions via parallel multi-start optimization.
 
         Runs ``GPSolver.fit_map_parallel`` and stores the results.
-        If ``map_file`` already exists on disk, loads from it instead
-        of re-running the optimization.
+        If the checkpoint file already contains MAP data, loads from
+        it instead of re-running the optimization.
 
         Parameters
         ----------
@@ -354,9 +364,10 @@ class BlackJAXSampler(MCMCSampler):
         keys : list of str, optional
             Parameter names to optimize. If None, uses all bounded
             parameters from GPSolver.
-        map_file : str, optional
-            Path to save/load MAP solutions as ``.npz``.  Defaults to
-            ``save_dir/map_solution.npz`` if ``save_dir`` is set.
+        checkpoint_file : str, optional
+            Path to save/load MAP solutions.  If provided, also
+            updates the sampler's default checkpoint path.  Defaults
+            to ``self._checkpoint_file``.
         **kwargs
             Additional keyword arguments passed to
             ``GPSolver.fit_map_parallel`` (e.g. ``method``,
@@ -367,22 +378,21 @@ class BlackJAXSampler(MCMCSampler):
         all_theta_maps : list of dict
             All MAP solutions sorted by objective (best first).
         """
-        import os
+        if checkpoint_file is not None:
+            self._checkpoint_file = checkpoint_file
+        path = self._checkpoint_file
 
-        if map_file is None and self.save_dir is not None:
-            map_file = os.path.join(self.save_dir, "map_solution.npz")
-
-        # Try loading from disk
-        if map_file is not None and os.path.exists(
-                map_file if map_file.endswith(".npz") else map_file + ".npz"):
-            _path = map_file if map_file.endswith(".npz") else map_file + ".npz"
-            data = np.load(_path, allow_pickle=True)
-            all_theta_maps = list(data["all_theta_maps"])
+        # Try loading from disk if checkpoint file is provided
+        if path is not None and os.path.exists(path):
+            data = np.load(path, allow_pickle=True)
+            if "all_theta_maps" in data:
+                all_theta_maps = list(data["all_theta_maps"])
+                data.close()
+                print(f"Loaded {len(all_theta_maps)} MAP solutions from {_path}")
+                self.all_theta_maps = all_theta_maps
+                self.theta_map = all_theta_maps[0]
+                return all_theta_maps
             data.close()
-            print(f"Loaded {len(all_theta_maps)} MAP solutions from {_path}")
-            self.all_theta_maps = all_theta_maps
-            self.theta_map = all_theta_maps[0]
-            return all_theta_maps
 
         # Run optimization
         gp = self.gp
@@ -397,12 +407,20 @@ class BlackJAXSampler(MCMCSampler):
 
         print(f"MAP solution: {self.theta_map}")
 
-        # Save to disk
-        if map_file is not None:
-            np.savez(map_file,
-                     theta_map=self.theta_map,
-                     all_theta_maps=all_theta_maps)
-            print(f"MAP solutions saved to {map_file}")
+        # Save to checkpoint file
+        if path is not None:
+            _path = path if path.endswith(".npz") else path + ".npz"
+            # Merge with existing checkpoint data if present
+            save_kwargs = {}
+            if os.path.exists(_path):
+                existing = np.load(_path, allow_pickle=True)
+                for k in existing.files:
+                    save_kwargs[k] = existing[k]
+                existing.close()
+            save_kwargs["theta_map"] = self.theta_map
+            save_kwargs["all_theta_maps"] = all_theta_maps
+            np.savez(path, **save_kwargs)
+            print(f"MAP solutions saved to {path}")
 
         return all_theta_maps
 
@@ -542,7 +560,10 @@ class BlackJAXSampler(MCMCSampler):
             Number of chains (used to validate device count and
             store per-chain init positions).
         checkpoint_file : str, optional
-            Default file path for ``save_checkpoint``.
+            Override the default checkpoint file path.  When set,
+            updates ``self._checkpoint_file`` for all subsequent
+            save/load operations.  Defaults to
+            ``save_dir/mcmc_checkpoint.npz`` when ``save_dir`` is set.
         warmup_method : {"window_adaptation", "pathfinder", "dual_averaging"}
             Warmup strategy.
         pathfinder_maxiter : int
@@ -959,7 +980,7 @@ class BlackJAXSampler(MCMCSampler):
         if path is None:
             path = self._checkpoint_file
         if path is None and self.save_dir is not None:
-            path = os.path.join(self.save_dir, "checkpoint.npz")
+            path = os.path.join(self.save_dir, "mcmc_checkpoint.npz")
         if path is None:
             raise ValueError(
                 "No path provided, no checkpoint_file set, and no save_dir. "
@@ -1035,7 +1056,7 @@ class BlackJAXSampler(MCMCSampler):
             print(f"Corner plot saved to {corner_path} "
                   f"({n_on_disk} samples)")
 
-    def load_checkpoint(self, path):
+    def load_checkpoint(self, checkpoint_file=None):
         """
         Restore sampler state from a checkpoint file.
 
@@ -1045,10 +1066,20 @@ class BlackJAXSampler(MCMCSampler):
 
         Parameters
         ----------
-        path : str
-            Path to a ``.npz`` checkpoint file.
+        checkpoint_file : str, optional
+            Path to a ``.npz`` checkpoint file.  If provided, also
+            updates the sampler's default checkpoint path.  If None,
+            uses the default ``save_dir/mcmc_checkpoint.npz``.
         """
         import blackjax
+
+        if checkpoint_file is not None:
+            self._checkpoint_file = checkpoint_file
+        path = self._checkpoint_file
+        if path is None:
+            raise ValueError(
+                "No checkpoint_file provided and no save_dir was set. "
+                "Pass a checkpoint_file or set save_dir.")
 
         data = np.load(path)
 
