@@ -51,6 +51,9 @@ class MCMCSampler:
         self._adapted_inv_mass = None
         self._last_rng_key = None
         self._checkpoint_file = None
+        
+        self._map_completed = False
+        self._warmup_completed = False
 
     @property
     def param_keys(self):
@@ -388,7 +391,7 @@ class BlackJAXSampler(MCMCSampler):
             if "all_theta_maps" in data:
                 all_theta_maps = list(data["all_theta_maps"])
                 data.close()
-                print(f"Loaded {len(all_theta_maps)} MAP solutions from {_path}")
+                print(f"Loaded {len(all_theta_maps)} MAP solutions from {path}")
                 self.all_theta_maps = all_theta_maps
                 self.theta_map = all_theta_maps[0]
                 return all_theta_maps
@@ -421,6 +424,7 @@ class BlackJAXSampler(MCMCSampler):
             save_kwargs["all_theta_maps"] = all_theta_maps
             np.savez(path, **save_kwargs)
             print(f"MAP solutions saved to {path}")
+        self._map_completed = True
 
         return all_theta_maps
 
@@ -767,7 +771,8 @@ class BlackJAXSampler(MCMCSampler):
             "n_chains": n_chains,
             "n_divergent": 0,
         }
-
+        self._warmup_completed = True 
+        
         if self._checkpoint_file is not None:
             self.save_checkpoint(append_samples=False)
             print("  Warmup checkpoint saved; clearing warmup memory...")

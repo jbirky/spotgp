@@ -8,3 +8,4 @@ coverage.xml
 animations/
 notebooks/
 spotgp.egg-info/
+data/
