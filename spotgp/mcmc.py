@@ -413,16 +413,32 @@ class BlackJAXSampler(MCMCSampler):
             rng_key = jax.random.PRNGKey(0)
 
         # Initial position
+        # theta_init can be:
+        #   - None          -> use GPSolver MAP estimate
+        #   - dict          -> single starting point
+        #   - 1-D array     -> single starting point
+        #   - list of dicts -> per-chain starting points
+        #   - 2-D array (n_chains, n_params) -> per-chain starting points
+        _per_chain_inits = None
+
         if theta_init is None:
             if gp.map_estimate is None:
                 gp.fit_map()
             theta_init = gp.map_estimate
+        elif isinstance(theta_init, list) and len(theta_init) > 0 and isinstance(theta_init[0], dict):
+            _per_chain_inits = jnp.array(
+                [[float(d[k]) for k in gp.param_keys] for d in theta_init],
+                dtype=jnp.float64)
+            theta_init = _per_chain_inits[0]  # best MAP for warmup
         elif isinstance(theta_init, dict):
             theta_init = jnp.array(
                 [float(theta_init[k]) for k in gp.param_keys],
                 dtype=jnp.float64)
         else:
             theta_init = jnp.asarray(theta_init, dtype=jnp.float64)
+            if theta_init.ndim == 2:
+                _per_chain_inits = theta_init
+                theta_init = _per_chain_inits[0]  # best MAP for warmup
 
         # Estimate mass matrix (delegated to GPSolver)
         inv_mass = gp._get_mass_matrix(mass_matrix_method, theta_init)
@@ -521,14 +537,19 @@ class BlackJAXSampler(MCMCSampler):
             print(f"Sampling {n_samples} iterations x {n_chains} chains "
                   f"across {n_devices} device(s)...")
 
-            # Jitter the warmup endpoint to create independent starting
-            # positions for each chain
-            jitter_key, sample_key = jax.random.split(sample_key)
-            jitter_scale = 0.01 * jnp.sqrt(adapted_inv_mass)
-            noise = jax.random.normal(
-                jitter_key, shape=(n_chains, len(theta_init)))
-            init_positions = warmup_state.position[None, :] \
-                + jitter_scale[None, :] * noise
+            # Create independent starting positions for each chain.
+            # If per-chain init positions were provided, use them directly;
+            # otherwise jitter the warmup endpoint.
+            if _per_chain_inits is not None and _per_chain_inits.shape[0] >= n_chains:
+                init_positions = _per_chain_inits[:n_chains]
+                print(f"  Using {n_chains} distinct MAP solutions as chain init positions")
+            else:
+                jitter_key, sample_key = jax.random.split(sample_key)
+                jitter_scale = 0.01 * jnp.sqrt(adapted_inv_mass)
+                noise = jax.random.normal(
+                    jitter_key, shape=(n_chains, len(theta_init)))
+                init_positions = warmup_state.position[None, :] \
+                    + jitter_scale[None, :] * noise
 
             # Initialize NUTS states for each chain from jittered positions
             init_fn = blackjax.nuts(
