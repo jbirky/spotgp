@@ -483,12 +483,16 @@ class BlackJAXSampler(MCMCSampler):
             Default file path for ``save_checkpoint``.  When set,
             calling ``save_checkpoint()`` with no arguments will
             use this path.
-        warmup_method : {"window_adaptation", "pathfinder"}
+        warmup_method : {"window_adaptation", "pathfinder", "dual_averaging"}
             Warmup strategy. ``"window_adaptation"`` (default) uses
             BlackJAX's standard dual-averaging window adaptation.
             ``"pathfinder"`` runs multi-path Pathfinder from each
             initial position to estimate the mass matrix and step
             size via L-BFGS, which is typically much faster.
+            ``"dual_averaging"`` fixes the mass matrix (computed from
+            the Hessian at the MAP) and only adapts the step size
+            via dual averaging.  This is the cheapest option when
+            starting from a good MAP solution.
         pathfinder_maxiter : int
             Maximum L-BFGS iterations per path when using Pathfinder
             warmup (default 100).
@@ -582,6 +586,66 @@ class BlackJAXSampler(MCMCSampler):
                 step_size=adapted_step_size,
                 inverse_mass_matrix=adapted_inv_mass,
             ).init(best_pos)
+
+        elif warmup_method == "dual_averaging":
+            # -- Dual averaging warmup (fixed mass matrix) ------------
+            # Estimate mass matrix (delegated to GPSolver)
+            inv_mass = gp._get_mass_matrix(mass_matrix_method, theta_init)
+
+            # For NUTS, use diagonal mass matrix (more robust than full)
+            inv_mass_diag = jnp.diag(inv_mass)
+            # Clamp extreme values for stability
+            median_var = jnp.median(inv_mass_diag)
+            inv_mass_diag = jnp.clip(inv_mass_diag,
+                                      median_var * 1e-4, median_var * 1e4)
+
+            # Initial step size: heuristic based on mass matrix scale
+            if step_size is None:
+                step_size = float(0.5 * jnp.min(jnp.sqrt(inv_mass_diag)))
+                step_size = max(step_size, 1e-5)
+
+            print(f"Warmup: {n_warmup} steps (dual averaging, fixed mass matrix, "
+                  f"init step_size={step_size:.6f})...")
+
+            from blackjax.adaptation.step_size import (
+                dual_averaging_adaptation,
+            )
+
+            da_init, da_update, da_final = dual_averaging_adaptation(
+                target=target_accept,
+            )
+            da_state = da_init(step_size)
+
+            kernel = blackjax.nuts(
+                gp.log_posterior,
+                step_size=step_size,
+                inverse_mass_matrix=inv_mass_diag,
+            )
+            warmup_state = kernel.init(theta_init)
+
+            for i in range(n_warmup):
+                warmup_key, step_key = jax.random.split(warmup_key)
+                warmup_state, info = kernel.step(step_key, warmup_state)
+                da_state = da_update(da_state, info.acceptance_rate)
+                new_step_size = jnp.exp(da_state.log_x)
+                kernel = blackjax.nuts(
+                    gp.log_posterior,
+                    step_size=new_step_size,
+                    inverse_mass_matrix=inv_mass_diag,
+                )
+
+            adapted_step_size = jnp.exp(da_state.log_x_avg)
+            adapted_inv_mass = inv_mass_diag
+
+            print(f"  Adapted step size: {float(adapted_step_size):.6f}")
+
+            # Re-init warmup_state with the final adapted step size
+            kernel = blackjax.nuts(
+                gp.log_posterior,
+                step_size=adapted_step_size,
+                inverse_mass_matrix=adapted_inv_mass,
+            )
+            warmup_state = kernel.init(warmup_state.position)
 
         else:
             # -- Window adaptation warmup (default) -------------------
