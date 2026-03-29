@@ -1124,6 +1124,266 @@ class BlackJAXSampler(MCMCSampler):
               f"({n_on_disk} samples on disk, {n_chains} chain(s), "
               f"not loaded into memory)")
 
+    def run_smc(self, n_particles=500, n_mcmc_steps=10,
+                n_adapt_steps=25, target_ess=0.5, target_accept=0.6,
+                rng_key=None, step_size=None,
+                mass_matrix_method="hessian_map", theta_init=None,
+                max_tempering_steps=200, checkpoint_every=10,
+                checkpoint_file=None):
+        """
+        Run adaptive tempered Sequential Monte Carlo.
+
+        Starts from the prior and anneals toward the full posterior
+        using an adaptive temperature schedule.  At each tempering
+        step, particles are resampled and rejuvenated with NUTS
+        moves.  The NUTS step size is re-adapted via dual averaging
+        at each tempering stage using a representative particle.
+
+        Parameters
+        ----------
+        n_particles : int
+            Number of SMC particles (default 500).
+        n_mcmc_steps : int
+            NUTS rejuvenation steps per tempering stage (default 10).
+        n_adapt_steps : int
+            Dual-averaging warmup steps to adapt the NUTS step size
+            at each tempering stage (default 25).
+        target_ess : float
+            Target effective sample size as a fraction of
+            ``n_particles`` (default 0.5).
+        target_accept : float
+            Target NUTS acceptance rate for dual averaging
+            (default 0.6).
+        rng_key : jax.random.PRNGKey, optional
+            Random key.  Default: PRNGKey(42).
+        step_size : float, optional
+            Initial NUTS step size.  If None, a heuristic from the
+            mass matrix is used.
+        mass_matrix_method : str, optional
+            Method to estimate the inverse mass matrix (default
+            ``"hessian_map"``).  Set to None to use an identity
+            matrix.
+        theta_init : dict or array_like, optional
+            Reference point for mass matrix estimation.  If None,
+            the MAP estimate is used.
+        max_tempering_steps : int
+            Safety limit on the number of tempering stages
+            (default 200).
+        checkpoint_every : int
+            Save a checkpoint every this many tempering steps
+            (default 10).  Set to 0 to disable periodic
+            checkpointing.
+        checkpoint_file : str, optional
+            Override the default checkpoint file path.
+
+        Returns
+        -------
+        samples : np.ndarray, shape (n_particles, n_params)
+            Weighted posterior particles at the final temperature.
+        info : dict
+            Diagnostics including tempering schedule and log
+            evidence estimate.
+        """
+        import blackjax
+        from blackjax.smc.resampling import systematic
+        from blackjax.adaptation.step_size import dual_averaging_adaptation
+
+        gp = self.gp
+
+        if rng_key is None:
+            rng_key = jax.random.PRNGKey(42)
+        if checkpoint_file is not None:
+            self._checkpoint_file = checkpoint_file
+
+        # --- Mass matrix and step size ---------------------------------
+        if theta_init is None:
+            if gp.map_estimate is None:
+                gp.fit_map()
+            theta_init = gp.map_estimate
+        if isinstance(theta_init, dict):
+            theta_init = jnp.array(
+                [float(theta_init[k]) for k in gp.param_keys],
+                dtype=jnp.float64)
+
+        if mass_matrix_method is not None:
+            inv_mass = gp._get_mass_matrix(mass_matrix_method, theta_init)
+            inv_mass_diag = jnp.diag(inv_mass)
+            median_var = jnp.median(inv_mass_diag)
+            inv_mass_diag = jnp.clip(inv_mass_diag,
+                                      median_var * 1e-4, median_var * 1e4)
+        else:
+            inv_mass_diag = jnp.ones(gp.n_params)
+
+        if step_size is None:
+            step_size = float(0.5 * jnp.min(jnp.sqrt(inv_mass_diag)))
+            step_size = max(step_size, 1e-5)
+
+        # --- Draw initial particles from the prior --------------------
+        init_key, run_key = jax.random.split(rng_key)
+        bounds = gp.bounds
+        lo, hi = bounds[:, 0], bounds[:, 1]
+        particles = (jax.random.uniform(init_key,
+                                         shape=(n_particles, gp.n_params))
+                     * (hi - lo) + lo)
+
+        # --- Helper: adapt step size via dual averaging ---------------
+        def _adapt_step_size(adapt_key, position, current_step_size,
+                             lam, n_steps):
+            """Run short dual-averaging warmup on one particle at the
+            tempered log-density ``log_prior + lam * log_likelihood``."""
+            def tempered_logdensity(theta):
+                return gp.log_prior_fn(theta) + lam * gp.log_likelihood_fn(theta)
+
+            da_init, da_update, _ = dual_averaging_adaptation(
+                target=target_accept)
+            da_state = da_init(current_step_size)
+
+            kernel = blackjax.nuts(
+                tempered_logdensity,
+                step_size=current_step_size,
+                inverse_mass_matrix=inv_mass_diag,
+            )
+            state = kernel.init(position)
+
+            for _ in range(n_steps):
+                adapt_key, step_key = jax.random.split(adapt_key)
+                state, info = kernel.step(step_key, state)
+                da_state = da_update(da_state, info.acceptance_rate)
+                new_ss = jnp.exp(da_state.log_step_size)
+                kernel = blackjax.nuts(
+                    tempered_logdensity,
+                    step_size=new_ss,
+                    inverse_mass_matrix=inv_mass_diag,
+                )
+
+            adapted_ss = float(jnp.exp(da_state.log_step_size_avg))
+            return max(adapted_ss, 1e-6)
+
+        # --- Build SMC kernel factory ---------------------------------
+        def _build_smc_kernel(ss):
+            nuts_kernel = blackjax.nuts(
+                gp.log_posterior,
+                step_size=ss,
+                inverse_mass_matrix=inv_mass_diag,
+            )
+            return blackjax.adaptive_tempered_smc.build_kernel(
+                logprior_fn=gp.log_prior_fn,
+                loglikelihood_fn=gp.log_likelihood_fn,
+                mcmc_step_fn=nuts_kernel.step,
+                mcmc_init_fn=nuts_kernel.init,
+                resampling_fn=systematic,
+                target_ess=target_ess * n_particles,
+            )
+
+        smc_state = blackjax.adaptive_tempered_smc.init(particles)
+
+        # --- Checkpoint helper ----------------------------------------
+        chk_path = self._checkpoint_file
+
+        def _save_smc_checkpoint(smc_st, lambdas_, step_sizes_,
+                                 log_ev, run_key_, step_size_,
+                                 inv_mass_diag_):
+            if chk_path is None:
+                return
+            np.savez(
+                chk_path,
+                particles=np.asarray(smc_st.particles),
+                weights=np.asarray(smc_st.weights),
+                tempering_param=float(smc_st.tempering_param),
+                tempering_schedule=np.array(lambdas_),
+                step_sizes=np.array(step_sizes_),
+                log_evidence=log_ev,
+                step_size=step_size_,
+                inverse_mass_matrix=np.asarray(inv_mass_diag_),
+                rng_key=np.asarray(run_key_),
+                n_particles=n_particles,
+                n_mcmc_steps=n_mcmc_steps,
+                n_adapt_steps=n_adapt_steps,
+                # Include samples key for compatibility with load_samples
+                samples=np.asarray(smc_st.particles),
+            )
+            print(f"  Checkpoint saved to {chk_path} "
+                  f"(lambda={float(smc_st.tempering_param):.6f})")
+
+        # --- Run tempering loop ---------------------------------------
+        print(f"SMC: {n_particles} particles, target_ess={target_ess:.2f}, "
+              f"n_adapt={n_adapt_steps}, target_accept={target_accept:.2f}")
+
+        lambdas = [0.0]
+        step_sizes = [step_size]
+        log_evidence = 0.0
+
+        for step in range(max_tempering_steps):
+            run_key, step_key, adapt_key = jax.random.split(run_key, 3)
+
+            smc_kernel = _build_smc_kernel(step_size)
+            smc_state, smc_info = smc_kernel(
+                step_key,
+                smc_state,
+                num_mcmc_steps=n_mcmc_steps,
+                mcmc_parameters={"step_size": step_size,
+                                 "inverse_mass_matrix": inv_mass_diag},
+            )
+            lam = float(smc_state.tempering_param)
+            lambdas.append(lam)
+            log_evidence += float(smc_info.log_likelihood_increment)
+
+            print(f"  Step {step + 1}: lambda={lam:.6f}, "
+                  f"step_size={step_size:.6f}, log_Z={log_evidence:.2f}")
+
+            if lam >= 1.0:
+                step_sizes.append(step_size)
+                _save_smc_checkpoint(smc_state, lambdas, step_sizes,
+                                     log_evidence, run_key, step_size,
+                                     inv_mass_diag)
+                break
+
+            # Adapt step size for the next tempering stage using a
+            # high-weight particle as the warmup starting point.
+            best_idx = int(jnp.argmax(smc_state.weights))
+            best_particle = smc_state.particles[best_idx]
+            step_size = _adapt_step_size(
+                adapt_key, best_particle, step_size, lam, n_adapt_steps)
+            step_sizes.append(step_size)
+
+            # Periodic checkpoint
+            if (checkpoint_every > 0
+                    and (step + 1) % checkpoint_every == 0):
+                _save_smc_checkpoint(smc_state, lambdas, step_sizes,
+                                     log_evidence, run_key, step_size,
+                                     inv_mass_diag)
+        else:
+            print(f"  Warning: reached max_tempering_steps="
+                  f"{max_tempering_steps} without reaching lambda=1.0 "
+                  f"(final={lam:.6f})")
+            _save_smc_checkpoint(smc_state, lambdas, step_sizes,
+                                 log_evidence, run_key, step_size,
+                                 inv_mass_diag)
+
+        n_steps = len(lambdas) - 1
+        print(f"SMC complete: {n_steps} tempering steps, "
+              f"log_evidence={log_evidence:.2f}")
+
+        # --- Store results --------------------------------------------
+        final_particles = np.asarray(smc_state.particles)
+        self.samples = final_particles
+        self._n_chains = 1
+        self._info = {
+            "n_particles": n_particles,
+            "n_mcmc_steps": n_mcmc_steps,
+            "n_adapt_steps": n_adapt_steps,
+            "n_tempering_steps": n_steps,
+            "tempering_schedule": np.array(lambdas),
+            "step_sizes": np.array(step_sizes),
+            "log_evidence": log_evidence,
+            "step_size": step_size,
+            "n_warmup": 0,
+            "n_samples": n_particles,
+            "n_chains": 1,
+        }
+
+        return final_particles, self._info
+
     @staticmethod
     def load_samples(path, flatten_chains=True):
         """

@@ -867,6 +867,36 @@ class GPSolver:
         self.grad_log_posterior = jax.jit(jax.grad(log_posterior))
         self.grad_neg_log_posterior = jax.jit(jax.grad(neg_log_posterior))
 
+        # Separate log-prior and log-likelihood for SMC tempering.
+        @jax.jit
+        def _log_prior_fn(theta_arr):
+            return (custom_prior(theta_arr) if custom_prior is not None
+                    else _default_log_prior(theta_arr, bounds))
+
+        if self.matrix_solver == "cholesky_banded":
+            @jax.jit
+            def _log_likelihood_fn(theta_arr):
+                return _gp_log_likelihood_banded(
+                    to_phys(theta_arr), x, y, yerr, mean_val,
+                    n_h, n_l, lr, fit_sn, b,
+                    n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
+                    quad_nodes=qn, quad_weights=qw,
+                    edgeon_cn_sq=eo_cn,
+                    lat_weight_func=lat_wt_fn)
+        else:
+            @jax.jit
+            def _log_likelihood_fn(theta_arr):
+                return _gp_log_likelihood(
+                    to_phys(theta_arr), x, y, yerr, mean_val,
+                    n_h, n_l, lr, fit_sn,
+                    n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
+                    quad_nodes=qn, quad_weights=qw,
+                    edgeon_cn_sq=eo_cn,
+                    lat_weight_func=lat_wt_fn)
+
+        self.log_prior_fn = _log_prior_fn
+        self.log_likelihood_fn = _log_likelihood_fn
+
     # =================================================================
     # JAX compilation warmup
     # =================================================================
@@ -1269,7 +1299,8 @@ class GPSolver:
             n_bins=n_bins, max_lag=max_lag)
 
         if not normalize:
-            var = np.var(np.asarray(self.y) - float(self.mean_val))
+            y_full = getattr(self.data, '_y_full', self.data.y)
+            var = np.var(y_full)
             acf = acf * var
 
         return lag_centers, acf
@@ -1913,7 +1944,8 @@ class GPSolver:
                 r_gamma_func=self.spot_model.get_r_gamma_func(),
                 lat_weight_func=self.spot_model.get_lat_weight_func()))
             if normalize:
-                var = np.mean((np.asarray(self.y) - self.mean_val) ** 2)
+                y_full = getattr(self.data, '_y_full', self.data.y)
+                var = np.var(y_full)
                 if var > 0:
                     K_model = K_model / var
             ax.plot(lag_fine, K_model, color=model_color, label=model_label)

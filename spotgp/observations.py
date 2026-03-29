@@ -77,6 +77,27 @@ class TimeSeriesData:
             self.yerr = self.yerr / np.abs(median)
             self.y = self.y / median
 
+    def detrend(self, window):
+        """
+        Subtract a rolling-median trend from the flux.
+
+        A median is computed in a sliding window of width ``window``
+        (in the same units as ``x``, typically days).  The trend is
+        subtracted and the global median is added back so the baseline
+        stays near the original level.
+
+        Parameters
+        ----------
+        window : float
+            Window width for the rolling median [same units as x].
+        """
+        window = float(window)
+        trend = np.empty_like(self.y)
+        for i in range(len(self.x)):
+            mask = np.abs(self.x - self.x[i]) <= window / 2.0
+            trend[i] = np.median(self.y[mask])
+        self.y = self.y - trend + np.median(self.y)
+
     def sigma_clip(self, lower=3.0, upper=3.0):
         """
         Remove outliers beyond a sigma threshold.
