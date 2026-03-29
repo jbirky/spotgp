@@ -1287,6 +1287,13 @@ class BlackJAXSampler(MCMCSampler):
                     lambda x: x.reshape(
                         n_particles, *x.shape[3:]),
                     infos)
+                # Strip pmap sharding so the next tempering step's
+                # pmap (which creates a new mesh) won't clash.
+                flat_pos = jnp.array(
+                    np.asarray(flat_pos))
+                flat_infos = jax.tree.map(
+                    lambda x: jnp.array(np.asarray(x)),
+                    flat_infos)
                 return flat_pos, flat_infos
 
         else:
