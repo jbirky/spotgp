@@ -1124,12 +1124,198 @@ class BlackJAXSampler(MCMCSampler):
               f"({n_on_disk} samples on disk, {n_chains} chain(s), "
               f"not loaded into memory)")
 
+    @staticmethod
+    def _make_batched_vmap(fn, n_particles, batch_size, n_devices=None):
+        """Replace ``jax.vmap(fn)`` with a multi-GPU batched version.
+
+        Particles are split into chunks of ``batch_size``, distributed
+        across ``n_devices`` GPUs with ``pmap``, and each device
+        evaluates its chunk with ``vmap``.
+
+        When only one device is available (or ``n_devices=1``) it
+        falls back to ``lax.map(vmap(fn), batches)`` so that only
+        ``batch_size`` evaluations are live at once.
+
+        Parameters
+        ----------
+        fn : callable
+            Scalar function of a single particle, e.g.
+            ``loglikelihood_fn(theta) -> float``.
+        n_particles : int
+            Total number of particles.  Must be divisible by
+            ``batch_size``.
+        batch_size : int
+            Number of particles to evaluate simultaneously per
+            device.
+        n_devices : int, optional
+            Number of JAX devices to use.  Defaults to all visible
+            devices.
+
+        Returns
+        -------
+        batched_fn : callable
+            ``batched_fn(particles)`` with ``particles`` of shape
+            ``(n_particles, ...)``, returns ``(n_particles, ...)``.
+        """
+        if n_devices is None:
+            n_devices = jax.device_count()
+
+        if n_particles % batch_size != 0:
+            raise ValueError(
+                f"n_particles ({n_particles}) must be divisible by "
+                f"particle_batch_size ({batch_size}).")
+
+        n_batches = n_particles // batch_size
+
+        if n_devices > 1 and n_batches >= n_devices:
+            # Multi-GPU path: pmap across devices, scan over rounds
+            if n_batches % n_devices != 0:
+                raise ValueError(
+                    f"n_particles / particle_batch_size "
+                    f"({n_batches}) must be divisible by "
+                    f"n_devices ({n_devices}).")
+            rounds_per_device = n_batches // n_devices
+
+            def batched_fn(all_particles):
+                # (n_devices, rounds_per_device, batch_size, ...)
+                shaped = all_particles.reshape(
+                    n_devices, rounds_per_device, batch_size,
+                    *all_particles.shape[1:])
+
+                def _device_work(device_batches):
+                    # device_batches: (rounds_per_device, batch_size, ...)
+                    def _one_round(_, batch):
+                        return None, jax.vmap(fn)(batch)
+                    _, results = jax.lax.scan(
+                        _one_round, None, device_batches)
+                    return results  # (rounds_per_device, batch_size, ...)
+
+                # (n_devices, rounds_per_device, batch_size, ...)
+                out = jax.pmap(_device_work)(shaped)
+                return out.reshape(n_particles, *out.shape[3:])
+
+        else:
+            # Single-GPU path: sequential scan over batches
+            def batched_fn(all_particles):
+                shaped = all_particles.reshape(
+                    n_batches, batch_size, *all_particles.shape[1:])
+
+                def _one_round(_, batch):
+                    return None, jax.vmap(fn)(batch)
+                _, out = jax.lax.scan(_one_round, None, shaped)
+                return out.reshape(n_particles, *out.shape[2:])
+
+        return batched_fn
+
+    @staticmethod
+    def _make_batched_update(raw_nuts_kernel, nuts_init_fn,
+                             tempered_logposterior_fn,
+                             step_size, inverse_mass_matrix,
+                             num_mcmc_steps,
+                             n_particles, batch_size, n_devices=None,
+                             max_num_doublings=10):
+        """Batched MCMC rejuvenation distributed across GPUs.
+
+        Replaces ``jax.vmap(mcmc_kernel)`` in
+        ``blackjax.smc.base.update_and_take_last`` with a
+        ``pmap``/``scan``-based version so that only ``batch_size``
+        NUTS chains are live simultaneously.  Uses the raw NUTS
+        kernel directly (not the wrapped ``SamplingAlgorithm``) so
+        the tempered log-posterior can be swapped each step.
+
+        Returns ``(update_fn, n_particles)``.
+        """
+        if n_devices is None:
+            n_devices = jax.device_count()
+
+        if n_particles % batch_size != 0:
+            raise ValueError(
+                f"n_particles ({n_particles}) must be divisible by "
+                f"particle_batch_size ({batch_size}).")
+
+        n_batches = n_particles // batch_size
+
+        def _single_mcmc(rng_key, position):
+            state = nuts_init_fn(position, tempered_logposterior_fn)
+
+            def body_fn(state, rng_key):
+                new_state, info = raw_nuts_kernel(
+                    rng_key, state, tempered_logposterior_fn,
+                    step_size, inverse_mass_matrix,
+                    max_num_doublings)
+                return new_state, info
+
+            keys = jax.random.split(rng_key, num_mcmc_steps)
+            last_state, info = jax.lax.scan(body_fn, state, keys)
+            return last_state.position, info
+
+        if n_devices > 1 and n_batches >= n_devices:
+            if n_batches % n_devices != 0:
+                raise ValueError(
+                    f"n_particles / particle_batch_size "
+                    f"({n_batches}) must be divisible by "
+                    f"n_devices ({n_devices}).")
+            rounds_per_device = n_batches // n_devices
+
+            def update_fn(keys, particles):
+                k_shaped = keys.reshape(
+                    n_devices, rounds_per_device, batch_size,
+                    *keys.shape[1:])
+                p_shaped = particles.reshape(
+                    n_devices, rounds_per_device, batch_size,
+                    *particles.shape[1:])
+
+                def _device_work(dk, dp):
+                    def _one_round(_, args):
+                        bk, bp = args
+                        return None, jax.vmap(
+                            _single_mcmc)(bk, bp)
+                    _, results = jax.lax.scan(
+                        _one_round, None, (dk, dp))
+                    return results
+
+                positions, infos = jax.pmap(
+                    _device_work)(k_shaped, p_shaped)
+
+                flat_pos = positions.reshape(
+                    n_particles, *positions.shape[3:])
+                flat_infos = jax.tree.map(
+                    lambda x: x.reshape(
+                        n_particles, *x.shape[3:]),
+                    infos)
+                return flat_pos, flat_infos
+
+        else:
+            def update_fn(keys, particles):
+                k_shaped = keys.reshape(
+                    n_batches, batch_size, *keys.shape[1:])
+                p_shaped = particles.reshape(
+                    n_batches, batch_size, *particles.shape[1:])
+
+                def _one_round(_, args):
+                    bk, bp = args
+                    return None, jax.vmap(
+                        _single_mcmc)(bk, bp)
+                _, (positions, infos) = jax.lax.scan(
+                    _one_round, None, (k_shaped, p_shaped))
+
+                flat_pos = positions.reshape(
+                    n_particles, *positions.shape[2:])
+                flat_infos = jax.tree.map(
+                    lambda x: x.reshape(
+                        n_particles, *x.shape[2:]),
+                    infos)
+                return flat_pos, flat_infos
+
+        return update_fn, n_particles
+
     def run_smc(self, n_particles=500, n_mcmc_steps=10,
                 n_adapt_steps=25, target_ess=0.5, target_accept=0.6,
                 rng_key=None, step_size=None,
                 mass_matrix_method="hessian_map", theta_init=None,
                 max_tempering_steps=200, checkpoint_every=10,
-                checkpoint_file=None):
+                checkpoint_file=None, particle_batch_size=None,
+                max_num_doublings=10):
         """
         Run adaptive tempered Sequential Monte Carlo.
 
@@ -1175,6 +1361,18 @@ class BlackJAXSampler(MCMCSampler):
             checkpointing.
         checkpoint_file : str, optional
             Override the default checkpoint file path.
+        particle_batch_size : int, optional
+            Process particles in batches of this size to limit GPU
+            memory usage.  When multiple GPUs are visible the
+            batches are distributed across devices via
+            ``jax.pmap``.  ``n_particles`` must be divisible by
+            this value (and by ``batch_size * n_devices`` for
+            multi-GPU).  If None, all particles are evaluated at
+            once (original blackjax behavior).
+        max_num_doublings : int, optional
+            Maximum NUTS tree depth (default 10).  Lower values
+            (e.g. 5-6) reduce peak GPU memory per particle at the
+            cost of shorter trajectories.
 
         Returns
         -------
@@ -1189,6 +1387,7 @@ class BlackJAXSampler(MCMCSampler):
         from blackjax.adaptation.step_size import dual_averaging_adaptation
 
         gp = self.gp
+        n_devices = self._n_devices
 
         if rng_key is None:
             rng_key = jax.random.PRNGKey(42)
@@ -1242,6 +1441,7 @@ class BlackJAXSampler(MCMCSampler):
                 tempered_logdensity,
                 step_size=current_step_size,
                 inverse_mass_matrix=inv_mass_diag,
+                max_num_doublings=max_num_doublings,
             )
             state = kernel.init(position)
 
@@ -1254,26 +1454,129 @@ class BlackJAXSampler(MCMCSampler):
                     tempered_logdensity,
                     step_size=new_ss,
                     inverse_mass_matrix=inv_mass_diag,
+                    max_num_doublings=max_num_doublings,
                 )
 
             adapted_ss = float(jnp.exp(da_state.log_step_size_avg))
             return max(adapted_ss, 1e-6)
 
         # --- Build SMC kernel factory ---------------------------------
+        use_batched = particle_batch_size is not None
+
+        import blackjax.mcmc.nuts as nuts_module
+        raw_nuts_kernel = nuts_module.build_kernel()
+
         def _build_smc_kernel(ss):
-            nuts_kernel = blackjax.nuts(
-                gp.log_posterior,
-                step_size=ss,
-                inverse_mass_matrix=inv_mass_diag,
-            )
-            return blackjax.adaptive_tempered_smc.build_kernel(
-                logprior_fn=gp.log_prior_fn,
-                loglikelihood_fn=gp.log_likelihood_fn,
-                mcmc_step_fn=nuts_kernel.step,
-                mcmc_init_fn=nuts_kernel.init,
-                resampling_fn=systematic,
-                target_ess=target_ess * n_particles,
-            )
+            if not use_batched:
+                # Standard blackjax path — vmap over all particles.
+                # Use the raw kernel so SMC can swap the log-density
+                # at each tempering step.
+                return blackjax.adaptive_tempered_smc.build_kernel(
+                    logprior_fn=gp.log_prior_fn,
+                    loglikelihood_fn=gp.log_likelihood_fn,
+                    mcmc_step_fn=raw_nuts_kernel,
+                    mcmc_init_fn=nuts_module.init,
+                    resampling_fn=systematic,
+                    target_ess=target_ess,
+                )
+
+            # ----------------------------------------------------------
+            # Batched path: replace jax.vmap with pmap/scan batches
+            # so only particle_batch_size evaluations are live at once.
+            # Uses the raw NUTS kernel so the tempered log-posterior
+            # can be swapped at each tempering step.
+            # ----------------------------------------------------------
+            import blackjax.smc.ess as ess_mod
+            import blackjax.smc.solver as solver_mod
+            from blackjax.smc.tempered import TemperedSMCState
+            import blackjax.smc.base as smc_base
+            from jax.scipy.special import logsumexp
+
+            batched_ll = self._make_batched_vmap(
+                gp.log_likelihood_fn, n_particles,
+                particle_batch_size, n_devices)
+
+            def _compute_delta(state):
+                logprob = batched_ll(state.particles)
+                n = logprob.shape[0]
+                target_val = jnp.log(n * target_ess)
+                max_delta = 1 - state.tempering_param
+
+                def fun_to_solve(delta):
+                    log_w = jnp.nan_to_num(-delta * logprob)
+                    return ess_mod.log_ess(log_w) - target_val
+
+                delta = solver_mod.dichotomy(
+                    fun_to_solve, 0.0, max_delta)
+                return jnp.clip(delta, 0.0, max_delta)
+
+            def _batched_tempered_kernel(
+                    rng_key, state, num_mcmc_steps_,
+                    tempering_param, mcmc_parameters):
+                delta = tempering_param - state.tempering_param
+                cur_ss = mcmc_parameters["step_size"]
+                cur_imm = mcmc_parameters["inverse_mass_matrix"]
+
+                # Batched weight function
+                def log_weights_fn(position):
+                    return delta * gp.log_likelihood_fn(position)
+
+                batched_weight_fn = self._make_batched_vmap(
+                    log_weights_fn, n_particles,
+                    particle_batch_size, n_devices)
+
+                # Tempered log-posterior for MCMC rejuvenation
+                def tempered_logposterior_fn(position):
+                    return (gp.log_prior_fn(position)
+                            + state.tempering_param
+                            * gp.log_likelihood_fn(position))
+
+                # Build batched MCMC update using raw kernel
+                update_fn, _ = self._make_batched_update(
+                    raw_nuts_kernel,
+                    nuts_module.init,
+                    tempered_logposterior_fn,
+                    cur_ss, cur_imm,
+                    num_mcmc_steps_,
+                    n_particles,
+                    particle_batch_size,
+                    n_devices,
+                    max_num_doublings=max_num_doublings,
+                )
+
+                # --- Resample, update, reweight (mirrors smc.base.step)
+                resampling_key, updating_key = jax.random.split(
+                    rng_key, 2)
+                resampling_idx = systematic(
+                    resampling_key, state.weights, n_particles)
+                resampled = jax.tree.map(
+                    lambda x: x[resampling_idx], state.particles)
+
+                keys = jax.random.split(updating_key, n_particles)
+                new_particles, update_info = update_fn(
+                    keys, resampled)
+
+                log_w = batched_weight_fn(new_particles)
+                logsum_w = logsumexp(log_w)
+                norm_const = logsum_w - jnp.log(n_particles)
+                weights = jnp.exp(log_w - logsum_w)
+
+                new_state = TemperedSMCState(
+                    new_particles, weights,
+                    state.tempering_param + delta)
+                info = smc_base.SMCInfo(
+                    resampling_idx, norm_const, update_info)
+                return new_state, info
+
+            def kernel(rng_key, state, num_mcmc_steps,
+                       mcmc_parameters):
+                delta = _compute_delta(state)
+                tempering_param = delta + state.tempering_param
+                return _batched_tempered_kernel(
+                    rng_key, state, num_mcmc_steps,
+                    tempering_param, mcmc_parameters)
+
+            return kernel
 
         smc_state = blackjax.adaptive_tempered_smc.init(particles)
 
@@ -1306,8 +1609,18 @@ class BlackJAXSampler(MCMCSampler):
                   f"(lambda={float(smc_st.tempering_param):.6f})")
 
         # --- Run tempering loop ---------------------------------------
-        print(f"SMC: {n_particles} particles, target_ess={target_ess:.2f}, "
-              f"n_adapt={n_adapt_steps}, target_accept={target_accept:.2f}")
+        if use_batched:
+            print(f"SMC: {n_particles} particles, "
+                  f"batch_size={particle_batch_size}, "
+                  f"n_devices={n_devices}, "
+                  f"target_ess={target_ess:.2f}, "
+                  f"n_adapt={n_adapt_steps}, "
+                  f"target_accept={target_accept:.2f}")
+        else:
+            print(f"SMC: {n_particles} particles, "
+                  f"target_ess={target_ess:.2f}, "
+                  f"n_adapt={n_adapt_steps}, "
+                  f"target_accept={target_accept:.2f}")
 
         lambdas = [0.0]
         step_sizes = [step_size]
@@ -1317,12 +1630,26 @@ class BlackJAXSampler(MCMCSampler):
             run_key, step_key, adapt_key = jax.random.split(run_key, 3)
 
             smc_kernel = _build_smc_kernel(step_size)
+
+            if use_batched:
+                # Batched path handles params internally via raw kernel
+                mcmc_params = {"step_size": step_size,
+                               "inverse_mass_matrix": inv_mass_diag}
+            else:
+                # Non-batched blackjax path needs extend_params so
+                # unshared_parameters_and_step_fn sees shape[0]==1
+                # and treats them as shared across particles.
+                from blackjax.smc.base import extend_params
+                mcmc_params = extend_params(
+                    {"step_size": jnp.array(step_size),
+                     "inverse_mass_matrix": inv_mass_diag,
+                     "max_num_doublings": jnp.array(max_num_doublings)})
+
             smc_state, smc_info = smc_kernel(
                 step_key,
                 smc_state,
                 num_mcmc_steps=n_mcmc_steps,
-                mcmc_parameters={"step_size": step_size,
-                                 "inverse_mass_matrix": inv_mass_diag},
+                mcmc_parameters=mcmc_params,
             )
             lam = float(smc_state.tempering_param)
             lambdas.append(lam)
