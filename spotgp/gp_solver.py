@@ -2507,7 +2507,7 @@ class GPSolver:
     def fit_map_parallel(self, nopt=10, ncore=None, keys=None,
                           method="nelder-mead", maxiter=500, ftol=0,
                           gtol=1e-8, disp=False, return_all=False,
-                          rng=None):
+                          rng=None, theta0=None):
         """
         Run ``fit_map`` from multiple random starting points in parallel.
 
@@ -2531,6 +2531,10 @@ class GPSolver:
             If False (default), return only the best solution.
         rng : numpy.random.Generator, optional
             Random number generator for reproducibility.
+        theta0 : dict, optional
+            Initial parameter guess to include as one of the starting
+            points.  Replaces one random start so the total number of
+            trials stays ``nopt``.
 
         Returns
         -------
@@ -2554,10 +2558,18 @@ class GPSolver:
         blo = free_bounds[:, 0]
         bhi = free_bounds[:, 1]
 
-        # Generate random starting points using independent child RNGs
-        seeds = rng.integers(0, 2**31, size=nopt)
-        starts = []
-        for i in range(nopt):
+        # Generate starting points using independent child RNGs.
+        # If theta0 is provided, use it as the first start and fill the
+        # rest with random draws so the total count stays nopt.
+        if theta0 is not None:
+            starts = [{k: float(theta0[k]) for k in free_keys}]
+            n_random = max(nopt - 1, 0)
+        else:
+            starts = []
+            n_random = nopt
+
+        seeds = rng.integers(0, 2**31, size=n_random)
+        for i in range(n_random):
             child_rng = np.random.default_rng(int(seeds[i]))
             theta0_dict = {}
             u = child_rng.uniform(size=len(free_keys))

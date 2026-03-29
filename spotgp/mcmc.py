@@ -352,7 +352,7 @@ class BlackJAXSampler(MCMCSampler):
             self._checkpoint_file = None
         self._n_devices = jax.device_count()
 
-    def run_map(self, nopt=10, keys=None, checkpoint_file=None, **kwargs):
+    def run_map(self, nopt=10, keys=None, checkpoint_file=None, theta0=None, **kwargs):
         """
         Find MAP solutions via parallel multi-start optimization.
 
@@ -367,6 +367,10 @@ class BlackJAXSampler(MCMCSampler):
         keys : list of str, optional
             Parameter names to optimize. If None, uses all bounded
             parameters from GPSolver.
+        theta0 : dict, optional
+            Initial parameter guess to include as one of the
+            optimization starting points.  Replaces one random
+            start so the total number of restarts stays ``nopt``.
         checkpoint_file : str, optional
             Path to save/load MAP solutions.  If provided, also
             updates the sampler's default checkpoint path.  Defaults
@@ -404,7 +408,7 @@ class BlackJAXSampler(MCMCSampler):
 
         print(f"Finding MAP solution ({nopt} restarts, returning all)...")
         all_theta_maps, all_results = gp.fit_map_parallel(
-            nopt=nopt, keys=keys, return_all=True, **kwargs)
+            nopt=nopt, keys=keys, return_all=True, theta0=theta0, **kwargs)
         self.all_theta_maps = all_theta_maps
         self.theta_map = all_theta_maps[0]
 
