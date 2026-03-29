@@ -1048,22 +1048,30 @@ class BlackJAXSampler(MCMCSampler):
 
         if plot_corner and n_on_disk > 0:
             import corner
+            import matplotlib
             import matplotlib.pyplot as plt
-            all_samples = self.load_samples(path)
-            fig = corner.corner(
-                all_samples,
-                labels=list(self.param_keys),
-                show_titles=True,
-                title_fmt=".3f",
-            )
-            _chk = path if path.endswith(".npz") else path + ".npz"
-            corner_dir = self.save_dir if self.save_dir is not None \
-                else os.path.dirname(os.path.abspath(_chk))
-            corner_path = os.path.join(corner_dir, "corner_plot.png")
-            fig.savefig(corner_path, dpi=150, bbox_inches="tight")
-            plt.close(fig)
-            print(f"Corner plot saved to {corner_path} "
-                  f"({n_on_disk} samples)")
+            # Temporarily disable LaTeX rendering so the corner plot
+            # works even when a TeX installation is not available.
+            old_usetex = matplotlib.rcParams.get("text.usetex", False)
+            matplotlib.rcParams["text.usetex"] = False
+            try:
+                all_samples = self.load_samples(path)
+                fig = corner.corner(
+                    all_samples,
+                    labels=list(self.param_keys),
+                    show_titles=True,
+                    title_fmt=".3f",
+                )
+                _chk = path if path.endswith(".npz") else path + ".npz"
+                corner_dir = self.save_dir if self.save_dir is not None \
+                    else os.path.dirname(os.path.abspath(_chk))
+                corner_path = os.path.join(corner_dir, "corner_plot.png")
+                fig.savefig(corner_path, dpi=150, bbox_inches="tight")
+                plt.close(fig)
+                print(f"Corner plot saved to {corner_path} "
+                      f"({n_on_disk} samples)")
+            finally:
+                matplotlib.rcParams["text.usetex"] = old_usetex
 
     def load_checkpoint(self, checkpoint_file=None):
         """
