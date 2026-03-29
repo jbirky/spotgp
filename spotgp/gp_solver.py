@@ -2565,25 +2565,27 @@ class GPSolver:
                 theta0_dict[k] = float(blo[j] + u[j] * (bhi[j] - blo[j]))
             starts.append(theta0_dict)
 
-        # Worker function (must be top-level-picklable for ProcessPool,
-        # so we use ThreadPool which shares memory with JAX)
-        def _run_one(theta0_dict):
-            return self.fit_map(theta0=theta0_dict, keys=keys,
-                                 method=method, maxiter=maxiter,
-                                 ftol=ftol, gtol=gtol, disp=disp,
-                                 _save=False)
+        # Distribute work across available JAX devices (GPUs/TPUs)
+        devices = jax.devices()
+        n_devices = len(devices)
 
-        # Run the first trial sequentially to warm up JAX/CUDA kernels
-        # before launching threads.  This avoids simultaneous JIT
-        # compilations on the GPU which cause CUDA timer warnings.
-        results = [_run_one(starts[0])]
+        def _run_one(device_idx, theta0_dict):
+            with jax.default_device(devices[device_idx % n_devices]):
+                return self.fit_map(theta0=theta0_dict, keys=keys,
+                                     method=method, maxiter=maxiter,
+                                     ftol=ftol, gtol=gtol, disp=disp,
+                                     _save=False)
 
-        # Run remaining trials in parallel using threads (JAX releases
-        # the GIL during compiled computation, so threads give real
-        # parallelism here without pickling issues)
+        # Run the first trial sequentially to warm up JIT on device 0
+        results = [_run_one(0, starts[0])]
+
+        # Run remaining trials in parallel using threads, distributed
+        # across devices.  JAX releases the GIL during compiled
+        # computation, so threads give real parallelism.
         if len(starts) > 1:
             with ThreadPoolExecutor(max_workers=ncore) as pool:
-                futures = [pool.submit(_run_one, s) for s in starts[1:]]
+                futures = [pool.submit(_run_one, i + 1, s)
+                           for i, s in enumerate(starts[1:])]
                 results.extend(f.result() for f in futures)
 
         # Sort by objective value (lower is better for neg_log_posterior)
