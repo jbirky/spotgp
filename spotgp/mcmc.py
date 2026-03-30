@@ -1204,7 +1204,10 @@ class BlackJAXSampler(MCMCSampler):
 
                 # (n_devices, rounds_per_device, batch_size, ...)
                 out = jax.pmap(_device_work)(shaped)
-                return out.reshape(n_particles, *out.shape[3:])
+                flat = out.reshape(n_particles, *out.shape[3:])
+                # Strip pmap sharding so the next tempering step's
+                # pmap (which creates a new mesh) won't clash.
+                return jnp.array(np.asarray(flat))
 
         else:
             # Single-GPU path: sequential scan over batches
