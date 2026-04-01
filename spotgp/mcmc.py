@@ -1439,13 +1439,60 @@ class BlackJAXSampler(MCMCSampler):
             step_size = float(0.5 * jnp.min(jnp.sqrt(inv_mass_diag)))
             step_size = max(step_size, 1e-5)
 
-        # --- Draw initial particles from the prior --------------------
+        # --- Draw initial particles ------------------------------------
         init_key, run_key = jax.random.split(rng_key)
         bounds = gp.bounds
         lo, hi = bounds[:, 0], bounds[:, 1]
-        particles = (jax.random.uniform(init_key,
-                                         shape=(n_particles, gp.n_params))
-                     * (hi - lo) + lo)
+
+        # Use Laplace approximation around MAP solutions when available,
+        # otherwise fall back to uniform prior draws.
+        if (hasattr(self, 'all_theta_maps')
+                and self.all_theta_maps is not None
+                and len(self.all_theta_maps) > 0):
+            # Convert MAP solutions to arrays
+            map_arrays = []
+            for tm in self.all_theta_maps:
+                if isinstance(tm, dict):
+                    arr = jnp.array([float(tm[k]) for k in gp.param_keys],
+                                    dtype=jnp.float64)
+                else:
+                    arr = jnp.asarray(tm, dtype=jnp.float64)
+                map_arrays.append(arr)
+
+            # Full Hessian covariance (already computed for mass matrix)
+            if mass_matrix_method is not None:
+                cov = np.asarray(inv_mass)  # (n_params, n_params)
+            else:
+                cov = np.diag(np.asarray(inv_mass_diag))
+            # Inflate covariance to broaden the Laplace approximation
+            cov_inflated = 4.0 * cov
+            try:
+                L_cov = np.linalg.cholesky(cov_inflated)
+            except np.linalg.LinAlgError:
+                # Fall back to diagonal if Cholesky fails
+                L_cov = np.diag(np.sqrt(np.abs(np.diag(cov_inflated))))
+
+            n_maps = len(map_arrays)
+            # Distribute particles evenly across MAP solutions
+            particles_per_map = n_particles // n_maps
+            remainder = n_particles % n_maps
+            all_particles = []
+            for i, mu in enumerate(map_arrays):
+                n_i = particles_per_map + (1 if i < remainder else 0)
+                init_key, draw_key = jax.random.split(init_key)
+                z = jax.random.normal(draw_key, shape=(n_i, gp.n_params))
+                pts = jnp.asarray(mu) + z @ jnp.asarray(L_cov.T)
+                all_particles.append(pts)
+            particles = jnp.concatenate(all_particles, axis=0)
+            # Clip to prior bounds
+            particles = jnp.clip(particles, lo, hi)
+            print(f"Initialized {n_particles} particles from Laplace "
+                  f"approximation around {n_maps} MAP solution(s)")
+        else:
+            particles = (jax.random.uniform(init_key,
+                                             shape=(n_particles, gp.n_params))
+                         * (hi - lo) + lo)
+            print(f"Initialized {n_particles} particles from uniform prior")
 
         # --- Helper: adapt step size via dual averaging ---------------
         def _adapt_step_size(adapt_key, position, current_step_size,
@@ -1547,10 +1594,15 @@ class BlackJAXSampler(MCMCSampler):
                     log_weights_fn, n_particles,
                     particle_batch_size, n_devices)
 
-                # Tempered log-posterior for MCMC rejuvenation
+                # Tempered log-posterior for MCMC rejuvenation.
+                # Use the NEW temperature so particles are moved toward
+                # the correct target, and to avoid 0 * log_likelihood
+                # at lambda=0 (which produces NaN gradients when the GP
+                # covariance is ill-conditioned).
+                _new_tp = tempering_param
                 def tempered_logposterior_fn(position):
                     return (gp.log_prior_fn(position)
-                            + state.tempering_param
+                            + _new_tp
                             * gp.log_likelihood_fn(position))
 
                 # Build batched MCMC update using raw kernel
@@ -1610,8 +1662,7 @@ class BlackJAXSampler(MCMCSampler):
                                  inv_mass_diag_):
             if chk_path is None:
                 return
-            np.savez(
-                chk_path,
+            save_kwargs = dict(
                 particles=np.asarray(smc_st.particles),
                 weights=np.asarray(smc_st.weights),
                 tempering_param=float(smc_st.tempering_param),
@@ -1627,6 +1678,16 @@ class BlackJAXSampler(MCMCSampler):
                 # Include samples key for compatibility with load_samples
                 samples=np.asarray(smc_st.particles),
             )
+            # Preserve MAP solutions if they exist on disk
+            _chk = chk_path if chk_path.endswith(".npz") else chk_path + ".npz"
+            if os.path.exists(_chk):
+                existing = np.load(_chk, allow_pickle=True)
+                if "all_theta_maps" in existing:
+                    save_kwargs["all_theta_maps"] = existing["all_theta_maps"]
+                if "theta_map" in existing:
+                    save_kwargs["theta_map"] = existing["theta_map"]
+                existing.close()
+            np.savez(chk_path, **save_kwargs)
             print(f"  Checkpoint saved to {chk_path} "
                   f"(lambda={float(smc_st.tempering_param):.6f})")
 
@@ -1675,7 +1736,12 @@ class BlackJAXSampler(MCMCSampler):
             )
             lam = float(smc_state.tempering_param)
             lambdas.append(lam)
-            log_evidence += float(smc_info.log_likelihood_increment)
+            ll_inc = float(smc_info.log_likelihood_increment)
+            if np.isfinite(ll_inc):
+                log_evidence += ll_inc
+            else:
+                print(f"  Warning: non-finite log_likelihood_increment "
+                      f"({ll_inc}) at step {step + 1}, skipping")
 
             print(f"  Step {step + 1}: lambda={lam:.6f}, "
                   f"step_size={step_size:.6f}, log_Z={log_evidence:.2f}")
