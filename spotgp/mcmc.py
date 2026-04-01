@@ -282,6 +282,148 @@ class MCMCSampler:
 
         return fig, axes
 
+    def plot_corner_map(self, samples=None, checkpoint_path=None,
+                        cmap="viridis", marker_size=40, savefig=None,
+                        true_params=None, **corner_kwargs):
+        """
+        Corner plot of MCMC samples with MAP solutions overlaid as
+        scatter points colored by their log-likelihood.
+
+        Parameters
+        ----------
+        samples : array_like, optional
+            Shape ``(n_samples, n_params)``.  If None, loads from the
+            checkpoint file.
+        checkpoint_path : str, optional
+            Path to checkpoint ``.npz`` file containing MAP solutions.
+            If None, uses the default checkpoint file.
+        cmap : str
+            Colormap for the MAP scatter points (default "viridis").
+        marker_size : float
+            Marker size for scatter points (default 40).
+        savefig : str, optional
+            If provided, save figure to this path.
+        true_params : dict or array_like, optional
+            True parameter values to mark with crosshairs.
+        **corner_kwargs
+            Extra keyword arguments forwarded to ``corner.corner``.
+
+        Returns
+        -------
+        fig, axes : matplotlib Figure and 2D array of Axes.
+        """
+        import corner
+        import matplotlib
+        import matplotlib.pyplot as plt
+        from matplotlib.colors import Normalize
+
+        gp = self.gp
+        keys = list(self.param_keys)
+        n = len(keys)
+
+        # Load samples
+        if samples is None:
+            path = checkpoint_path or self._checkpoint_file
+            if path is None:
+                raise ValueError("No samples provided and no checkpoint file set.")
+            samples = self.load_samples(path)
+        samples = np.asarray(samples)
+
+        # Flatten multi-chain samples: (n_chains, n_samples, n_params) -> (N, n_params)
+        if samples.ndim == 3:
+            samples = samples.reshape(-1, samples.shape[-1])
+
+        # Load MAP solutions and log-likelihoods
+        path = checkpoint_path or self._checkpoint_file
+        if path is not None:
+            _path = path if path.endswith(".npz") else path + ".npz"
+            data = np.load(_path, allow_pickle=True)
+            all_theta_maps = list(data["all_theta_maps"]) if "all_theta_maps" in data else None
+            map_loglikes = np.asarray(data["map_loglikes"]) if "map_loglikes" in data else None
+            data.close()
+        else:
+            all_theta_maps = getattr(self, 'all_theta_maps', None)
+            map_loglikes = getattr(self, 'map_loglikes', None)
+
+        if all_theta_maps is None:
+            raise ValueError("No MAP solutions found. Run find_map / run_map first.")
+
+        # Convert MAP dicts to arrays
+        map_arrays = []
+        for tm in all_theta_maps:
+            if isinstance(tm, dict):
+                arr = np.array([float(tm[k]) for k in keys])
+            else:
+                arr = np.asarray(tm, dtype=np.float64)
+            map_arrays.append(arr)
+        map_arr = np.array(map_arrays)  # (n_maps, n_params)
+
+        # Compute log-likelihoods if not available
+        if map_loglikes is None:
+            map_loglikes = np.array([
+                float(gp.log_likelihood_fn(m)) for m in map_arr])
+
+        # Parse true_params
+        if true_params is not None:
+            if isinstance(true_params, dict):
+                true_arr = [true_params.get(k, np.nan) for k in keys]
+            else:
+                true_arr = list(np.asarray(true_params, dtype=np.float64))
+        else:
+            true_arr = None
+
+        # Build corner plot
+        old_usetex = matplotlib.rcParams.get("text.usetex", False)
+        matplotlib.rcParams["text.usetex"] = False
+        try:
+            corner_defaults = dict(
+                labels=keys,
+                show_titles=True,
+                title_fmt=".3f",
+                plot_density=True,
+                plot_contours=True,
+                hist_kwargs={"density": True},
+            )
+            if true_arr is not None:
+                corner_defaults["truths"] = true_arr
+            corner_defaults.update(corner_kwargs)
+            fig = corner.corner(samples, **corner_defaults)
+            axes = np.array(fig.axes).reshape(n, n)
+
+            # Color normalization for log-likelihoods
+            norm = Normalize(vmin=map_loglikes.min(), vmax=map_loglikes.max())
+            cm = plt.get_cmap(cmap)
+
+            # Overlay MAP scatter on off-diagonal panels
+            for i in range(n):
+                for j in range(i):
+                    ax = axes[i, j]
+                    sc = ax.scatter(map_arr[:, j], map_arr[:, i],
+                                    c=map_loglikes, cmap=cmap, norm=norm,
+                                    s=marker_size, edgecolors="k",
+                                    linewidths=0.5, zorder=10)
+
+            # Overlay MAP values on diagonal histograms
+            for i in range(n):
+                ax = axes[i, i]
+                colors = cm(norm(map_loglikes))
+                for k, (val, c) in enumerate(zip(map_arr[:, i], colors)):
+                    ax.axvline(val, color=c, lw=1.2, alpha=0.7, zorder=10)
+
+            # Add colorbar
+            cbar_ax = fig.add_axes([1.02, 0.15, 0.02, 0.7])
+            cbar = fig.colorbar(
+                plt.cm.ScalarMappable(norm=norm, cmap=cmap),
+                cax=cbar_ax, label="log-likelihood")
+
+            if savefig is not None:
+                fig.savefig(savefig, dpi=150, bbox_inches="tight")
+                print(f"Corner + MAP plot saved to {savefig}")
+        finally:
+            matplotlib.rcParams["text.usetex"] = old_usetex
+
+        return fig, axes
+
     def to_dict(self, samples=None):
         """
         Convert samples array to a dict keyed by parameter name.
@@ -412,6 +554,17 @@ class BlackJAXSampler(MCMCSampler):
         self.all_theta_maps = all_theta_maps
         self.theta_map = all_theta_maps[0]
 
+        # Compute log-likelihood for each MAP solution
+        map_loglikes = []
+        for tm in all_theta_maps:
+            if isinstance(tm, dict):
+                arr = np.array([float(tm[k]) for k in gp.param_keys],
+                               dtype=np.float64)
+            else:
+                arr = np.asarray(tm, dtype=np.float64)
+            map_loglikes.append(float(gp.log_likelihood_fn(arr)))
+        self.map_loglikes = np.array(map_loglikes)
+
         print(f"MAP solution: {self.theta_map}")
 
         # Save to checkpoint file
@@ -426,6 +579,7 @@ class BlackJAXSampler(MCMCSampler):
                 existing.close()
             save_kwargs["theta_map"] = self.theta_map
             save_kwargs["all_theta_maps"] = all_theta_maps
+            save_kwargs["map_loglikes"] = self.map_loglikes
             np.savez(path, **save_kwargs)
             print(f"MAP solutions saved to {path}")
         self._map_completed = True
@@ -1032,6 +1186,25 @@ class BlackJAXSampler(MCMCSampler):
             save_kwargs["samples"] = np.array([])
             n_on_disk = 0
 
+        # Preserve MAP solutions and their log-likelihoods
+        if (hasattr(self, 'all_theta_maps')
+                and self.all_theta_maps is not None
+                and len(self.all_theta_maps) > 0):
+            save_kwargs['theta_map'] = self.theta_map
+            save_kwargs['all_theta_maps'] = np.array(
+                self.all_theta_maps, dtype=object)
+            # Compute log-likelihood for each MAP solution
+            gp = self.gp
+            map_loglikes = []
+            for tm in self.all_theta_maps:
+                if isinstance(tm, dict):
+                    arr = np.array([float(tm[k]) for k in gp.param_keys],
+                                  dtype=np.float64)
+                else:
+                    arr = np.asarray(tm, dtype=np.float64)
+                map_loglikes.append(float(gp.log_likelihood_fn(arr)))
+            save_kwargs['map_loglikes'] = np.array(map_loglikes)
+
         np.savez(path, **save_kwargs)
 
         if append_samples:
@@ -1050,28 +1223,34 @@ class BlackJAXSampler(MCMCSampler):
             import corner
             import matplotlib
             import matplotlib.pyplot as plt
-            # Temporarily disable LaTeX rendering so the corner plot
-            # works even when a TeX installation is not available.
-            old_usetex = matplotlib.rcParams.get("text.usetex", False)
-            matplotlib.rcParams["text.usetex"] = False
-            try:
-                all_samples = self.load_samples(path)
-                fig = corner.corner(
-                    all_samples,
-                    labels=list(self.param_keys),
-                    show_titles=True,
-                    title_fmt=".3f",
-                )
-                _chk = path if path.endswith(".npz") else path + ".npz"
-                corner_dir = self.save_dir if self.save_dir is not None \
-                    else os.path.dirname(os.path.abspath(_chk))
-                corner_path = os.path.join(corner_dir, "corner_plot.png")
-                fig.savefig(corner_path, dpi=150, bbox_inches="tight")
-                plt.close(fig)
-                print(f"Corner plot saved to {corner_path} "
-                      f"({n_on_disk} samples)")
-            finally:
-                matplotlib.rcParams["text.usetex"] = old_usetex
+            _chk = path if path.endswith(".npz") else path + ".npz"
+            corner_dir = self.save_dir if self.save_dir is not None \
+                else os.path.dirname(os.path.abspath(_chk))
+            corner_path = os.path.join(corner_dir, "corner_plot.png")
+            all_samples = self.load_samples(path)
+            has_maps = (hasattr(self, 'all_theta_maps')
+                        and self.all_theta_maps is not None
+                        and len(self.all_theta_maps) > 0)
+            if has_maps:
+                fig, _ = self.plot_corner_map(
+                    samples=all_samples, checkpoint_path=path,
+                    savefig=corner_path)
+            else:
+                old_usetex = matplotlib.rcParams.get("text.usetex", False)
+                matplotlib.rcParams["text.usetex"] = False
+                try:
+                    fig = corner.corner(
+                        all_samples,
+                        labels=list(self.param_keys),
+                        show_titles=True,
+                        title_fmt=".3f",
+                    )
+                    fig.savefig(corner_path, dpi=150, bbox_inches="tight")
+                finally:
+                    matplotlib.rcParams["text.usetex"] = old_usetex
+            plt.close(fig)
+            print(f"Corner plot saved to {corner_path} "
+                  f"({n_on_disk} samples)")
 
     def load_checkpoint(self, checkpoint_file=None):
         """
@@ -1120,6 +1299,18 @@ class BlackJAXSampler(MCMCSampler):
 
         n_on_disk = data["samples"].shape[0] if data["samples"].size > 0 else 0
         n_warmup = int(data["n_warmup"])
+
+        # Restore MAP solutions if present
+        if "all_theta_maps" in data:
+            self.all_theta_maps = list(data["all_theta_maps"])
+            self.theta_map = (data["theta_map"].item()
+                              if data["theta_map"].ndim == 0
+                              else data["theta_map"])
+            if "map_loglikes" in data:
+                self.map_loglikes = np.asarray(data["map_loglikes"])
+            print(f"Restored {len(self.all_theta_maps)} MAP solutions "
+                  f"from checkpoint")
+
         data.close()
 
         # Don't load samples into memory — keep it lightweight
@@ -1686,6 +1877,8 @@ class BlackJAXSampler(MCMCSampler):
                     save_kwargs["all_theta_maps"] = existing["all_theta_maps"]
                 if "theta_map" in existing:
                     save_kwargs["theta_map"] = existing["theta_map"]
+                if "map_loglikes" in existing:
+                    save_kwargs["map_loglikes"] = existing["map_loglikes"]
                 existing.close()
             np.savez(chk_path, **save_kwargs)
             print(f"  Checkpoint saved to {chk_path} "
