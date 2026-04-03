@@ -68,7 +68,8 @@ tutorials/custom_envelope_gaussian
 tutorials/custom_visibility_function
 tutorials/custom_latitude_distribution
 tutorials/custom_spot_distributions
-tutorials/mcmc_sampling
+tutorials/blackjax_sampling
+tutorials/dynesty_sampling
 tutorials/cramer_rao_bound
 ```
 
