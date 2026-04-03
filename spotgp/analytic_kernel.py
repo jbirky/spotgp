@@ -30,7 +30,8 @@ except ImportError:
         _cn_squared_coefficients_jax, _gauss_legendre_grid,
     )
 
-__all__ = ["AnalyticKernel", "compute_R_Gamma_numerical"]
+__all__ = ["AnalyticKernel", "NonstationaryAnalyticKernel",
+           "compute_R_Gamma_numerical"]
 
 
 class AnalyticKernel:
@@ -156,36 +157,18 @@ class AnalyticKernel:
             cn_sq[1:] * jnp.cos(ns * w0 * lag[:, None]), axis=1)
         return R * (cn_sq[0] + 2 * cosine_terms)
 
-    # ── Full kernel (latitude-averaged) ────────────────────────────────────
+    # ── Stationary kernel (without sigma_k² scaling) ─────────────────────
 
-    def kernel(self, lag, lat_dist=None):
+    def _kernel_stationary(self, lag, lat_dist=None):
         """
-        Full GP kernel averaged over latitude.
+        Stationary kernel *without* the σ_k² prefactor.
 
-        Uses jax.lax.scan for memory-efficient accumulation: only one
-        lag-sized buffer is live at a time — O(M) instead of O(n_lat·M).
-
-        When the visibility function is an EdgeOnVisibilityFunction, the
-        latitude-averaged ``|c_n|^2`` are known constants and the latitude
-        loop is bypassed entirely.
-
-        Parameters
-        ----------
-        lag : array_like
-            Time lags [days]. Can be 1D or 2D.
-        lat_dist : callable or None
-            Latitude probability density. If None, uniform.
-
-        Returns
-        -------
-        K : ndarray, same shape as lag input.
+        Returns R_Γ(τ) · Σ_n w_n |c_n|² cos(n·ω₀·τ), averaged over latitude.
         """
         lag = jnp.asarray(lag, dtype=float)
         orig_shape = lag.shape
         lag_flat = lag.ravel()
 
-        # Fast path: EdgeOnVisibilityFunction has closed-form latitude-
-        # averaged |c_n|^2, so no quadrature loop is needed.
         if isinstance(self.visibility, EdgeOnVisibilityFunction):
             R = self.R_Gamma(lag_flat)
             cn_sq = self.visibility.cn_squared(0.0, self.n_harmonics)
@@ -193,8 +176,8 @@ class AnalyticKernel:
             ns = jnp.arange(1, self.n_harmonics + 1)
             cosine_terms = jnp.sum(
                 cn_sq[1:] * jnp.cos(ns * w0 * lag_flat[:, None]), axis=1)
-            K = self.sigma_k ** 2 * R * (cn_sq[0] + 2 * cosine_terms)
-            return np.asarray(K.reshape(orig_shape))
+            K = R * (cn_sq[0] + 2 * cosine_terms)
+            return K.reshape(orig_shape)
 
         if lat_dist is None:
             lat_dist = self.spot_model.latitude_distribution
@@ -231,10 +214,36 @@ class AnalyticKernel:
 
         K, _ = jax.lax.scan(
             _scan_body, jnp.zeros_like(lag_flat), jnp.arange(len(phi_grid)))
-        K = K / norm
-        K = R * K * self.sigma_k ** 2
+        K = R * K / norm
 
-        return np.asarray(K.reshape(orig_shape))
+        return K.reshape(orig_shape)
+
+    # ── Full kernel (latitude-averaged) ────────────────────────────────────
+
+    def kernel(self, lag, lat_dist=None):
+        """
+        Full GP kernel averaged over latitude.
+
+        Uses jax.lax.scan for memory-efficient accumulation: only one
+        lag-sized buffer is live at a time — O(M) instead of O(n_lat·M).
+
+        When the visibility function is an EdgeOnVisibilityFunction, the
+        latitude-averaged ``|c_n|^2`` are known constants and the latitude
+        loop is bypassed entirely.
+
+        Parameters
+        ----------
+        lag : array_like
+            Time lags [days]. Can be 1D or 2D.
+        lat_dist : callable or None
+            Latitude probability density. If None, uniform.
+
+        Returns
+        -------
+        K : ndarray, same shape as lag input.
+        """
+        K = self._kernel_stationary(lag, lat_dist=lat_dist)
+        return np.asarray(self.sigma_k ** 2 * K)
 
     def kernel_solid_body(self, lag, lat_dist=None):
         """Kernel for solid-body rotation (kappa=0)."""
@@ -402,3 +411,76 @@ class AnalyticKernel:
     def __call__(self, lag, **kwargs):
         """Evaluate the kernel at the given lags."""
         return self.kernel(lag, **kwargs)
+
+
+class NonstationaryAnalyticKernel(AnalyticKernel):
+    """
+    Non-stationary extension of AnalyticKernel with time-dependent σ_k.
+
+    The covariance between times t1 and t2 is:
+
+        K(t1, t2) = σ_k(t1) · σ_k(t2) · K_stationary(|t1 - t2|)
+
+    where K_stationary is the latitude-averaged kernel without the σ_k²
+    prefactor.  This factorization guarantees positive semi-definiteness
+    for any non-negative σ_k(t).
+
+    Parameters
+    ----------
+    model_or_hparam : SpotEvolutionModel or dict
+        Same as AnalyticKernel.
+    sigma_k_func : callable
+        Function mapping time (scalar or array) to σ_k values.
+        Signature: ``sigma_k_func(t) -> array_like``.
+    **kwargs
+        Forwarded to AnalyticKernel (n_harmonics, n_lat, etc.).
+
+    Examples
+    --------
+    >>> def activity_cycle(t, sigma0=0.01, amp=0.5, period=365.0):
+    ...     return sigma0 * (1 + amp * jnp.sin(2 * jnp.pi * t / period))
+    >>> nsk = NonstationaryAnalyticKernel(model, sigma_k_func=activity_cycle)
+    >>> K = nsk.kernel_matrix(t_obs)
+    """
+
+    def __init__(self, model_or_hparam, sigma_k_func, **kwargs):
+        super().__init__(model_or_hparam, **kwargs)
+        self.sigma_k_func = sigma_k_func
+
+    def kernel_matrix(self, t, lat_dist=None):
+        """
+        Build the full N×N covariance matrix for observation times.
+
+        Parameters
+        ----------
+        t : array_like, shape (N,)
+            Observation times [days].
+        lat_dist : callable or None
+            Latitude probability density (forwarded to parent).
+
+        Returns
+        -------
+        K : ndarray, shape (N, N)
+        """
+        t = jnp.asarray(t, dtype=float).ravel()
+        lag = jnp.abs(t[:, None] - t[None, :])
+
+        K_stat = self._kernel_stationary(lag, lat_dist=lat_dist)
+
+        sk = jnp.asarray(self.sigma_k_func(t))
+        K = sk[:, None] * sk[None, :] * K_stat
+
+        return np.asarray(K)
+
+    def kernel(self, lag, lat_dist=None):
+        """
+        Stationary kernel using the constant ``self.sigma_k``.
+
+        Provided for backward compatibility — use ``kernel_matrix(t)``
+        for the non-stationary covariance.
+        """
+        return super().kernel(lag, lat_dist=lat_dist)
+
+    def __call__(self, t, **kwargs):
+        """Evaluate the non-stationary kernel matrix at observation times."""
+        return self.kernel_matrix(t, **kwargs)

@@ -2394,6 +2394,7 @@ class GPSolver:
             return self.fit_map_parallel(
                 nopt=nopt, ncore=ncore, keys=keys, method=method,
                 maxiter=maxiter, ftol=ftol, gtol=gtol, disp=disp, rng=rng,
+                theta0=theta0,
             )
         from scipy.optimize import minimize
 
@@ -2507,7 +2508,7 @@ class GPSolver:
     def fit_map_parallel(self, nopt=10, ncore=None, keys=None,
                           method="nelder-mead", maxiter=500, ftol=0,
                           gtol=1e-8, disp=False, return_all=False,
-                          rng=None, theta0=None):
+                          rng=None, theta0=None, jitter=0.01):
         """
         Run ``fit_map`` from multiple random starting points in parallel.
 
@@ -2562,7 +2563,20 @@ class GPSolver:
         # If theta0 is provided, use it as the first start and fill the
         # rest with random draws so the total count stays nopt.
         if theta0 is not None:
-            starts = [{k: float(theta0[k]) for k in free_keys}]
+            # For keys in theta0, use the provided value; for the rest,
+            # draw a random starting point within bounds.
+            child_rng0 = np.random.default_rng(int(rng.integers(0, 2**31)))
+            u0 = child_rng0.uniform(size=len(free_keys))
+            first_start = {}
+            for j, k in enumerate(free_keys):
+                if k in theta0:
+                    # Add small jitter (1% of bound range) to theta0 values
+                    span = bhi[j] - blo[j]
+                    jitter_val = child_rng0.uniform(-jitter, jitter) * span
+                    first_start[k] = float(np.clip(theta0[k] + jitter_val, blo[j], bhi[j]))
+                else:
+                    first_start[k] = float(blo[j] + u0[j] * (bhi[j] - blo[j]))
+            starts = [first_start]
             n_random = max(nopt - 1, 0)
         else:
             starts = []
