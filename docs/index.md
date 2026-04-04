@@ -49,6 +49,7 @@ This project is build and maintained by [Jess Birky](https://github.com/jbirky)-
 :caption: Basics
 
 self
+tutorials/quickstart
 tutorials/time_domain
 tutorials/fourier_domain
 overview
