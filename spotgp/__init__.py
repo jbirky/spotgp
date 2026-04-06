@@ -12,3 +12,4 @@ from .mcmc import *
 from .observations import *
 from .plotting import *
 from .sensitivity import *
+from .transit import *
