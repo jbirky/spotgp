@@ -7,7 +7,14 @@ jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_platforms", "cuda")
 _ = jax.devices("cuda")
 
+# Force XLA CUDA timer calibration before any real computation.
+# Without this the first real kernel launch triggers the calibration and
+# produces a "Delay kernel timed out" warning from cuda_timer.cc.
+jax.block_until_ready(jax.jit(lambda x: x + 1)(jnp.zeros(1, dtype=jnp.float64)))
+
 import sys
+import time
+import argparse
 import corner
 import numpy as np
 import matplotlib.pyplot as plt
@@ -15,31 +22,48 @@ import matplotlib.pyplot as plt
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(SCRIPT_DIR, ".."))
 
-from src_jax import (
+from src import (
     TrapezoidSymmetricEnvelope,
     VisibilityFunction,
     SpotEvolutionModel,
     LightcurveModel,
     GPSolver,
 )
-from src_jax.mcmc import BlackJAXSampler
+from src.mcmc import BlackJAXSampler
 
+# ===================================================================
+# CLI
+# ===================================================================
+
+parser = argparse.ArgumentParser(description="Run BlackJAX NUTS sampler for spotgp.")
+parser.add_argument("--tsim",   type=float, default=200,  help="Simulation time in days (default: 200)")
+parser.add_argument("--tsamp",  type=float, default=0.5,  help="Sampling cadence in days (default: 0.5)")
+parser.add_argument("--peq",    type=float, default=3.0,  help="Equatorial rotation period in days (default: 3.0)")
+parser.add_argument("--nchain", type=int,   default=3,    help="Number of MCMC chains (default: 3)")
+parser.add_argument("--resume", action="store_true",      help="Skip lightcurve generation and MAP fit; resume MCMC from checkpoint")
+parser.add_argument("--nbatches", type=int, default=10, help="Number of MCMC batches to run (default: 10)")
+parser.add_argument("--batchsize", type=int, default=200, help="Number of MCMC samples per batch (default: 200)")
+args = parser.parse_args()
+
+tsim  = args.tsim
+tsamp = args.tsamp
+peq   = args.peq
+
+tstart = time.time()
 np.random.seed(64)
-
-results_dir = os.path.join(SCRIPT_DIR, "results", "trial20")
-os.makedirs(results_dir, exist_ok=True)
 
 # ===================================================================
 # Build the spot evolution model
 # ===================================================================
 
-tsim          = 200
-tsamp         = 0.5
 nspot_per_day = 0.25
 nspot         = int(tsim * nspot_per_day)
 
-envelope = TrapezoidSymmetricEnvelope(lspot=12.0, tau_spot=6.0)
-visibility = VisibilityFunction(peq=3.0, kappa=0.3, inc=np.pi / 3)
+results_dir = os.path.join(SCRIPT_DIR, "results", f"trial_{str(peq).replace('.', 'p')}peq_{tsim}tsim_{str(tsamp).replace('.', 'p')}tsamp_{nspot}nspot")
+os.makedirs(results_dir, exist_ok=True)
+
+envelope   = TrapezoidSymmetricEnvelope(lspot=12.0, tau_spot=6.0)
+visibility = VisibilityFunction(peq=peq, kappa=0.3, inc=np.pi / 3)
 model = SpotEvolutionModel(
     envelope=envelope,
     visibility=visibility,
@@ -52,30 +76,40 @@ print("param_keys:", model.param_keys)
 print(model)
 
 # ===================================================================
-# Generate synthetic lightcurve data
+# Generate synthetic lightcurve data  (skipped on --resume)
 # ===================================================================
 
-lc = LightcurveModel.from_spot_model(
-    spot_model=model,
-    nspot=nspot,
-    tsim=tsim,
-    tsamp=tsamp,
-    long=[0, 2 * np.pi],
-)
+data_file = os.path.join(results_dir, "data.npz")
 
-tobs     = lc.t
-flux     = lc.flux
-flux_err = np.abs(np.random.normal(0, 0.2 * np.std(lc.flux), lc.flux.shape))
+if not args.resume:
+    lc = LightcurveModel.from_spot_model(
+        spot_model=model,
+        nspot=nspot,
+        tsim=tsim,
+        tsamp=tsamp,
+        long=[0, 2 * np.pi],
+    )
 
-print(f"Generated synthetic lightcurve with {len(tobs)} observations.")
+    tobs     = lc.t
+    flux     = lc.flux
+    flux_err = np.abs(np.random.normal(0, 0.2 * np.std(lc.flux), lc.flux.shape))
 
-plt.figure(figsize=[12, 5])
-plt.errorbar(tobs, flux * 100 - 100, yerr=flux_err * 100, fmt=".k", capsize=0)
-plt.plot(tobs, lc.flux * 100 - 100, "r-")
-plt.xlabel("Time [days]", fontsize=22)
-plt.ylabel(r"$\Delta$Flux [\%]", fontsize=22)
-plt.savefig(os.path.join(results_dir, "synthetic_lightcurve.png"), dpi=300)
-plt.close()
+    np.savez(data_file, tobs=tobs, flux=flux, flux_err=flux_err)
+    print(f"Generated synthetic lightcurve with {len(tobs)} observations.")
+
+    plt.figure(figsize=[12, 5])
+    plt.errorbar(tobs, flux * 100 - 100, yerr=flux_err * 100, fmt=".k", capsize=0)
+    plt.plot(tobs, lc.flux * 100 - 100, "r-")
+    plt.xlabel("Time [days]", fontsize=22)
+    plt.ylabel(r"$\Delta$Flux [\%]", fontsize=22)
+    plt.savefig(os.path.join(results_dir, "synthetic_lightcurve.png"), dpi=300)
+    plt.close()
+else:
+    data = np.load(data_file)
+    tobs     = data["tobs"]
+    flux     = data["flux"]
+    flux_err = data["flux_err"]
+    print(f"Loaded lightcurve with {len(tobs)} observations from {data_file}.")
 
 # ===================================================================
 # Define prior bounds
@@ -90,8 +124,8 @@ bounds = {
     "log_sigma_k": (-5.0, -1.0),   # sample sigma_k in log10 space
 }
 
-_bounds_arr   = jnp.array(list(bounds.values()), dtype=jnp.float64)
-_lsk_idx      = list(bounds.keys()).index("log_sigma_k")
+_bounds_arr      = jnp.array(list(bounds.values()), dtype=jnp.float64)
+_lsk_idx         = list(bounds.keys()).index("log_sigma_k")
 _lsk_lo, _lsk_hi = _bounds_arr[_lsk_idx, 0], _bounds_arr[_lsk_idx, 1]
 
 def log_prior(theta_arr):
@@ -120,71 +154,44 @@ theta_true = gp.get_theta()
 print(f"\nTrue parameters: {theta_true}")
 
 # ===================================================================
-# MAP estimate
+# MAP estimate  (skipped on --resume)
 # ===================================================================
 
-print("\nFinding MAP solution...")
-theta_map, _ = gp.fit_map(nopt=10, method="L-BFGS-B")
-print(f"MAP solution: {theta_map}\n")
+map_file = os.path.join(results_dir, "map_fit_results.npz")
 
-# print("\nFinding ACF fit solution...")
-# theta_acf, _ = gp.fit_acf(nopt=10, method="nelder-mead")
-# print(f"ACF fit solution: {theta_acf}\n")
-
-# ===================================================================
-# Plot MAP solution: lightcurve fit, ACF, PSD
-# ===================================================================
-
-# tlag_plot = np.arange(0, 30, tsamp)
-
-# fig, axes = plt.subplots(3, 1, figsize=(12, 12))
-# gp.plot_prediction(theta=theta_map, ax=axes[0], model_color="r", model_label="MAP fit")
-# gp.plot_acf(theta=theta_map, ax=axes[1], tlags=tlag_plot,
-#             model_color="r", model_label="MAP fit")
-# gp.plot_psd(theta=theta_map, ax=axes[2], model_color="r", model_label="MAP fit")
-
-# gp.plot_prediction(theta=theta_acf, ax=axes[0], model_color="b",
-#                    data_color=None, model_label="ACF fit", data_label=None)
-# gp.plot_acf(theta=theta_acf, ax=axes[1], tlags=tlag_plot,
-#             model_color="b", model_label="ACF fit")
-# gp.plot_psd(theta=theta_acf, ax=axes[2], model_color="b", model_label="ACF fit")
-
-# t_envelope = theta_acf["lspot"] + 2 * theta_acf["tau_spot"]
-# for ii in range(int(t_envelope / theta_acf["peq"])):
-#     axes[1].axvline(ii * theta_acf["peq"], color="b", alpha=0.5, ls="--")
-# axes[1].axvline(t_envelope, color="b", alpha=0.8, linewidth=2, label="Envelope")
-# axes[1].text(t_envelope, 1.0, r"$l_{\rm spot} + 2\tau_{\rm spot}$",
-#              color="b", rotation=90, va="top", ha="right", fontsize=12,
-#              transform=axes[1].get_xaxis_transform())
-
-# fig.tight_layout()
-# fig.savefig(os.path.join(results_dir, "kernel_fit.png"), dpi=150)
-# plt.close(fig)
+if not args.resume:
+    print("\nFinding MAP solution...")
+    theta_map, _ = gp.fit_map(nopt=10, method="nelder-mead")
+    print(f"MAP solution: {theta_map}\n")
+else:
+    _map_data = np.load(map_file, allow_pickle=True)
+    theta_map = _map_data["theta_map"].item()
+    print(f"Loaded MAP solution from {map_file}: {theta_map}\n")
 
 # ===================================================================
 # Run MCMC with BlackJAX
 # ===================================================================
 
-sampler = BlackJAXSampler(gp, save_dir=results_dir)
-
-n_batches      = 10
-batch_size     = 200
+sampler         = BlackJAXSampler(gp, save_dir=results_dir)
+n_batches       = args.nbatches
+batch_size      = args.batchsize
 checkpoint_file = os.path.join(results_dir, "mcmc_checkpoint.npz")
 
-samples, info = sampler.run_nuts(
-    n_samples=batch_size,
-    n_warmup=500,
-    n_chains=2,
-    theta_init=theta_map,
-    mass_matrix_method="hessian_map",
-    progress_bar=False,
-    checkpoint_file=checkpoint_file,
-)
-sampler.save_checkpoint(plot_corner=True)
+if args.resume:
+    sampler.load_checkpoint(checkpoint_file)
+    print(f"Resuming MCMC from checkpoint: {checkpoint_file}")
+else:
+    sampler.run_warmup(
+        n_warmup=1000,
+        n_chains=args.nchain,
+        theta_init=theta_map,
+        mass_matrix_method="hessian_map",
+        checkpoint_file=checkpoint_file,
+    )
 
-for _ in range(n_batches - 1):
-    samples, info = sampler.resume_nuts(n_samples=batch_size)
-    sampler.save_checkpoint()
+for _ in range(n_batches):
+    samples, info = sampler.run_sampling(n_samples=batch_size)
+    sampler.save_checkpoint(plot_corner=True)
 
 # ===================================================================
 # Save and visualize results
@@ -202,5 +209,4 @@ fig = corner.corner(all_samples, labels=list(bounds.keys()),
                     truths=[theta_true[k] for k in bounds.keys()])
 fig.savefig(os.path.join(results_dir, "blackjax_corner_plot.png"))
 
-fig, axes = sampler.plot_covariance(method="hessian_map", true_params=theta_true)
-fig.savefig(os.path.join(results_dir, "blackjax_covariance_plot.png"))
+print(f"\nTotal runtime: {time.time() - tstart:.2f} seconds ({(time.time() - tstart)/60:.2f} minutes)")

@@ -10,6 +10,8 @@ from .psd import *
 from .gp_solver import *
 from .mcmc import *
 from .observations import *
+from .contrast import *
+from .multiband import *
 from .plotting import *
 from .sensitivity import *
 from .transit import *
