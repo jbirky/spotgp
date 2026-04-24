@@ -2076,7 +2076,10 @@ class DynestySampler(MCMCSampler):
 
     def _log_likelihood(self, theta):
         """Evaluate the GP log-likelihood (numpy-compatible wrapper)."""
-        return float(self.gp.log_likelihood_fn(jnp.asarray(theta)))
+        val = float(self.gp.log_likelihood_fn(jnp.asarray(theta)))
+        if not np.isfinite(val):
+            return -np.inf
+        return val
 
     def run_map(self, nopt=10, keys=None, checkpoint_file=None,
                 theta0=None, **kwargs):

@@ -2894,6 +2894,22 @@ class GPSolver:
         return jax.random.multivariate_normal(
             rng_key, mean, cov, shape=(n_samples,))
 
+    def plot_pgm(self, **kwargs):
+        """Plot the probabilistic graphical model for this GP.
+
+        Parameters
+        ----------
+        **kwargs
+            Forwarded to :meth:`PGModelVis.render` (``dpi``, ``node_scale``,
+            ``font_size``).
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+        """
+        from .pgm import PGModelVis
+        return PGModelVis(self).render(**kwargs)
+
     def _get_mass_matrix(self, method, theta_ref):
         """Compute inverse mass matrix using the specified method."""
         if method is None:

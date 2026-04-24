@@ -12,6 +12,8 @@ from .mcmc import *
 from .observations import *
 from .contrast import *
 from .multiband import *
+from .spectral import *
 from .plotting import *
+from .pgm import *
 from .sensitivity import *
 from .transit import *

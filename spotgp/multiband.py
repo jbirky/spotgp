@@ -22,7 +22,7 @@ jax.config.update("jax_platforms", os.environ.get("JAX_PLATFORMS", "cpu"))
 import jax.numpy as jnp
 import numpy as np
 
-from .contrast import contrast_factor
+from .contrast import contrast_factor as _default_contrast_factor
 from .params import resolve_hparam, BASE_REQUIRED_KEYS
 from .spot_model import (
     SpotEvolutionModel, EdgeOnVisibilityFunction,
@@ -117,13 +117,16 @@ def _multiband_log_likelihood_banded(
         r_gamma_func=None,
         quad_nodes=None, quad_weights=None,
         edgeon_cn_sq=None,
-        lat_weight_func=None):
+        lat_weight_func=None,
+        contrast_fn=None):
     """
     Multi-band GP log-likelihood using banded Cholesky.
 
     Builds the geometric kernel in compact banded storage, scales each
     entry by the per-observation contrast factors, adds noise, and solves.
     """
+    if contrast_fn is None:
+        contrast_fn = _default_contrast_factor
     N = x.shape[0]
 
     # Split theta: [kernel_params..., T_spot, (sigma_n)]
@@ -135,7 +138,7 @@ def _multiband_log_likelihood_banded(
         sigma_n = 0.0
 
     # Contrast factors per band → per observation
-    c_bands = contrast_factor(band_wavelengths, T_spot, T_phot)
+    c_bands = contrast_fn(band_wavelengths, T_spot, T_phot)
     c_obs = c_bands[band_indices]
 
     # Build geometric kernel in compact banded storage
@@ -178,10 +181,13 @@ def _multiband_log_likelihood_full(
         r_gamma_func=None,
         quad_nodes=None, quad_weights=None,
         edgeon_cn_sq=None,
-        lat_weight_func=None):
+        lat_weight_func=None,
+        contrast_fn=None):
     """
     Multi-band GP log-likelihood using full Cholesky (for small datasets).
     """
+    if contrast_fn is None:
+        contrast_fn = _default_contrast_factor
     N = x.shape[0]
 
     theta_kernel = theta_full[:n_kernel]
@@ -191,7 +197,7 @@ def _multiband_log_likelihood_full(
     else:
         sigma_n = 0.0
 
-    c_bands = contrast_factor(band_wavelengths, T_spot, T_phot)
+    c_bands = contrast_fn(band_wavelengths, T_spot, T_phot)
     c_obs = c_bands[band_indices]
 
     # Upper-triangular kernel evaluation
@@ -273,6 +279,7 @@ class MultiBandGPSolver:
     def __init__(self, data, model_or_hparam, T_phot, T_spot_init=None,
                  fit_sigma_n=False, bounds=None, log_prior=None,
                  matrix_solver="cholesky_banded", bandwidth=None,
+                 contrast_model=None,
                  **kernel_kwargs):
 
         if not isinstance(data, MultiBandData):
@@ -280,6 +287,12 @@ class MultiBandGPSolver:
 
         self.data = data
         self.T_phot = float(T_phot)
+        self.contrast_model = contrast_model
+        if contrast_model is not None:
+            self._contrast_fn = contrast_model.contrast_factor
+        else:
+            self._contrast_fn = _default_contrast_factor
+        # Deferred: _jit_contrast_fn set after band_wavelengths is known
 
         # JAX arrays for the merged data
         self.x = jnp.asarray(data.x, dtype=jnp.float64)
@@ -453,6 +466,12 @@ class MultiBandGPSolver:
         bi = self._band_indices
         bw = self._band_wavelengths
         T_phot = self.T_phot
+        # For JIT: use make_contrast_fn (eagerly resolved band indices)
+        if self.contrast_model is not None:
+            cfn = self.contrast_model.make_contrast_fn(
+                np.asarray(self.data.band_wavelengths))
+        else:
+            cfn = _default_contrast_factor
 
         r_gamma_fn = self.spot_model.get_r_gamma_func()
         lat_wt_fn = self.spot_model.get_lat_weight_func()
@@ -476,7 +495,8 @@ class MultiBandGPSolver:
                     r_gamma_func=r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
-                    lat_weight_func=lat_wt_fn)
+                    lat_weight_func=lat_wt_fn,
+                    contrast_fn=cfn)
                 lp = (custom_prior(theta_arr) if custom_prior is not None
                       else _default_log_prior(theta_arr, bounds))
                 return ll + lp
@@ -491,7 +511,8 @@ class MultiBandGPSolver:
                     r_gamma_func=r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
-                    lat_weight_func=lat_wt_fn)
+                    lat_weight_func=lat_wt_fn,
+                    contrast_fn=cfn)
                 lp = (custom_prior(theta_arr) if custom_prior is not None
                       else _default_log_prior(theta_arr, bounds))
                 return ll + lp
@@ -521,7 +542,8 @@ class MultiBandGPSolver:
                     r_gamma_func=r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
-                    lat_weight_func=lat_wt_fn)
+                    lat_weight_func=lat_wt_fn,
+                    contrast_fn=cfn)
         else:
             @jax.jit
             def _log_likelihood_fn(theta_arr):
@@ -532,7 +554,8 @@ class MultiBandGPSolver:
                     r_gamma_func=r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
-                    lat_weight_func=lat_wt_fn)
+                    lat_weight_func=lat_wt_fn,
+                    contrast_fn=cfn)
 
         self.log_prior_fn = _log_prior_fn
         self.log_likelihood_fn = _log_likelihood_fn
@@ -582,12 +605,12 @@ class MultiBandGPSolver:
         T_spot = float(theta_phys[self._n_kernel])
 
         # Contrast factors for training data
-        c_bands = contrast_factor(self._band_wavelengths, T_spot, self.T_phot)
+        c_bands = self._contrast_fn(self._band_wavelengths, T_spot, self.T_phot)
         c_obs = c_bands[self._band_indices]
 
         # Prediction band contrast
         if band_wavelength is not None:
-            c_pred = float(contrast_factor(
+            c_pred = float(self._contrast_fn(
                 jnp.array(band_wavelength), T_spot, self.T_phot))
         else:
             c_pred = 1.0
@@ -661,6 +684,22 @@ class MultiBandGPSolver:
                 T_spot = float(self._to_physical(theta_arr)[self._n_kernel])
         else:
             T_spot = self.T_spot_init
-        c1 = contrast_factor(jnp.array(lam1), T_spot, self.T_phot)
-        c2 = contrast_factor(jnp.array(lam2), T_spot, self.T_phot)
+        c1 = self._contrast_fn(jnp.array(lam1), T_spot, self.T_phot)
+        c2 = self._contrast_fn(jnp.array(lam2), T_spot, self.T_phot)
         return float(c1 / c2)
+
+    def plot_pgm(self, **kwargs):
+        """Plot the probabilistic graphical model for this multi-band GP.
+
+        Parameters
+        ----------
+        **kwargs
+            Forwarded to :meth:`PGModelVis.render` (``dpi``, ``node_scale``,
+            ``font_size``).
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+        """
+        from .pgm import PGModelVis
+        return PGModelVis(self).render(**kwargs)

@@ -76,6 +76,14 @@ tutorials/cramer_rao_bound
 
 ```{toctree}
 :maxdepth: 2
+:caption: Multiband Photometry
+
+tutorials/multiband_gp
+tutorials/spectral_contrast
+```
+
+```{toctree}
+:maxdepth: 2
 :caption: API Reference
 
 api/spotgp

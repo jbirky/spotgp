@@ -23,6 +23,9 @@ dependencies = [
 
 [project.optional-dependencies]
 jax = ["jax", "jaxopt"]
+spectral = ["pyphot"]
+korg = ["pyphot", "juliacall", "juliapkg"]
+pgm = ["daft-pgm"]
 docs = [
     "sphinx>=7.0",
     "sphinx-book-theme>=1.0",
