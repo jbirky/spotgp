@@ -13,6 +13,12 @@ from .observations import *
 from .contrast import *
 from .multiband import *
 from .spectral import *
+from .spectral_temporal_kernel import *
+from .harmonic_amplitudes import *
+from .line_profile import *
+from .bisector import *
+from .ft_zeros import *
+from .joint_gp import *
 from .plotting import *
 from .pgm import *
 from .sensitivity import *
