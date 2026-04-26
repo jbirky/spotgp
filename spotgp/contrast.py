@@ -7,7 +7,7 @@ contrast factor c(λ) = 1 - f_spot(λ) used by the multi-band kernel.
 """
 import jax.numpy as jnp
 
-__all__ = ["spot_contrast", "contrast_factor"]
+__all__ = ["spot_contrast", "contrast_factor", "contrast_matrix"]
 
 # CGS constants
 _h = 6.62607015e-27    # Planck constant [erg·s]
@@ -67,3 +67,44 @@ def contrast_factor(lam_angstrom, T_spot, T_phot):
         for long λ (spots vanish in Rayleigh-Jeans tail).
     """
     return 1.0 - spot_contrast(lam_angstrom, T_spot, T_phot)
+
+
+def contrast_matrix(band_wavelengths, temperatures, T_phot, weights=None):
+    """
+    Contrast matrix for M temperature components.
+
+    C[p,q] = sum_m w_m * c(lambda_p, T_m) * c(lambda_q, T_m)
+
+    For M=1 (spot-only), this is the rank-1 outer product c*c^T.
+    For M=2 (spots + faculae), this is a rank-2 matrix with
+    opposite-sign contributions from cool spots and hot faculae.
+
+    Parameters
+    ----------
+    band_wavelengths : array_like, shape (N_lambda,)
+        Effective wavelengths in Angstroms.
+    temperatures : array_like, shape (M,)
+        Component temperatures [K].
+    T_phot : float
+        Photospheric effective temperature [K].
+    weights : array_like, shape (M,), optional
+        Component weights.  Default: all ones.
+
+    Returns
+    -------
+    C : jnp.ndarray, shape (N_lambda, N_lambda)
+        Contrast matrix.
+    """
+    band_wavelengths = jnp.atleast_1d(jnp.asarray(band_wavelengths, dtype=jnp.float64))
+    temperatures = jnp.atleast_1d(jnp.asarray(temperatures, dtype=jnp.float64))
+    M = temperatures.shape[0]
+    if weights is None:
+        weights = jnp.ones(M, dtype=jnp.float64)
+    else:
+        weights = jnp.asarray(weights, dtype=jnp.float64)
+
+    c_vectors = jnp.stack([
+        contrast_factor(band_wavelengths, temperatures[m], T_phot)
+        for m in range(M)
+    ])
+    return jnp.einsum('m,mi,mj->ij', weights, c_vectors, c_vectors)
