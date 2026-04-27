@@ -22,4 +22,5 @@ from .joint_gp import *
 from .plotting import *
 from .pgm import *
 from .sensitivity import *
+from .celerite import *
 from .transit import *
