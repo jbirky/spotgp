@@ -5,6 +5,7 @@ from .visibility import *
 from .spot_model import *
 from .lightcurve import *
 from .analytic_kernel import *
+from .analytic_mean import *
 from .numerical_kernel import *
 from .psd import *
 from .gp_solver import *

@@ -296,6 +296,19 @@ register_amplitude(AmplitudeSpec(
 ))
 
 register_amplitude(AmplitudeSpec(
+    name="rate_cspot",
+    signature_keys=frozenset({"nspot_rate", "c_spot"}),
+    formula=lambda raw: (
+        np.sqrt(float(raw["nspot_rate"])) * float(raw["c_spot"])
+    ),
+    description=(
+        "sigma_k = sqrt(nspot_rate) * c_spot  "
+        "where c_spot = (1 - fspot) * alpha_max^2  "
+        "[used by AnalyticMean; nspot_rate in spots/day]"
+    ),
+))
+
+register_amplitude(AmplitudeSpec(
     name="physical_count",
     signature_keys=frozenset({"nspot", "fspot", "alpha_max"}),
     formula=lambda raw: (

@@ -80,6 +80,7 @@ tutorials/cramer_rao_bound
 
 tutorials/multiband_gp
 tutorials/spectral_contrast
+tutorials/spots_and_faculae
 ```
 
 ```{toctree}

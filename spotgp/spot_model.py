@@ -110,8 +110,11 @@ class SpotEvolutionModel:
 
     Notes
     -----
-    Exactly one of ``sigma_k`` or the triplet ``(nspot_rate, fspot, alpha_max)``
-    must be supplied.
+    Exactly one of the following amplitude specifications must be supplied:
+
+    - ``sigma_k`` directly,
+    - ``(nspot_rate, c_spot)`` where ``c_spot = (1 - fspot) * alpha_max**2``,
+    - ``(nspot_rate, fspot, alpha_max)`` (physical parameterization).
     """
 
     def __init__(
@@ -122,6 +125,7 @@ class SpotEvolutionModel:
         nspot_rate: float = None,
         fspot: float = 0.0,
         alpha_max: float = None,
+        c_spot: float = None,
         latitude_distribution: LatitudeDistributionFunction = _UNSET,
     ):
         # Resolve each component and record its provenance for get_sympy()
@@ -169,17 +173,22 @@ class SpotEvolutionModel:
 
         if sigma_k is not None:
             self._sigma_k_dist = as_distribution(sigma_k)
+            self._nspot_rate = None
+            self._c_spot = None
+        elif c_spot is not None and nspot_rate is not None:
+            self._nspot_rate = float(nspot_rate)
+            self._c_spot = float(c_spot)
+            computed = float(np.sqrt(float(nspot_rate))) * float(c_spot)
+            self._sigma_k_dist = as_distribution(computed)
         elif nspot_rate is not None and alpha_max is not None:
-            computed = (
-                float(np.sqrt(float(nspot_rate)))
-                * (1.0 - float(fspot))
-                * float(alpha_max) ** 2
-            )
+            self._nspot_rate = float(nspot_rate)
+            self._c_spot = (1.0 - float(fspot)) * float(alpha_max) ** 2
+            computed = float(np.sqrt(float(nspot_rate))) * self._c_spot
             self._sigma_k_dist = as_distribution(computed)
         else:
             raise ValueError(
-                "SpotEvolutionModel requires either sigma_k or "
-                "(nspot_rate, fspot, alpha_max).")
+                "SpotEvolutionModel requires either sigma_k, "
+                "(nspot_rate, c_spot), or (nspot_rate, fspot, alpha_max).")
 
     # ── Convenience accessors ───────────────────────────────────────────────
 
@@ -196,6 +205,16 @@ class SpotEvolutionModel:
     def sigma_k_distribution(self):
         """The full ParameterDistribution for sigma_k."""
         return self._sigma_k_dist
+
+    @property
+    def nspot_rate(self) -> float:
+        """Spot emergence rate [spots/day], or None if not specified."""
+        return self._nspot_rate
+
+    @property
+    def c_spot(self) -> float:
+        """Spot contrast-area product (1-f_spot)*alpha_max^2, or None."""
+        return self._c_spot
 
     @property
     def sigma_k_sq_expected(self) -> float:
@@ -424,6 +443,10 @@ class SpotEvolutionModel:
         if self.envelope is not None:
             d.update(self.envelope.param_dict)
         d["sigma_k"] = self.sigma_k
+        if self._nspot_rate is not None:
+            d["nspot_rate"] = self._nspot_rate
+        if self._c_spot is not None:
+            d["c_spot"] = self._c_spot
         if self.alpha_max is not None:
             d["alpha_max"] = self.alpha_max
         if self.fspot:

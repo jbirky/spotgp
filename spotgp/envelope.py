@@ -330,6 +330,20 @@ class EnvelopeFunction(ABC):
         """
         return self.lspot + 6.0 * self.tau_spot
 
+    def Gamma_integral(self) -> float:
+        r"""
+        Integral of the squared-size envelope: :math:`\int \Gamma(t)\,dt`.
+
+        Used by ``AnalyticMean`` to compute the expected flux deficit.
+        Default: numerical quadrature from ``Gamma(t)``.  Override with
+        a closed-form expression for better accuracy.
+        """
+        import numpy as _np
+        T = 6.0 * self.tau_spot + self.lspot
+        t_grid = _np.linspace(-T, T, 4096)
+        gamma_vals = _np.asarray(self.Gamma(jnp.array(t_grid)))
+        return float(_np.trapz(gamma_vals, t_grid))
+
     # ── Lazy numerical grid helpers ───────────────────────────────────────────
 
     def _ensure_numerical_grids(self):
@@ -808,6 +822,9 @@ class TrapezoidSymmetricEnvelope(EnvelopeFunction):
             return l_hi + 2.0 * t_hi
         return self.lspot + 2.0 * self.tau_spot
 
+    def Gamma_integral(self) -> float:
+        return self.lspot + 2.0 * self.tau_spot / 3.0
+
     def sympy_Gamma(self):
         import sympy as sp
         t    = sp.Symbol('t', real=True)
@@ -902,6 +919,9 @@ class TrapezoidAsymmetricEnvelope(EnvelopeFunction):
 
     def kernel_support(self) -> float:
         return self._lspot + self._tau_em + self._tau_dec
+
+    def Gamma_integral(self) -> float:
+        return self._lspot + self._tau_em / 3.0 + self._tau_dec / 3.0
 
     def sympy_Gamma(self):
         import sympy as sp
@@ -1060,6 +1080,9 @@ class ExponentialEnvelope(EnvelopeFunction):
     def kernel_support(self) -> float:
         return 6.0 * self._tau_spot
 
+    def Gamma_integral(self) -> float:
+        return 2.0 * self._tau_spot
+
     def sympy_Gamma(self):
         import sympy as sp
         t   = sp.Symbol('t', real=True)
@@ -1133,3 +1156,6 @@ class ExponentialAsymmetricEnvelope(EnvelopeFunction):
 
     def kernel_support(self) -> float:
         return 6.0 * (self._tau_em + self._tau_dec)
+
+    def Gamma_integral(self) -> float:
+        return self._tau_em + self._tau_dec
