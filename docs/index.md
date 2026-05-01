@@ -63,15 +63,22 @@ tutorials/data_preprocessing
 
 ```{toctree}
 :maxdepth: 2
-:caption: Advanced 
+:caption: Custom Functions
 
 tutorials/custom_envelope_gaussian
 tutorials/custom_visibility_function
 tutorials/custom_latitude_distribution
 tutorials/custom_spot_distributions
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Probabilistic Inference
+
 tutorials/blackjax_sampling
 tutorials/dynesty_sampling
 tutorials/cramer_rao_bound
+tutorials/pgm_visualization
 ```
 
 ```{toctree}

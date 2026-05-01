@@ -1,9 +1,9 @@
 """
 Analytic GP mean function for stellar spot variability.
 
-Computes E[F] = 1 - nspot_rate * c_spot * (integral Gamma dt) * <V_bar>_Phi
+Computes E[F] = 1 - nspot_rate * a_spot * (integral Gamma dt) * <V_bar>_Phi
 
-where c_spot = (1 - f_spot) * alpha_max^2 is the spot contrast-area product,
+where a_spot = (1 - f_spot) * alpha_max^2 is the spot contrast-area product,
 V_bar(Phi, I) = c_0(Phi) is the time-averaged visibility (zeroth Fourier
 coefficient), and the latitude average <V_bar>_Phi integrates over p(Phi).
 """
@@ -28,7 +28,7 @@ class AnalyticMean:
     ----------
     model_or_hparam : SpotEvolutionModel or dict
         Spot evolution model (same interface as AnalyticKernel).
-        Must be constructed with ``(nspot_rate, c_spot)`` or
+        Must be constructed with ``(nspot_rate, a_spot)`` or
         ``(nspot_rate, fspot, alpha_max)`` so that the physical
         amplitude parameters are available.
     n_lat : int
@@ -48,14 +48,14 @@ class AnalyticMean:
         self.n_lat = n_lat
         self.quadrature = quadrature
 
-        if self.spot_model.nspot_rate is None or self.spot_model.c_spot is None:
+        if self.spot_model.nspot_rate is None or self.spot_model.a_spot is None:
             raise ValueError(
-                "AnalyticMean requires (nspot_rate, c_spot) or "
+                "AnalyticMean requires (nspot_rate, a_spot) or "
                 "(nspot_rate, fspot, alpha_max) parameterization. "
                 "sigma_k alone is insufficient for the mean function.")
 
         self.nspot_rate = self.spot_model.nspot_rate
-        self.c_spot = self.spot_model.c_spot
+        self.a_spot = self.spot_model.a_spot
         self.Gamma_integral = self.envelope.Gamma_integral()
         self.mean_visibility = self._compute_mean_visibility()
         self._mean_flux = self._compute_mean_flux()
@@ -91,8 +91,8 @@ class AnalyticMean:
         return float(jnp.sum(weights * c0_vals) / norm)
 
     def _compute_mean_flux(self):
-        """E[F] = 1 - nspot_rate * c_spot * Gamma_integral * <V_bar>_Phi."""
-        return 1.0 - (self.nspot_rate * self.c_spot
+        """E[F] = 1 - nspot_rate * a_spot * Gamma_integral * <V_bar>_Phi."""
+        return 1.0 - (self.nspot_rate * self.a_spot
                        * self.Gamma_integral * self.mean_visibility)
 
     @property
@@ -113,7 +113,7 @@ class AnalyticMean:
         return (
             f"AnalyticMean(\n"
             f"  nspot_rate={self.nspot_rate},\n"
-            f"  c_spot={self.c_spot},\n"
+            f"  a_spot={self.a_spot},\n"
             f"  Gamma_integral={self.Gamma_integral:.4f},\n"
             f"  mean_visibility={self.mean_visibility:.6f},\n"
             f"  E[F]={self._mean_flux:.6f}\n)")

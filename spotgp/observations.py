@@ -25,7 +25,7 @@ class TimeSeriesData:
         and scale yerr accordingly.
     """
 
-    def __init__(self, x, y, yerr, normalize=True):
+    def __init__(self, x, y, yerr, normalize=False, zero_mean=False):
         x = np.asarray(x, dtype=float)
         y = np.asarray(y, dtype=float)
         yerr = np.asarray(yerr, dtype=float)
@@ -48,7 +48,9 @@ class TimeSeriesData:
 
         if normalize:
             self.normalize()
-
+        if zero_mean:
+            self.y = self.y - np.mean(self.y)
+            
     @property
     def N(self) -> int:
         """Number of data points."""
@@ -262,7 +264,7 @@ class TimeSeriesData:
         return lag_centers, acf
 
     @classmethod
-    def from_lightkurve(cls, lc, normalize=True):
+    def from_lightkurve(cls, lc, normalize=False, zero_mean=False):
         """
         Create a TimeSeriesData from a lightkurve LightCurve object.
 
@@ -275,6 +277,8 @@ class TimeSeriesData:
             A LightCurve object (e.g. from ``lk.search_lightcurve(...).download()``).
         normalize : bool
             If True (default), normalize flux to median of 1.
+        zero_mean : bool
+            If True, subtract the mean from the flux.
 
         Returns
         -------
@@ -293,7 +297,7 @@ class TimeSeriesData:
             flux_err = np.full_like(flux, np.nanmedian(np.abs(np.diff(flux))))
 
         # NaN/inf masking is handled by __init__
-        return cls(time, flux, flux_err, normalize=normalize)
+        return cls(time, flux, flux_err, normalize=normalize, zero_mean=zero_mean)
 
     def plot(self, ax=None, color="k", alpha=0.6, marker=".", ms=2,
              xlabel="Time", ylabel="Flux", **kwargs):

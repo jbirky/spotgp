@@ -466,6 +466,8 @@ class GPSolver:
         "lat_min":   (0.0, np.pi / 2),
         "lat_max":   (0.0, np.pi / 2),
         "sigma_k":   (1e-6, 1.0),
+        "nspot_rate": (0.001, 10.0),
+        "a_spot":    (1e-6, 1.0),
         "sigma_n":   (1e-6, 0.1),
     }
 
@@ -807,7 +809,6 @@ class GPSolver:
         """Build JIT-compiled log-posterior and its gradient."""
         bounds = self.bounds
         x, y, yerr = self.x, self.y, self.yerr
-        mean_val = self.mean_val
         n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
         custom_prior = self._custom_log_prior
         fit_sn = self.fit_sigma_n
@@ -819,7 +820,40 @@ class GPSolver:
         # Latitude weight function (JAX-traceable, or None for static weights)
         lat_wt_fn = self.spot_model.get_lat_weight_func()
         # Number of kernel params (excludes sigma_n)
-        n_kernel = len(self.spot_model.param_keys)
+        n_model_params = len(self.spot_model.param_keys)
+
+        # Physical amplitude: (nspot_rate, a_spot) → sigma_k remapping.
+        # The kernel functions expect theta_kernel ending with sigma_k,
+        # so we collapse the last two elements into one.
+        phys_amp = self.spot_model.use_physical_amplitude
+        if phys_amp:
+            n_kernel_for_ll = n_model_params - 1  # kernel sees 1 fewer param
+            def _to_kernel_theta(theta_phys):
+                nspot_rate = theta_phys[n_model_params - 2]
+                a_spot = theta_phys[n_model_params - 1]
+                sigma_k = jnp.sqrt(nspot_rate) * a_spot
+                return jnp.concatenate([theta_phys[:n_model_params - 2],
+                                        jnp.array([sigma_k])])
+        else:
+            n_kernel_for_ll = n_model_params
+            _to_kernel_theta = None
+
+        # Mean function: when AnalyticMean is used, the mean depends on
+        # theta (nspot_rate, a_spot) and must be recomputed each evaluation.
+        from .analytic_mean import AnalyticMean
+        if isinstance(self.mean_func, AnalyticMean) and phys_amp:
+            _gamma_int = float(self.mean_func.Gamma_integral)
+            _mean_vis = float(self.mean_func.mean_visibility)
+            _nspot_idx = n_model_params - 2
+            _cspot_idx = n_model_params - 1
+            def _compute_mean(theta_phys):
+                nr = theta_phys[_nspot_idx]
+                cs = theta_phys[_cspot_idx]
+                return 1.0 - nr * cs * _gamma_int * _mean_vis
+            dynamic_mean = True
+        else:
+            mean_val = self.mean_val
+            dynamic_mean = False
 
         # Edge-on fast path: pre-compute fixed |c_n|^2 as a JAX array
         if isinstance(self.spot_model.visibility, EdgeOnVisibilityFunction):
@@ -828,35 +862,45 @@ class GPSolver:
         else:
             eo_cn = None
 
-        if self.matrix_solver == "cholesky_banded":
-            # Capture bandwidth as a Python int in the closure so that
-            # jax.lax.scan inside banded_cholesky is unrolled statically.
-            b = self.bandwidth
+        use_banded = (self.matrix_solver == "cholesky_banded")
+        b = self.bandwidth if use_banded else None
 
-            @jax.jit
-            def log_posterior(theta_arr):
-                ll = _gp_log_likelihood_banded(
-                    to_phys(theta_arr), x, y, yerr, mean_val,
+        def _ll_call(theta_arr):
+            """Compute log-likelihood from sampling-space theta."""
+            tp = to_phys(theta_arr)
+            if dynamic_mean:
+                mv = _compute_mean(tp)
+            else:
+                mv = mean_val
+            if _to_kernel_theta is not None:
+                tk = _to_kernel_theta(tp)
+                if fit_sn:
+                    tk = jnp.concatenate([tk, tp[n_model_params:]])
+            else:
+                tk = tp
+            if use_banded:
+                return _gp_log_likelihood_banded(
+                    tk, x, y, yerr, mv,
                     n_h, n_l, lr, fit_sn, b,
-                    n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
+                    n_kernel=n_kernel_for_ll, r_gamma_func=r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
                     lat_weight_func=lat_wt_fn)
-                lp = (custom_prior(theta_arr) if custom_prior is not None
-                      else _default_log_prior(theta_arr, bounds))
-                return ll + lp
-        else:
-            @jax.jit
-            def log_posterior(theta_arr):
-                ll = _gp_log_likelihood(to_phys(theta_arr), x, y, yerr, mean_val,
-                                        n_h, n_l, lr, fit_sn,
-                                        n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
-                                        quad_nodes=qn, quad_weights=qw,
-                                        edgeon_cn_sq=eo_cn,
-                                        lat_weight_func=lat_wt_fn)
-                lp = (custom_prior(theta_arr) if custom_prior is not None
-                      else _default_log_prior(theta_arr, bounds))
-                return ll + lp
+            else:
+                return _gp_log_likelihood(
+                    tk, x, y, yerr, mv,
+                    n_h, n_l, lr, fit_sn,
+                    n_kernel=n_kernel_for_ll, r_gamma_func=r_gamma_fn,
+                    quad_nodes=qn, quad_weights=qw,
+                    edgeon_cn_sq=eo_cn,
+                    lat_weight_func=lat_wt_fn)
+
+        @jax.jit
+        def log_posterior(theta_arr):
+            ll = _ll_call(theta_arr)
+            lp = (custom_prior(theta_arr) if custom_prior is not None
+                  else _default_log_prior(theta_arr, bounds))
+            return ll + lp
 
         @jax.jit
         def neg_log_posterior(theta_arr):
@@ -873,26 +917,9 @@ class GPSolver:
             return (custom_prior(theta_arr) if custom_prior is not None
                     else _default_log_prior(theta_arr, bounds))
 
-        if self.matrix_solver == "cholesky_banded":
-            @jax.jit
-            def _log_likelihood_fn(theta_arr):
-                return _gp_log_likelihood_banded(
-                    to_phys(theta_arr), x, y, yerr, mean_val,
-                    n_h, n_l, lr, fit_sn, b,
-                    n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
-                    quad_nodes=qn, quad_weights=qw,
-                    edgeon_cn_sq=eo_cn,
-                    lat_weight_func=lat_wt_fn)
-        else:
-            @jax.jit
-            def _log_likelihood_fn(theta_arr):
-                return _gp_log_likelihood(
-                    to_phys(theta_arr), x, y, yerr, mean_val,
-                    n_h, n_l, lr, fit_sn,
-                    n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
-                    quad_nodes=qn, quad_weights=qw,
-                    edgeon_cn_sq=eo_cn,
-                    lat_weight_func=lat_wt_fn)
+        @jax.jit
+        def _log_likelihood_fn(theta_arr):
+            return _ll_call(theta_arr)
 
         self.log_prior_fn = _log_prior_fn
         self.log_likelihood_fn = _log_likelihood_fn
@@ -2287,6 +2314,15 @@ class GPSolver:
             model.latitude_distribution = type(lat)(**init_args)
         if "sigma_k" in theta_dict:
             model.sigma_k = float(theta_dict["sigma_k"])
+        if "nspot_rate" in theta_dict:
+            model._nspot_rate = float(theta_dict["nspot_rate"])
+        if "a_spot" in theta_dict:
+            model._a_spot = float(theta_dict["a_spot"])
+        if "nspot_rate" in theta_dict or "a_spot" in theta_dict:
+            nr = model._nspot_rate if model._nspot_rate is not None else 0.0
+            cs = model._a_spot if model._a_spot is not None else 0.0
+            from .parameters import as_distribution
+            model._sigma_k_dist = as_distribution(float(np.sqrt(nr)) * cs)
 
     def update_hparam(self, hparam):
         """Update hyperparameters and rebuild kernel and covariance.

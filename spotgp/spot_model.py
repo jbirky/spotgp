@@ -113,7 +113,7 @@ class SpotEvolutionModel:
     Exactly one of the following amplitude specifications must be supplied:
 
     - ``sigma_k`` directly,
-    - ``(nspot_rate, c_spot)`` where ``c_spot = (1 - fspot) * alpha_max**2``,
+    - ``(nspot_rate, a_spot)`` where ``a_spot = (1 - fspot) * alpha_max**2``,
     - ``(nspot_rate, fspot, alpha_max)`` (physical parameterization).
     """
 
@@ -125,7 +125,7 @@ class SpotEvolutionModel:
         nspot_rate: float = None,
         fspot: float = 0.0,
         alpha_max: float = None,
-        c_spot: float = None,
+        a_spot: float = None,
         latitude_distribution: LatitudeDistributionFunction = _UNSET,
     ):
         # Resolve each component and record its provenance for get_sympy()
@@ -174,21 +174,21 @@ class SpotEvolutionModel:
         if sigma_k is not None:
             self._sigma_k_dist = as_distribution(sigma_k)
             self._nspot_rate = None
-            self._c_spot = None
-        elif c_spot is not None and nspot_rate is not None:
+            self._a_spot = None
+        elif a_spot is not None and nspot_rate is not None:
             self._nspot_rate = float(nspot_rate)
-            self._c_spot = float(c_spot)
-            computed = float(np.sqrt(float(nspot_rate))) * float(c_spot)
+            self._a_spot = float(a_spot)
+            computed = float(np.sqrt(float(nspot_rate))) * float(a_spot)
             self._sigma_k_dist = as_distribution(computed)
         elif nspot_rate is not None and alpha_max is not None:
             self._nspot_rate = float(nspot_rate)
-            self._c_spot = (1.0 - float(fspot)) * float(alpha_max) ** 2
-            computed = float(np.sqrt(float(nspot_rate))) * self._c_spot
+            self._a_spot = (1.0 - float(fspot)) * float(alpha_max) ** 2
+            computed = float(np.sqrt(float(nspot_rate))) * self._a_spot
             self._sigma_k_dist = as_distribution(computed)
         else:
             raise ValueError(
                 "SpotEvolutionModel requires either sigma_k, "
-                "(nspot_rate, c_spot), or (nspot_rate, fspot, alpha_max).")
+                "(nspot_rate, a_spot), or (nspot_rate, fspot, alpha_max).")
 
     # ── Convenience accessors ───────────────────────────────────────────────
 
@@ -212,9 +212,9 @@ class SpotEvolutionModel:
         return self._nspot_rate
 
     @property
-    def c_spot(self) -> float:
+    def a_spot(self) -> float:
         """Spot contrast-area product (1-f_spot)*alpha_max^2, or None."""
-        return self._c_spot
+        return self._a_spot
 
     @property
     def sigma_k_sq_expected(self) -> float:
@@ -244,20 +244,28 @@ class SpotEvolutionModel:
     # ── Parameter keys ──────────────────────────────────────────────────────
 
     @property
+    def use_physical_amplitude(self) -> bool:
+        """True when the model uses (nspot_rate, a_spot) instead of sigma_k."""
+        return self._nspot_rate is not None
+
+    @property
     def param_keys(self) -> tuple:
         """
         Ordered parameter names for the theta vector used in GPSolver.
 
         When both are present, starts with (peq, kappa, inc) from the
         visibility function, followed by the envelope-specific keys, then
-        sigma_k.  When envelope is None only the visibility keys are
-        included; when visibility is None only the envelope keys are
-        included.
+        the amplitude parameter(s).  When the model was constructed with
+        ``(nspot_rate, a_spot)`` or ``(nspot_rate, fspot, alpha_max)``,
+        the last two keys are ``("nspot_rate", "a_spot")``; otherwise
+        the last key is ``("sigma_k",)``.
         """
         vis_keys = self.visibility.param_keys if self.visibility is not None else ()
         env_keys = (tuple(self.envelope.param_dict.keys())
                     if self.envelope is not None else ())
         lat_keys = self.latitude_distribution.param_keys
+        if self.use_physical_amplitude:
+            return vis_keys + env_keys + lat_keys + ("nspot_rate", "a_spot")
         return vis_keys + env_keys + lat_keys + ("sigma_k",)
 
     @property
@@ -269,7 +277,11 @@ class SpotEvolutionModel:
         if self.envelope is not None:
             vals.update(self.envelope.param_dict)
         vals.update(self.latitude_distribution.param_dict)
-        vals["sigma_k"] = self.sigma_k
+        if self.use_physical_amplitude:
+            vals["nspot_rate"] = self._nspot_rate
+            vals["a_spot"] = self._a_spot
+        else:
+            vals["sigma_k"] = self.sigma_k
         return np.array([float(vals[k]) for k in self.param_keys])
 
     def theta_from_hparam(self, hparam: dict) -> np.ndarray:
@@ -445,8 +457,8 @@ class SpotEvolutionModel:
         d["sigma_k"] = self.sigma_k
         if self._nspot_rate is not None:
             d["nspot_rate"] = self._nspot_rate
-        if self._c_spot is not None:
-            d["c_spot"] = self._c_spot
+        if self._a_spot is not None:
+            d["a_spot"] = self._a_spot
         if self.alpha_max is not None:
             d["alpha_max"] = self.alpha_max
         if self.fspot:
