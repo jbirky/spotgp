@@ -73,6 +73,7 @@ __all__ = [
     "_gauss_legendre_grid",
     # Defined here
     "SpotEvolutionModel",
+    "CompositeSpotModel",
 ]
 
 
@@ -265,7 +266,7 @@ class SpotEvolutionModel:
 
     # ── JAX-compilable R_Gamma function ─────────────────────────────────────
 
-    def get_r_gamma_func(self):
+    def get_r_gamma_func(self, env_offset=None):
         """
         Return a JAX-traceable function r_gamma(theta_arr, lag) -> R_Gamma.
 
@@ -277,32 +278,39 @@ class SpotEvolutionModel:
         on the envelope type and captured (together with any precomputed
         grids) in a closure so that the returned callable is safe to use
         inside jax.jit.
+
+        Parameters
+        ----------
+        env_offset : int or None
+            Index in theta_arr where envelope parameters start.  When None
+            (default), computed as len(visibility.param_keys).  Provide
+            explicitly when the envelope params are at a non-standard
+            position (e.g. inside a CompositeSpotModel theta vector).
         """
         if self.envelope is None:
             def r_gamma(theta_arr, lag):  # noqa: ARG001
                 return jnp.ones_like(jnp.asarray(lag))
             return r_gamma
 
-        n_vis = len(self.visibility.param_keys) if self.visibility is not None else 0
+        if env_offset is None:
+            env_offset = len(self.visibility.param_keys) if self.visibility is not None else 0
 
         if isinstance(self.envelope, TrapezoidSymmetricEnvelope):
             def r_gamma(theta_arr, lag):
-                lspot     = theta_arr[n_vis]        # index 3
-                tau_spot  = theta_arr[n_vis + 1]    # index 4
+                lspot     = theta_arr[env_offset]
+                tau_spot  = theta_arr[env_offset + 1]
                 return _R_Gamma_symmetric(lag, lspot, tau_spot)
 
         elif isinstance(self.envelope, TrapezoidAsymmetricEnvelope):
             def r_gamma(theta_arr, lag):
-                lspot   = theta_arr[n_vis]       # index 3
-                tau_em  = theta_arr[n_vis + 1]   # index 4
-                tau_dec = theta_arr[n_vis + 2]   # index 5
+                lspot   = theta_arr[env_offset]
+                tau_em  = theta_arr[env_offset + 1]
+                tau_dec = theta_arr[env_offset + 2]
                 te = jnp.minimum(tau_em, tau_dec)
                 td = jnp.maximum(tau_em, tau_dec)
                 return _R_Gamma_asymmetric(lag, lspot, te, td)
 
         elif isinstance(self.envelope, SkewedGaussianEnvelope):
-            # sigma_sn and n_sn are in theta but R_Gamma uses the
-            # precomputed interpolation grid (fixed at init time).
             lag_grid = self.envelope._R_lag_grid
             R_vals   = self.envelope._R_vals
 
@@ -311,12 +319,11 @@ class SpotEvolutionModel:
 
         elif isinstance(self.envelope, ExponentialEnvelope):
             def r_gamma(theta_arr, lag):
-                tau_spot = theta_arr[n_vis]  # index 3 (no lspot for exponential)
+                tau_spot = theta_arr[env_offset]
                 abs_lag = jnp.abs(lag)
                 return (tau_spot + abs_lag) * jnp.exp(-abs_lag / tau_spot)
 
         else:
-            # Generic fallback via precomputed grid (like skew-normal)
             env = self.envelope
             tau_ref = env.tau_spot if env.tau_spot > 0 else 1.0
             env_np = lambda t_arr: np.asarray(env.Gamma(jnp.array(t_arr)))
@@ -526,4 +533,299 @@ class SpotEvolutionModel:
             f"  envelope={env_str},\n"
             f"  visibility={vis_str},\n"
             f"  sigma_k={self.sigma_k}\n)"
+        )
+
+
+# ── CompositeSpotModel ────────────────────────────────────────────────────
+
+class CompositeSpotModel:
+    """
+    Sum of N independent spot evolution components sharing one star.
+
+    Each component has its own EnvelopeFunction and sigma_k, but all
+    share the same VisibilityFunction (rotation period, differential
+    rotation, inclination) and LatitudeDistributionFunction.
+
+    The composite kernel is:
+
+        K_total(τ) = V(τ) · Σ_i [ σ_k_i² · R_Γ_i(τ) ]
+
+    where V(τ) is the shared visibility kernel and each component
+    contributes an independent envelope autocorrelation R_Γ_i weighted
+    by its own amplitude σ_k_i.
+
+    Parameters
+    ----------
+    components : list of SpotEvolutionModel
+        Each component defines an independent spot population.  All must
+        share identical visibility and latitude distribution parameters.
+    labels : list of str, optional
+        Names for each component, used to suffix parameter keys (e.g.
+        ``"lspot_transient"``).  Defaults to ``["comp0", "comp1", ...]``.
+    """
+
+    DEFAULT_BOUNDS = SpotEvolutionModel.DEFAULT_BOUNDS if hasattr(
+        SpotEvolutionModel, "DEFAULT_BOUNDS") else {}
+
+    def __init__(self, components, labels=None):
+        if len(components) < 2:
+            raise ValueError("CompositeSpotModel requires at least 2 components")
+        self.components = list(components)
+        self.n_components = len(self.components)
+
+        if labels is None:
+            labels = [f"comp{i}" for i in range(self.n_components)]
+        if len(labels) != self.n_components:
+            raise ValueError(
+                f"Expected {self.n_components} labels, got {len(labels)}")
+        self.labels = list(labels)
+
+        ref = self.components[0]
+        if ref.visibility is None:
+            raise ValueError("Components must have a VisibilityFunction")
+        for i, comp in enumerate(self.components[1:], 1):
+            if comp.visibility is None:
+                raise ValueError(f"Component {i} has no VisibilityFunction")
+            if (comp.visibility.peq != ref.visibility.peq
+                    or comp.visibility.kappa != ref.visibility.kappa
+                    or comp.visibility.inc != ref.visibility.inc):
+                raise ValueError(
+                    f"Component {i} has different visibility parameters "
+                    f"than component 0.  All components must share the "
+                    f"same VisibilityFunction (same star).")
+
+        self.visibility = ref.visibility
+        self.latitude_distribution = ref.latitude_distribution
+        self.envelope = None
+
+    # ── Convenience accessors ──────────────────────────────────────────
+
+    @property
+    def peq(self):
+        return self.visibility.peq
+
+    @property
+    def kappa(self):
+        return self.visibility.kappa
+
+    @property
+    def inc(self):
+        return self.visibility.inc
+
+    # ── Parameter layout ───────────────────────────────────────────────
+
+    @property
+    def param_keys(self) -> tuple:
+        """
+        Ordered parameter names for the composite theta vector.
+
+        Layout: [vis_keys, lat_keys, comp0_env_keys_suffixed, sigma_k_comp0,
+                 comp1_env_keys_suffixed, sigma_k_comp1, ...]
+        """
+        vis_keys = (self.visibility.param_keys
+                    if self.visibility is not None else ())
+        lat_keys = self.latitude_distribution.param_keys
+
+        comp_keys = ()
+        for comp, label in zip(self.components, self.labels):
+            env_keys = (tuple(comp.envelope.param_dict.keys())
+                        if comp.envelope is not None else ())
+            comp_keys += tuple(f"{k}_{label}" for k in env_keys)
+            comp_keys += (f"sigma_k_{label}",)
+
+        return vis_keys + lat_keys + comp_keys
+
+    @property
+    def _base_key_map(self) -> dict:
+        """Map each suffixed param key to its base key (for bounds lookup)."""
+        mapping = {}
+        for comp, label in zip(self.components, self.labels):
+            env_keys = (tuple(comp.envelope.param_dict.keys())
+                        if comp.envelope is not None else ())
+            for k in env_keys:
+                mapping[f"{k}_{label}"] = k
+            mapping[f"sigma_k_{label}"] = "sigma_k"
+        return mapping
+
+    @property
+    def theta0(self) -> np.ndarray:
+        """Initial parameter vector from current model values."""
+        vals = []
+        if self.visibility is not None:
+            vals.extend(self.visibility.param_dict.values())
+        vals.extend(self.latitude_distribution.param_dict.values())
+        for comp in self.components:
+            if comp.envelope is not None:
+                vals.extend(comp.envelope.param_dict.values())
+            vals.append(comp.sigma_k)
+        return np.array([float(v) for v in vals])
+
+    def _component_offsets(self):
+        """
+        Return list of (env_start_idx, n_env, sigma_k_idx) for each
+        component in the composite theta vector.
+        """
+        n_vis = len(self.visibility.param_keys) if self.visibility else 0
+        n_lat = len(self.latitude_distribution.param_keys)
+        offset = n_vis + n_lat
+        result = []
+        for comp in self.components:
+            n_env = (len(comp.envelope.param_dict)
+                     if comp.envelope is not None else 0)
+            sigma_k_idx = offset + n_env
+            result.append((offset, n_env, sigma_k_idx))
+            offset = sigma_k_idx + 1
+        return result
+
+    # ── JAX-compilable composite R_Gamma ───────────────────────────────
+
+    def get_r_gamma_func(self):
+        """
+        Return a JAX-traceable function computing the σ_k²-weighted sum:
+
+            composite_r_gamma(theta_arr, lag) = Σ_i [ σ_k_i² · R_Γ_i(lag) ]
+
+        Each component's R_Gamma reads its envelope parameters from the
+        correct offsets in theta_arr.  The returned value already includes
+        the σ_k² weighting, so the caller should NOT multiply by σ_k²
+        again.
+        """
+        offsets = self._component_offsets()
+        r_gamma_fns = []
+        for comp, (env_start, _n_env, sk_idx) in zip(self.components, offsets):
+            fn = comp.get_r_gamma_func(env_offset=env_start)
+            r_gamma_fns.append((fn, sk_idx))
+
+        specs = tuple(r_gamma_fns)
+
+        def composite_r_gamma(theta_arr, lag):
+            result = jnp.zeros_like(jnp.asarray(lag))
+            for r_gamma_i, sk_idx in specs:
+                R_i = r_gamma_i(theta_arr, lag)
+                sigma_k_i = theta_arr[sk_idx]
+                result = result + sigma_k_i ** 2 * R_i
+            return result
+
+        return composite_r_gamma
+
+    def get_lat_weight_func(self):
+        """Delegate to the shared latitude distribution."""
+        lat_dist = self.latitude_distribution
+        if not lat_dist.param_dict:
+            return None
+
+        n_vis = len(self.visibility.param_keys) if self.visibility is not None else 0
+        lat_offset = n_vis
+
+        if isinstance(lat_dist, UniformDoubleHemisphereBand):
+            def lat_weight_fn(theta_arr, phi_grid):
+                lat_min = theta_arr[lat_offset]
+                lat_max = theta_arr[lat_offset + 1]
+                abs_phi = jnp.abs(phi_grid)
+                return jnp.where((abs_phi > lat_min) & (abs_phi < lat_max),
+                                 1.0, 0.0)
+            return lat_weight_fn
+
+        return None
+
+    # ── Bandwidth support ──────────────────────────────────────────────
+
+    def bandwidth_support(self, param_keys, bounds_arr) -> float:
+        """Max kernel support across all components."""
+        keys = list(param_keys)
+        bounds_arr = np.asarray(bounds_arr)
+        base_map = self._base_key_map
+
+        max_support = 0.0
+        for comp, label in zip(self.components, self.labels):
+            if comp.envelope is None:
+                continue
+
+            def upper(base_key, fallback):
+                suffixed = f"{base_key}_{label}"
+                if suffixed in keys:
+                    return float(bounds_arr[keys.index(suffixed), 1])
+                log_suffixed = f"log_{suffixed}"
+                if log_suffixed in keys:
+                    return 10.0 ** float(bounds_arr[keys.index(log_suffixed), 1])
+                return float(fallback)
+
+            if isinstance(comp.envelope, TrapezoidSymmetricEnvelope):
+                support = (upper("lspot", comp.lspot)
+                           + 2.0 * upper("tau_spot", comp.tau_spot))
+            elif isinstance(comp.envelope, TrapezoidAsymmetricEnvelope):
+                support = (upper("lspot", comp.lspot)
+                           + upper("tau_em", comp.envelope.tau_em)
+                           + upper("tau_dec", comp.envelope.tau_dec))
+            elif isinstance(comp.envelope, SkewedGaussianEnvelope):
+                support = 12.0 * upper("sigma_sn", comp.envelope.sigma_sn)
+            elif isinstance(comp.envelope, ExponentialEnvelope):
+                support = 6.0 * upper("tau_spot", comp.tau_spot)
+            else:
+                support = comp.envelope.kernel_support()
+
+            max_support = max(max_support, support)
+
+        return max_support
+
+    # ── Serialization ──────────────────────────────────────────────────
+
+    def to_hparam(self) -> dict:
+        """Convert to a flat dict with suffixed keys."""
+        d = {}
+        if self.visibility is not None:
+            d.update(self.visibility.param_dict)
+        d["_composite_labels"] = list(self.labels)
+        for comp, label in zip(self.components, self.labels):
+            if comp.envelope is not None:
+                for k, v in comp.envelope.param_dict.items():
+                    d[f"{k}_{label}"] = v
+            d[f"sigma_k_{label}"] = comp.sigma_k
+        return d
+
+    @classmethod
+    def from_hparam(cls, hparam: dict) -> "CompositeSpotModel":
+        """Reconstruct a CompositeSpotModel from a to_hparam() dict."""
+        labels = hparam["_composite_labels"]
+        vis = VisibilityFunction(hparam["peq"], hparam["kappa"], hparam["inc"])
+
+        components = []
+        for label in labels:
+            sigma_k = hparam[f"sigma_k_{label}"]
+            lspot_key = f"lspot_{label}"
+            tau_spot_key = f"tau_spot_{label}"
+            tau_em_key = f"tau_em_{label}"
+            tau_dec_key = f"tau_dec_{label}"
+
+            if tau_em_key in hparam and tau_dec_key in hparam:
+                envelope = TrapezoidAsymmetricEnvelope(
+                    hparam[lspot_key], hparam[tau_em_key], hparam[tau_dec_key])
+            elif lspot_key in hparam and tau_spot_key in hparam:
+                envelope = TrapezoidSymmetricEnvelope(
+                    hparam[lspot_key], hparam[tau_spot_key])
+            elif tau_spot_key in hparam:
+                envelope = ExponentialEnvelope(hparam[tau_spot_key])
+            else:
+                raise ValueError(
+                    f"Cannot reconstruct envelope for component '{label}'")
+
+            components.append(SpotEvolutionModel(
+                envelope=envelope, visibility=vis, sigma_k=sigma_k))
+
+        return cls(components, labels=labels)
+
+    def __repr__(self) -> str:
+        parts = []
+        for comp, label in zip(self.components, self.labels):
+            env = comp.envelope
+            env_str = (f"{env.__class__.__name__}({env.param_dict})"
+                       if env is not None else "None")
+            parts.append(f"  {label}: {env_str}, sigma_k={comp.sigma_k}")
+        vis_str = (f"VisibilityFunction"
+                   f"(peq={self.peq}, kappa={self.kappa}, "
+                   f"inc={self.inc:.3f})")
+        return (
+            f"CompositeSpotModel(\n"
+            f"  visibility={vis_str},\n"
+            + "\n".join(parts) + "\n)"
         )

@@ -202,10 +202,86 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
     return K
 
 
+def _composite_kernel_eval_edgeon(theta_arr, lag_flat, n_harmonics,
+                                  composite_r_gamma_func=None,
+                                  cn_sq_fixed=None):
+    """Edge-on fast path for composite kernel."""
+    peq = theta_arr[0]
+    composite_R = composite_r_gamma_func(theta_arr, lag_flat)
+    w0 = 2.0 * jnp.pi / peq
+    harm_ns = jnp.arange(1, n_harmonics + 1)
+    cosine_terms = jnp.sum(
+        cn_sq_fixed[1:] * jnp.cos(harm_ns * w0 * lag_flat[:, None]), axis=1)
+    return composite_R * (cn_sq_fixed[0] + 2.0 * cosine_terms)
+
+
+def _composite_kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
+                           quad_nodes=None, quad_weights=None,
+                           composite_r_gamma_func=None,
+                           edgeon_cn_sq=None,
+                           lat_weight_func=None):
+    """
+    Kernel evaluation for CompositeSpotModel.
+
+    The ``composite_r_gamma_func`` returns the σ_k²-weighted sum
+    Σ_i [ σ_k_i² · R_Γ_i(lag) ], so the kernel is simply:
+
+        K(τ) = composite_R(τ) · V(τ)
+
+    with no separate σ_k² multiplier.  The visibility V(τ) is computed
+    identically to ``_kernel_eval``.
+    """
+    if edgeon_cn_sq is not None:
+        return _composite_kernel_eval_edgeon(
+            theta_arr, lag_flat, n_harmonics,
+            composite_r_gamma_func=composite_r_gamma_func,
+            cn_sq_fixed=edgeon_cn_sq)
+
+    peq   = theta_arr[0]
+    kappa = theta_arr[1]
+    inc   = theta_arr[2]
+
+    composite_R = composite_r_gamma_func(theta_arr, lag_flat)
+
+    if quad_nodes is not None:
+        phi_grid = quad_nodes
+        weights = quad_weights
+    else:
+        phi_min, phi_max = lat_range
+        phi_grid = jnp.linspace(phi_min, phi_max, n_lat)
+        dphi = phi_grid[1] - phi_grid[0]
+        weights = jnp.ones_like(phi_grid) * dphi
+
+    if lat_weight_func is not None:
+        lat_w = lat_weight_func(theta_arr, phi_grid)
+        weights = weights * lat_w
+
+    norm = jnp.sum(weights)
+
+    ns = jnp.arange(n_harmonics + 1)
+    cn_sq_all = jax.vmap(
+        lambda phi: jax.vmap(lambda n: _cn_general_jax(n, inc, phi))(ns) ** 2
+    )(phi_grid)
+
+    harm_ns = jnp.arange(1, n_harmonics + 1)
+
+    def _lat_contribution(phi, cn_sq):
+        w0 = 2 * jnp.pi * (1 - kappa * jnp.sin(phi) ** 2) / peq
+        cosine_terms = jnp.sum(
+            cn_sq[1:] * jnp.cos(harm_ns * w0 * lag_flat[:, None]), axis=1)
+        return cn_sq[0] + 2 * cosine_terms
+
+    all_contribs = jax.vmap(_lat_contribution)(phi_grid, cn_sq_all)
+    K_vis = jnp.sum(weights[:, None] * all_contribs, axis=0) / norm
+
+    return composite_R * K_vis
+
+
 def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
                        n_harmonics, n_lat, lat_range,
                        fit_sigma_n, n_kernel=6,
                        r_gamma_func=None,
+                       composite_r_gamma_func=None,
                        quad_nodes=None, quad_weights=None,
                        edgeon_cn_sq=None,
                        lat_weight_func=None):
@@ -231,6 +307,10 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
         Number of kernel parameters (default 6 for backward compat).
     r_gamma_func : callable or None
         JAX-traceable envelope R_Gamma function (see _kernel_eval).
+    composite_r_gamma_func : callable or None
+        JAX-traceable composite R_Gamma function that returns
+        Σ_i [ σ_k_i² · R_Γ_i(lag) ].  When not None, uses
+        _composite_kernel_eval instead of _kernel_eval.
     quad_nodes, quad_weights : jnp.ndarray or None
         Gauss-Legendre nodes/weights. If None, uses trapezoid rule.
 
@@ -251,12 +331,22 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
     row_idx, col_idx = jnp.triu_indices(N)
     lag_upper = jnp.abs(x[row_idx] - x[col_idx])
 
-    K_upper = _kernel_eval(theta_kernel, lag_upper,
-                           n_harmonics, n_lat, lat_range,
-                           quad_nodes=quad_nodes, quad_weights=quad_weights,
-                           r_gamma_func=r_gamma_func,
-                           edgeon_cn_sq=edgeon_cn_sq,
-                           lat_weight_func=lat_weight_func)
+    if composite_r_gamma_func is not None:
+        K_upper = _composite_kernel_eval(
+            theta_kernel, lag_upper,
+            n_harmonics, n_lat, lat_range,
+            quad_nodes=quad_nodes, quad_weights=quad_weights,
+            composite_r_gamma_func=composite_r_gamma_func,
+            edgeon_cn_sq=edgeon_cn_sq,
+            lat_weight_func=lat_weight_func)
+    else:
+        K_upper = _kernel_eval(
+            theta_kernel, lag_upper,
+            n_harmonics, n_lat, lat_range,
+            quad_nodes=quad_nodes, quad_weights=quad_weights,
+            r_gamma_func=r_gamma_func,
+            edgeon_cn_sq=edgeon_cn_sq,
+            lat_weight_func=lat_weight_func)
 
     # Reconstruct symmetric matrix from upper triangle
     K = jnp.zeros((N, N))
@@ -279,6 +369,7 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
 def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
                               n_harmonics, n_lat, lat_range,
                               r_gamma_func=None,
+                              composite_r_gamma_func=None,
                               quad_nodes=None, quad_weights=None,
                               edgeon_cn_sq=None,
                               lat_weight_func=None):
@@ -298,6 +389,8 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
     n_harmonics, n_lat, lat_range : kernel config.
     r_gamma_func : callable or None
         JAX-traceable envelope R_Gamma function (see _kernel_eval).
+    composite_r_gamma_func : callable or None
+        Composite R_Gamma (see _composite_kernel_eval).
     quad_nodes, quad_weights : jnp.ndarray or None
 
     Returns
@@ -315,12 +408,24 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
     valid = j_idx < N
 
     lags_flat = jnp.abs(x[j_safe] - x[i_idx]).ravel()
-    K_flat = _kernel_eval(theta_kernel, lags_flat,
-                          n_harmonics, n_lat, lat_range,
-                          quad_nodes=quad_nodes, quad_weights=quad_weights,
-                          r_gamma_func=r_gamma_func,
-                          edgeon_cn_sq=edgeon_cn_sq,
-                          lat_weight_func=lat_weight_func)
+
+    if composite_r_gamma_func is not None:
+        K_flat = _composite_kernel_eval(
+            theta_kernel, lags_flat,
+            n_harmonics, n_lat, lat_range,
+            quad_nodes=quad_nodes, quad_weights=quad_weights,
+            composite_r_gamma_func=composite_r_gamma_func,
+            edgeon_cn_sq=edgeon_cn_sq,
+            lat_weight_func=lat_weight_func)
+    else:
+        K_flat = _kernel_eval(
+            theta_kernel, lags_flat,
+            n_harmonics, n_lat, lat_range,
+            quad_nodes=quad_nodes, quad_weights=quad_weights,
+            r_gamma_func=r_gamma_func,
+            edgeon_cn_sq=edgeon_cn_sq,
+            lat_weight_func=lat_weight_func)
+
     cb = K_flat.reshape(b + 1, N)
     cb = jnp.where(valid, cb, 0.0)
     return cb
@@ -331,6 +436,7 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                fit_sigma_n, bandwidth,
                                n_kernel=6,
                                r_gamma_func=None,
+                               composite_r_gamma_func=None,
                                quad_nodes=None, quad_weights=None,
                                edgeon_cn_sq=None,
                                lat_weight_func=None):
@@ -353,6 +459,8 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
         Number of kernel parameters (default 6 for backward compat).
     r_gamma_func : callable or None
         JAX-traceable envelope R_Gamma function (see _kernel_eval).
+    composite_r_gamma_func : callable or None
+        Composite R_Gamma (see _composite_kernel_eval).
     All other parameters are the same as ``_gp_log_likelihood``.
     """
     N = x.shape[0]
@@ -368,6 +476,7 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
     cb = _build_banded_kernel_jax(theta_kernel, x, bandwidth,
                                    n_harmonics, n_lat, lat_range,
                                    r_gamma_func=r_gamma_func,
+                                   composite_r_gamma_func=composite_r_gamma_func,
                                    quad_nodes=quad_nodes,
                                    quad_weights=quad_weights,
                                    edgeon_cn_sq=edgeon_cn_sq,
@@ -500,14 +609,21 @@ class GPSolver:
         self.yerr = jnp.asarray(self.data.yerr, dtype=jnp.float64)
         self.N = len(self.x)
 
-        # Accept SpotEvolutionModel or legacy hparam dict
-        if isinstance(model_or_hparam, SpotEvolutionModel):
+        # Accept CompositeSpotModel, SpotEvolutionModel, or legacy hparam dict
+        from .spot_model import CompositeSpotModel
+        if isinstance(model_or_hparam, CompositeSpotModel):
             self.spot_model = model_or_hparam
             self.hparam = model_or_hparam.to_hparam()
+            self._is_composite = True
+        elif isinstance(model_or_hparam, SpotEvolutionModel):
+            self.spot_model = model_or_hparam
+            self.hparam = model_or_hparam.to_hparam()
+            self._is_composite = False
         else:
             _validate_hparam(model_or_hparam)
             self.hparam = dict(model_or_hparam)
             self.spot_model = SpotEvolutionModel.from_hparam(self.hparam)
+            self._is_composite = False
 
         # Mean function
         if mean is None:
@@ -566,13 +682,26 @@ class GPSolver:
         # bounds of lspot and tau_spot are available for the bandwidth calculation.
         # For log-space keys the supplied bounds are already in log10 units;
         # for physical keys without explicit bounds, fall back to DEFAULT_BOUNDS.
+        # For composite models, suffixed keys (e.g. "lspot_transient") fall
+        # back to their un-suffixed base key in DEFAULT_BOUNDS.
+        if self._is_composite:
+            _base_key_map = self.spot_model._base_key_map
+        else:
+            _base_key_map = {}
+
+        def _default_bound(key):
+            if key in self.DEFAULT_BOUNDS:
+                return self.DEFAULT_BOUNDS[key]
+            base = _base_key_map.get(key, key)
+            return self.DEFAULT_BOUNDS[base]
+
         if bounds is None:
             self.bounds = jnp.array(
-                [self.DEFAULT_BOUNDS[k] for k in _base_keys],
+                [_default_bound(k) for k in _base_keys],
                 dtype=jnp.float64)
         elif isinstance(bounds, dict):
             self.bounds = jnp.array(
-                [bounds.get(_pk, self.DEFAULT_BOUNDS[_bk])
+                [bounds.get(_pk, _default_bound(_bk))
                  for _pk, _bk in zip(self.param_keys, _base_keys)],
                 dtype=jnp.float64)
         else:
@@ -688,7 +817,11 @@ class GPSolver:
 
     def _build_kernel(self):
         """Instantiate the kernel object from the SpotEvolutionModel."""
-        if self.kernel_type == "analytic":
+        if self._is_composite:
+            from .analytic_kernel import CompositeAnalyticKernel
+            self.kernel = CompositeAnalyticKernel(
+                self.spot_model, **self.kernel_kwargs)
+        elif self.kernel_type == "analytic":
             self.kernel = AnalyticKernel(self.spot_model, **self.kernel_kwargs)
         else:
             raise ValueError(
@@ -815,11 +948,18 @@ class GPSolver:
         to_phys = self._to_physical  # sampling theta → physical theta
 
         # Envelope-specific R_Gamma function (JAX-traceable, captured in closure)
-        r_gamma_fn = self.spot_model.get_r_gamma_func()
-        # Latitude weight function (JAX-traceable, or None for static weights)
+        # For composite models, this returns the σ_k²-weighted sum.
+        r_gamma_fn_raw = self.spot_model.get_r_gamma_func()
         lat_wt_fn = self.spot_model.get_lat_weight_func()
-        # Number of kernel params (excludes sigma_n)
         n_kernel = len(self.spot_model.param_keys)
+
+        # Composite vs single-component dispatch
+        if self._is_composite:
+            r_gamma_fn = None
+            comp_r_gamma_fn = r_gamma_fn_raw
+        else:
+            r_gamma_fn = r_gamma_fn_raw
+            comp_r_gamma_fn = None
 
         # Edge-on fast path: pre-compute fixed |c_n|^2 as a JAX array
         if isinstance(self.spot_model.visibility, EdgeOnVisibilityFunction):
@@ -829,8 +969,6 @@ class GPSolver:
             eo_cn = None
 
         if self.matrix_solver == "cholesky_banded":
-            # Capture bandwidth as a Python int in the closure so that
-            # jax.lax.scan inside banded_cholesky is unrolled statically.
             b = self.bandwidth
 
             @jax.jit
@@ -839,6 +977,7 @@ class GPSolver:
                     to_phys(theta_arr), x, y, yerr, mean_val,
                     n_h, n_l, lr, fit_sn, b,
                     n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
+                    composite_r_gamma_func=comp_r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
                     lat_weight_func=lat_wt_fn)
@@ -848,12 +987,14 @@ class GPSolver:
         else:
             @jax.jit
             def log_posterior(theta_arr):
-                ll = _gp_log_likelihood(to_phys(theta_arr), x, y, yerr, mean_val,
-                                        n_h, n_l, lr, fit_sn,
-                                        n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
-                                        quad_nodes=qn, quad_weights=qw,
-                                        edgeon_cn_sq=eo_cn,
-                                        lat_weight_func=lat_wt_fn)
+                ll = _gp_log_likelihood(
+                    to_phys(theta_arr), x, y, yerr, mean_val,
+                    n_h, n_l, lr, fit_sn,
+                    n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
+                    composite_r_gamma_func=comp_r_gamma_fn,
+                    quad_nodes=qn, quad_weights=qw,
+                    edgeon_cn_sq=eo_cn,
+                    lat_weight_func=lat_wt_fn)
                 lp = (custom_prior(theta_arr) if custom_prior is not None
                       else _default_log_prior(theta_arr, bounds))
                 return ll + lp
@@ -880,6 +1021,7 @@ class GPSolver:
                     to_phys(theta_arr), x, y, yerr, mean_val,
                     n_h, n_l, lr, fit_sn, b,
                     n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
+                    composite_r_gamma_func=comp_r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
                     lat_weight_func=lat_wt_fn)
@@ -890,6 +1032,7 @@ class GPSolver:
                     to_phys(theta_arr), x, y, yerr, mean_val,
                     n_h, n_l, lr, fit_sn,
                     n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
+                    composite_r_gamma_func=comp_r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
                     lat_weight_func=lat_wt_fn)
@@ -1445,19 +1588,31 @@ class GPSolver:
 
         qn, qw = self._quad_nodes, self._quad_weights
         n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
-        r_gamma_fn = self.spot_model.get_r_gamma_func()
+        r_gamma_fn_raw = self.spot_model.get_r_gamma_func()
         lat_wt_fn = self.spot_model.get_lat_weight_func()
+
+        if self._is_composite:
+            _r_fn, _cr_fn = None, r_gamma_fn_raw
+        else:
+            _r_fn, _cr_fn = r_gamma_fn_raw, None
 
         @jax.jit
         def loss_u(u_arr):
             free_theta = blo + u_arr * brange
             theta_full = self._theta_from_free(
                 free_theta, free_idx, fixed_idx, fixed_vals)
-            K_model = _kernel_eval(theta_full, lag_centers_jax,
-                                   n_h, n_l, lr,
-                                   quad_nodes=qn, quad_weights=qw,
-                                   r_gamma_func=r_gamma_fn,
-                                   lat_weight_func=lat_wt_fn)
+            if _cr_fn is not None:
+                K_model = _composite_kernel_eval(
+                    theta_full, lag_centers_jax, n_h, n_l, lr,
+                    quad_nodes=qn, quad_weights=qw,
+                    composite_r_gamma_func=_cr_fn,
+                    lat_weight_func=lat_wt_fn)
+            else:
+                K_model = _kernel_eval(
+                    theta_full, lag_centers_jax, n_h, n_l, lr,
+                    quad_nodes=qn, quad_weights=qw,
+                    r_gamma_func=_r_fn,
+                    lat_weight_func=lat_wt_fn)
             return jnp.sum((acf_data_jax - K_model) ** 2)
 
         vg_fn = jax.jit(jax.value_and_grad(loss_u))
@@ -1702,8 +1857,12 @@ class GPSolver:
         to_phys = self._to_physical
         qn, qw = self._quad_nodes, self._quad_weights
         n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
-        r_gamma_fn = self.spot_model.get_r_gamma_func()
+        r_gamma_fn_raw = self.spot_model.get_r_gamma_func()
         lat_wt_fn = self.spot_model.get_lat_weight_func()
+        if self._is_composite:
+            r_gamma_fn, comp_r_gamma_fn = None, r_gamma_fn_raw
+        else:
+            r_gamma_fn, comp_r_gamma_fn = r_gamma_fn_raw, None
         w_acf = float(acf_weight)
         w_psd = float(psd_weight)
 
@@ -1780,6 +1939,19 @@ class GPSolver:
         brange    = bhi - blo
         u0        = np.asarray((free0 - blo) / brange, dtype=np.float64)
 
+        def _eval_kernel_at(theta_phys, lags):
+            if comp_r_gamma_fn is not None:
+                return _composite_kernel_eval(
+                    theta_phys, lags, n_h, n_l, lr,
+                    quad_nodes=qn, quad_weights=qw,
+                    composite_r_gamma_func=comp_r_gamma_fn,
+                    lat_weight_func=lat_wt_fn)
+            return _kernel_eval(
+                theta_phys, lags, n_h, n_l, lr,
+                quad_nodes=qn, quad_weights=qw,
+                r_gamma_func=r_gamma_fn,
+                lat_weight_func=lat_wt_fn)
+
         @jax.jit
         def loss_u(u_arr):
             free_theta  = blo + u_arr * brange
@@ -1790,18 +1962,12 @@ class GPSolver:
             loss = 0.0
 
             if w_acf != 0.0:
-                K_acf    = _kernel_eval(theta_phys, lag_jax, n_h, n_l, lr,
-                                        quad_nodes=qn, quad_weights=qw,
-                                        r_gamma_func=r_gamma_fn,
-                                        lat_weight_func=lat_wt_fn)
+                K_acf    = _eval_kernel_at(theta_phys, lag_jax)
                 acf_loss = jnp.mean(((acf_jax - K_acf) / acf_rms) ** 2)
                 loss = loss + w_acf * acf_loss
 
             if w_psd != 0.0:
-                K_tau = _kernel_eval(theta_phys, tau_jax, n_h, n_l, lr,
-                                     quad_nodes=qn, quad_weights=qw,
-                                     r_gamma_func=r_gamma_fn,
-                                     lat_weight_func=lat_wt_fn)
+                K_tau = _eval_kernel_at(theta_phys, tau_jax)
                 psd_model = jnp.maximum(
                     dt_kernel * (K_tau[0] + 2.0 * jnp.dot(K_tau[1:], cos_mat[1:])),
                     0.0)

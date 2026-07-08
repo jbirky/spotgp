@@ -31,7 +31,7 @@ except ImportError:
     )
 
 __all__ = ["AnalyticKernel", "NonstationaryAnalyticKernel",
-           "compute_R_Gamma_numerical"]
+           "CompositeAnalyticKernel", "compute_R_Gamma_numerical"]
 
 
 class AnalyticKernel:
@@ -484,3 +484,114 @@ class NonstationaryAnalyticKernel(AnalyticKernel):
     def __call__(self, t, **kwargs):
         """Evaluate the non-stationary kernel matrix at observation times."""
         return self.kernel_matrix(t, **kwargs)
+
+
+class CompositeAnalyticKernel:
+    """
+    GP kernel for a CompositeSpotModel: sum of independent spot components.
+
+    K_total(τ) = V(τ) · Σ_i [ σ_k_i² · R_Γ_i(τ) ]
+
+    The expensive visibility quadrature V(τ) is computed once using a
+    visibility-only AnalyticKernel (envelope=None).  Each component
+    contributes σ_k_i² · R_Γ_i(τ).
+
+    Parameters
+    ----------
+    composite_model : CompositeSpotModel
+        The composite spot model.
+    **kwargs
+        Forwarded to AnalyticKernel (n_harmonics, n_lat, etc.).
+    """
+
+    def __init__(self, composite_model, **kwargs):
+        try:
+            from .spot_model import CompositeSpotModel
+        except ImportError:
+            from spot_model import CompositeSpotModel
+
+        if not isinstance(composite_model, CompositeSpotModel):
+            raise TypeError(
+                f"Expected CompositeSpotModel, got {type(composite_model)}")
+
+        self.composite_model = composite_model
+        self.spot_model = composite_model
+
+        vis_only = SpotEvolutionModel(
+            envelope=None,
+            visibility=composite_model.visibility,
+            sigma_k=1.0,
+            latitude_distribution=composite_model.latitude_distribution,
+        )
+        self._vis_kernel = AnalyticKernel(vis_only, **kwargs)
+
+        self._component_kernels = [
+            AnalyticKernel(comp, **kwargs)
+            for comp in composite_model.components
+        ]
+
+        self.hparam = composite_model.to_hparam()
+        self.n_harmonics = self._vis_kernel.n_harmonics
+        self.n_lat = self._vis_kernel.n_lat
+        self.lat_range = self._vis_kernel.lat_range
+        self.quadrature = self._vis_kernel.quadrature
+        self._quad_nodes = self._vis_kernel._quad_nodes
+        self._quad_weights = self._vis_kernel._quad_weights
+        self.visibility = composite_model.visibility
+        self.envelope = None
+
+    def _visibility_kernel(self, lag, lat_dist=None):
+        """V(τ): visibility-only kernel (R_Gamma=1, sigma_k=1)."""
+        return self._vis_kernel._kernel_stationary(lag, lat_dist=lat_dist)
+
+    def kernel(self, lag, lat_dist=None):
+        """
+        Composite kernel: V(τ) · Σ_i [ σ_k_i² · R_Γ_i(τ) ].
+        """
+        lag = jnp.asarray(lag, dtype=float)
+        V = self._visibility_kernel(lag, lat_dist=lat_dist)
+
+        weighted_R = jnp.zeros_like(V)
+        for comp, ck in zip(self.composite_model.components,
+                            self._component_kernels):
+            R_i = ck.R_Gamma(lag.ravel())
+            if V.ndim > 1:
+                R_i = R_i.reshape(V.shape)
+            weighted_R = weighted_R + comp.sigma_k ** 2 * R_i
+
+        return np.asarray(V * weighted_R)
+
+    def _kernel_stationary(self, lag, lat_dist=None):
+        """Same as kernel() — sigma_k is per-component, not global."""
+        return self.kernel(lag, lat_dist=lat_dist)
+
+    def compute_psd(self, omega, lat_dist=None):
+        """Sum of per-component PSDs."""
+        freq = None
+        total_power = None
+        for ck in self._component_kernels:
+            f, p = ck.compute_psd(omega, lat_dist=lat_dist)
+            if total_power is None:
+                freq = f
+                total_power = np.zeros_like(p)
+            total_power = total_power + p
+
+        self.psd_omega = np.asarray(omega)
+        self.psd_freq = freq
+        self.psd_power = total_power
+        return freq, total_power
+
+    def build_jax(self, n_lag=256):
+        """Pre-compile JAX for the composite kernel."""
+        import time
+        dummy_lag = jnp.linspace(0.0, float(self.visibility.peq) * 3.0, n_lag)
+        t0 = time.time()
+        jax.block_until_ready(jnp.asarray(self.kernel(dummy_lag)))
+        print(f"JAX composite kernel compiled in {np.round(time.time() - t0, 2)}s")
+        t0 = time.time()
+        jax.block_until_ready(jnp.asarray(self.kernel(dummy_lag)))
+        print(f"JAX composite kernel recompute in {np.round(time.time() - t0, 2)}s")
+        return self
+
+    def __call__(self, lag, **kwargs):
+        return self.kernel(lag, **kwargs)
