@@ -14,12 +14,8 @@ from functools import partial
 
 jax.config.update("jax_enable_x64", True)
 
-try:
-    from .lightcurve import LightcurveModel
-    from .gp_solver import GPSolver
-except ImportError:
-    from lightcurve import LightcurveModel
-    from gp_solver import GPSolver
+from .lightcurve import LightcurveModel
+from .gp_solver import GPSolver
 
 __all__ = [
     "KeplerianOrbit",

@@ -75,6 +75,102 @@ class TestBandedCholeskyCompact:
         np.testing.assert_allclose(np.array(A @ x), np.array(rhs), rtol=1e-5)
 
 
+class TestBandedCholeskyMultiBlock:
+    """n above the internal block size exercises the blocked scan and
+    the padding of the last partial block."""
+
+    def test_factorization_and_solve(self):
+        rng = np.random.default_rng(7)
+        n, b = 200, 5
+        A = _make_banded_spd(n, b, rng=rng)
+        Ac = _full_to_compact(A, b)
+        Lc = banded_cholesky_compact(Ac, b)
+        assert np.all(np.array(Lc[0]) > 0)
+        rhs = jnp.array(rng.standard_normal(n))
+        x = banded_solve_compact(Lc, rhs, b)
+        np.testing.assert_allclose(np.array(A @ x), np.array(rhs),
+                                   rtol=1e-6, atol=1e-9)
+
+    def test_matches_dense_reference(self):
+        rng = np.random.default_rng(11)
+        n, b = 150, 4
+        A = _make_banded_spd(n, b, rng=rng)
+        Ac = _full_to_compact(A, b)
+        Lc = banded_cholesky_compact(Ac, b)
+        rhs = jnp.array(rng.standard_normal(n))
+        x = banded_solve_compact(Lc, rhs, b)
+        x_ref = np.linalg.solve(np.array(A), np.array(rhs))
+        np.testing.assert_allclose(np.array(x), x_ref, rtol=1e-8, atol=1e-10)
+        logdet = 2.0 * float(jnp.sum(jnp.log(Lc[0])))
+        _, logdet_ref = np.linalg.slogdet(np.array(A))
+        assert np.isclose(logdet, logdet_ref, rtol=1e-10)
+
+    def test_bandwidth_above_min_block(self):
+        rng = np.random.default_rng(13)
+        n, b = 300, 96
+        A = _make_banded_spd(n, b, rng=rng)
+        Ac = _full_to_compact(A, b)
+        Lc = banded_cholesky_compact(Ac, b)
+        rhs = jnp.array(rng.standard_normal(n))
+        x = banded_solve_compact(Lc, rhs, b)
+        np.testing.assert_allclose(np.array(A @ x), np.array(rhs),
+                                   rtol=1e-6, atol=1e-9)
+
+    def test_matrix_rhs(self):
+        rng = np.random.default_rng(17)
+        n, b, k = 150, 5, 3
+        A = _make_banded_spd(n, b, rng=rng)
+        Ac = _full_to_compact(A, b)
+        Lc = banded_cholesky_compact(Ac, b)
+        rhs = jnp.array(rng.standard_normal((n, k)))
+        X = banded_solve_compact(Lc, rhs, b)
+        assert X.shape == (n, k)
+        np.testing.assert_allclose(np.array(A @ X), np.array(rhs),
+                                   rtol=1e-6, atol=1e-9)
+
+
+class TestBandedCholeskyAutodiff:
+    """The blocked factorization must differentiate cleanly, including
+    second order (the old scalar-scan implementation produced NaNs)."""
+
+    def _logdet_fn(self, b):
+        def logdet(Ac):
+            Lc = banded_cholesky_compact(Ac, b)
+            return 2.0 * jnp.sum(jnp.log(Lc[0]))
+        return logdet
+
+    def test_grad_logdet_matches_inverse(self):
+        n, b = 100, 3
+        A = _make_banded_spd(n, b)
+        Ac = _full_to_compact(A, b)
+        g = jax.grad(self._logdet_fn(b))(Ac)
+        assert np.all(np.isfinite(np.array(g)))
+        # d logdet / dA_jj = (A^{-1})_jj
+        Ainv_diag = np.diag(np.linalg.inv(np.array(A)))
+        np.testing.assert_allclose(np.array(g[0]), Ainv_diag, rtol=1e-8)
+
+    def test_hessian_finite(self):
+        n, b = 100, 3
+        A = _make_banded_spd(n, b)
+        Ac = _full_to_compact(A, b)
+        H = jax.hessian(self._logdet_fn(b))(Ac)
+        assert np.all(np.isfinite(np.array(H)))
+
+    def test_solve_grad_finite(self):
+        rng = np.random.default_rng(19)
+        n, b = 100, 3
+        A = _make_banded_spd(n, b, rng=rng)
+        Ac = _full_to_compact(A, b)
+        rhs = jnp.array(rng.standard_normal(n))
+
+        def quad_form(Ac_):
+            Lc = banded_cholesky_compact(Ac_, b)
+            return rhs @ banded_solve_compact(Lc, rhs, b)
+
+        g = jax.grad(quad_form)(Ac)
+        assert np.all(np.isfinite(np.array(g)))
+
+
 class TestBandedCholeskyLegacy:
     def test_full_factorization(self):
         """Legacy full-matrix interface."""

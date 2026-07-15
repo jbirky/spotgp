@@ -21,10 +21,7 @@ import jax
 import jax.numpy as jnp
 from abc import ABC, abstractmethod
 
-try:
-    from .distributions import as_distribution, is_distributed
-except ImportError:
-    from distributions import as_distribution, is_distributed
+from .distributions import as_distribution, is_distributed
 
 __all__ = [
     "EnvelopeFunction",
@@ -329,6 +326,57 @@ class EnvelopeFunction(ABC):
         Default: ``lspot + 6 * tau_spot``.  Override for tighter bounds.
         """
         return self.lspot + 6.0 * self.tau_spot
+
+    def r_gamma_jax(self, theta_env, lag):
+        """
+        JAX-traceable R_Gamma from the envelope slice of the parameter vector.
+
+        Override in subclasses with free parameters so that gradients
+        flow through envelope parameters during GP fitting.
+
+        Parameters
+        ----------
+        theta_env : jnp.ndarray
+            Envelope parameters sliced from the full theta vector,
+            in the order given by ``self.param_dict.keys()``.
+        lag : jnp.ndarray
+            Time lags.
+
+        Returns
+        -------
+        R : jnp.ndarray
+            R_Gamma evaluated at each lag.
+        """
+        if self.param_dict:
+            raise NotImplementedError(
+                f"{type(self).__name__} has free parameters "
+                f"{tuple(self.param_dict.keys())} but does not implement "
+                f"r_gamma_jax(). Envelope parameters will appear in the "
+                f"fit vector but have zero gradient. Override "
+                f"r_gamma_jax(theta_env, lag) to provide a JAX-traceable "
+                f"R_Gamma function.")
+        return self.R_Gamma(lag)
+
+    def support_from_bounds(self, upper_fn):
+        """
+        Kernel support estimated from parameter upper bounds.
+
+        Used by ``SpotEvolutionModel.bandwidth_support`` to compute the
+        banded-Cholesky bandwidth from the prior bounds.
+
+        Parameters
+        ----------
+        upper_fn : callable
+            ``upper_fn(key, fallback) -> float`` returns the upper bound
+            for a named parameter, falling back to ``fallback`` if the
+            parameter is not in the bounds dict.
+
+        Returns
+        -------
+        float
+            Conservative upper bound on the kernel support [days].
+        """
+        return self.kernel_support()
 
     # ── Lazy numerical grid helpers ───────────────────────────────────────────
 
@@ -800,6 +848,15 @@ class TrapezoidSymmetricEnvelope(EnvelopeFunction):
                     lag, float(li), float(tj))
         return R_sum
 
+    def r_gamma_jax(self, theta_env, lag):
+        lspot = theta_env[0]
+        tau_spot = theta_env[1]
+        return _R_Gamma_symmetric(lag, lspot, tau_spot)
+
+    def support_from_bounds(self, upper_fn):
+        return (upper_fn("lspot", self.lspot)
+                + 2.0 * upper_fn("tau_spot", self.tau_spot))
+
     def kernel_support(self) -> float:
         # Use upper end of distributions for conservative support
         if self._is_marginalized:
@@ -899,6 +956,19 @@ class TrapezoidAsymmetricEnvelope(EnvelopeFunction):
         te = min(self._tau_em, self._tau_dec)
         td = max(self._tau_em, self._tau_dec)
         return _R_Gamma_asymmetric(jnp.asarray(lag), self._lspot, te, td)
+
+    def r_gamma_jax(self, theta_env, lag):
+        lspot = theta_env[0]
+        tau_em = theta_env[1]
+        tau_dec = theta_env[2]
+        te = jnp.minimum(tau_em, tau_dec)
+        td = jnp.maximum(tau_em, tau_dec)
+        return _R_Gamma_asymmetric(lag, lspot, te, td)
+
+    def support_from_bounds(self, upper_fn):
+        return (upper_fn("lspot", self._lspot)
+                + upper_fn("tau_em", self._tau_em)
+                + upper_fn("tau_dec", self._tau_dec))
 
     def kernel_support(self) -> float:
         return self._lspot + self._tau_em + self._tau_dec
@@ -1001,6 +1071,12 @@ class SkewedGaussianEnvelope(EnvelopeFunction):
         lag_abs = jnp.abs(jnp.asarray(lag, dtype=float).ravel())
         return jnp.interp(lag_abs, self._R_lag_grid, self._R_vals)
 
+    def r_gamma_jax(self, theta_env, lag):
+        return jnp.interp(jnp.abs(lag), self._R_lag_grid, self._R_vals)
+
+    def support_from_bounds(self, upper_fn):
+        return 12.0 * upper_fn("sigma_sn", self._sigma_sn)
+
     def kernel_support(self) -> float:
         return 12.0 * self._sigma_sn
 
@@ -1056,6 +1132,14 @@ class ExponentialEnvelope(EnvelopeFunction):
         """R_Gamma(lag) = (tau_spot + |lag|) * exp(-|lag| / tau_spot)."""
         abs_lag = jnp.abs(jnp.asarray(lag, dtype=float))
         return (self._tau_spot + abs_lag) * jnp.exp(-abs_lag / self._tau_spot)
+
+    def r_gamma_jax(self, theta_env, lag):
+        tau_spot = theta_env[0]
+        abs_lag = jnp.abs(lag)
+        return (tau_spot + abs_lag) * jnp.exp(-abs_lag / tau_spot)
+
+    def support_from_bounds(self, upper_fn):
+        return 6.0 * upper_fn("tau_spot", self._tau_spot)
 
     def kernel_support(self) -> float:
         return 6.0 * self._tau_spot
@@ -1130,6 +1214,39 @@ class ExponentialAsymmetricEnvelope(EnvelopeFunction):
         omega = jnp.asarray(omega, dtype=float)
         return (self._tau_em / (1.0 + (omega * self._tau_em) ** 2)
                 + self._tau_dec / (1.0 + (omega * self._tau_dec) ** 2))
+
+    def R_Gamma(self, lag):
+        """Analytic autocorrelation of the asymmetric exponential envelope."""
+        abs_lag = jnp.abs(jnp.asarray(lag, dtype=float))
+        te, td = self._tau_em, self._tau_dec
+        term1 = (te / 2.0) * jnp.exp(-abs_lag / te)
+        term3 = (td / 2.0) * jnp.exp(-abs_lag / td)
+        alpha = 1.0 / te - 1.0 / td
+        if abs(alpha) > 1e-10:
+            cross = jnp.exp(-abs_lag / td) * (
+                1.0 - jnp.exp(-alpha * abs_lag)) / alpha
+        else:
+            cross = jnp.exp(-abs_lag / td) * abs_lag
+        return term1 + term3 + cross
+
+    def r_gamma_jax(self, theta_env, lag):
+        tau_em = theta_env[0]
+        tau_dec = theta_env[1]
+        abs_lag = jnp.abs(lag)
+        term1 = (tau_em / 2.0) * jnp.exp(-abs_lag / tau_em)
+        term3 = (tau_dec / 2.0) * jnp.exp(-abs_lag / tau_dec)
+        alpha = 1.0 / tau_em - 1.0 / tau_dec
+        safe_alpha = jnp.where(jnp.abs(alpha) > 1e-10, alpha, 1.0)
+        cross = jnp.where(
+            jnp.abs(alpha) > 1e-10,
+            jnp.exp(-abs_lag / tau_dec) * (
+                1.0 - jnp.exp(-safe_alpha * abs_lag)) / safe_alpha,
+            jnp.exp(-abs_lag / tau_dec) * abs_lag)
+        return term1 + term3 + cross
+
+    def support_from_bounds(self, upper_fn):
+        return 6.0 * (upper_fn("tau_em", self._tau_em)
+                      + upper_fn("tau_dec", self._tau_dec))
 
     def kernel_support(self) -> float:
         return 6.0 * (self._tau_em + self._tau_dec)

@@ -5,41 +5,38 @@ Uses JAX for JIT-compiled covariance matrix construction, Cholesky
 factorization, and GP operations (log-likelihood, prediction, MAP
 estimation, and mass matrix computation for MCMC).
 """
+import logging
 import os
+import warnings
+
 import jax
 jax.config.update("jax_enable_x64", True)
-jax.config.update("jax_platforms", os.environ.get("JAX_PLATFORMS", "cpu"))
+if "jax_platforms" not in os.environ.get("XLA_FLAGS", "") and "JAX_PLATFORMS" not in os.environ:
+    jax.config.update("jax_platforms", "cpu")
 
 import jax.numpy as jnp
 import jax.scipy.linalg as jla
 import numpy as np
 
-try:
-    from .params import (
-        resolve_hparam, KERNEL_HPARAM_KEYS, HPARAM_KEYS_WITH_NOISE,
-    )
-    from .envelope import _R_Gamma_symmetric
-    from .spot_model import (
-        SpotEvolutionModel, VisibilityFunction, EdgeOnVisibilityFunction,
-        _cn_general_jax, _gauss_legendre_grid,
-    )
-    from .analytic_kernel import AnalyticKernel
-    from .banded_cholesky import (banded_cholesky, banded_solve,
-                                   banded_cholesky_compact, banded_solve_compact)
-except ImportError:
-    from params import (
-        resolve_hparam, KERNEL_HPARAM_KEYS, HPARAM_KEYS_WITH_NOISE,
-    )
-    from envelope import _R_Gamma_symmetric
-    from spot_model import (
-        SpotEvolutionModel, VisibilityFunction, EdgeOnVisibilityFunction,
-        _cn_general_jax, _gauss_legendre_grid,
-    )
-    from analytic_kernel import AnalyticKernel
-    from banded_cholesky import (banded_cholesky, banded_solve,
-                                 banded_cholesky_compact, banded_solve_compact)
+from .params import (
+    resolve_hparam, KERNEL_HPARAM_KEYS, HPARAM_KEYS_WITH_NOISE,
+)
+from .spot_model import (
+    SpotEvolutionModel, VisibilityFunction, EdgeOnVisibilityFunction,
+    _gauss_legendre_grid,
+)
+from .analytic_kernel import (
+    AnalyticKernel, _kernel_eval, _kernel_eval_edgeon,
+)
+from .banded_cholesky import (banded_cholesky, banded_solve,
+                               banded_cholesky_compact, banded_solve_compact)
+from .fitting import FittingMixin
+from .gp_plots import GPPlotsMixin
+from .mass_matrix import MassMatrixMixin
 
 __all__ = ["GPSolver"]
+
+logger = logging.getLogger("spotgp")
 
 # KERNEL_HPARAM_KEYS and HPARAM_KEYS_WITH_NOISE are imported from params.
 # Re-export as lists for any callers that expect list type.
@@ -47,159 +44,8 @@ KERNEL_HPARAM_KEYS = list(KERNEL_HPARAM_KEYS)
 HPARAM_KEYS_WITH_NOISE = list(HPARAM_KEYS_WITH_NOISE)
 
 
-# =====================================================================
-# Pure-functional GP helpers (module-level for clean JAX tracing)
-# =====================================================================
-
-def _kernel_eval_edgeon(theta_arr, lag_flat, n_harmonics,
-                        r_gamma_func=None, cn_sq_fixed=None):
-    """
-    Fast-path kernel evaluation for EdgeOnVisibilityFunction.
-
-    Skips the latitude quadrature loop entirely.  The latitude-averaged
-    |c_n|^2 are known constants passed in via ``cn_sq_fixed``.
-
-    Parameters
-    ----------
-    theta_arr : jnp.ndarray
-        Kernel parameters.  theta_arr[0] = peq, theta_arr[-1] = sigma_k.
-    lag_flat : jnp.ndarray, shape (M,)
-    n_harmonics : int
-    r_gamma_func : callable or None
-    cn_sq_fixed : jnp.ndarray, shape (n_harmonics+1,)
-        Pre-computed latitude-averaged |c_n|^2.
-
-    Returns
-    -------
-    K_flat : jnp.ndarray, shape (M,)
-    """
-    peq = theta_arr[0]
-    sigma_k = theta_arr[-1]
-
-    if r_gamma_func is not None:
-        R = r_gamma_func(theta_arr, lag_flat)
-    else:
-        lspot    = theta_arr[1]
-        tau_spot = theta_arr[2]
-        R = _R_Gamma_symmetric(lag_flat, lspot, tau_spot)
-
-    w0 = 2.0 * jnp.pi / peq
-    harm_ns = jnp.arange(1, n_harmonics + 1)
-    cosine_terms = jnp.sum(
-        cn_sq_fixed[1:] * jnp.cos(harm_ns * w0 * lag_flat[:, None]), axis=1)
-    K = sigma_k ** 2 * R * (cn_sq_fixed[0] + 2.0 * cosine_terms)
-    return K
-
-
-def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
-                  quad_nodes=None, quad_weights=None,
-                  r_gamma_func=None,
-                  edgeon_cn_sq=None,
-                  lat_weight_func=None):
-    """
-    Pure-functional kernel evaluation: theta_arr -> kernel values.
-
-    Uses ``jax.vmap`` over the latitude grid so that all latitudes are
-    processed in parallel.  cn_sq coefficients for all latitudes are
-    precomputed with a double-vmap (outer: latitudes, inner: harmonics)
-    before entering the per-latitude cosine sum, avoiding repeated vmap
-    traces inside a sequential loop.
-
-    Memory scales as O(n_lat * M) instead of O(M), which is acceptable
-    on GPU where M = N*bandwidth is small relative to device memory.
-
-    When ``edgeon_cn_sq`` is not None, delegates to the fast edge-on
-    path that skips all latitude quadrature.
-
-    Parameters
-    ----------
-    theta_arr : jnp.ndarray, shape (n_params,)
-        Kernel parameters. First three are always [peq, kappa, inc];
-        last is always sigma_k. Layout otherwise depends on envelope type.
-        Default (backward-compat) layout: [peq, kappa, inc, lspot, tau_spot, sigma_k].
-    lag_flat : jnp.ndarray, shape (M,)
-        Flattened time lags.
-    n_harmonics, n_lat, lat_range : kernel config (static).
-    quad_nodes, quad_weights : jnp.ndarray or None
-        Gauss-Legendre nodes and weights. If None, uses trapezoid rule.
-    r_gamma_func : callable or None
-        JAX-traceable function ``f(theta_arr, lag) -> R_Gamma``.
-        If None, uses the symmetric-trapezoid closed-form (backward compat).
-    edgeon_cn_sq : jnp.ndarray or None
-        If not None, use the edge-on fast path with these fixed |c_n|^2.
-    lat_weight_func : callable or None
-        JAX-traceable function ``f(theta_arr, phi_grid) -> weights`` that
-        computes per-node latitude weights from the theta vector. If None,
-        all quadrature nodes are weighted equally (or by the static
-        quad_weights).
-
-    Returns
-    -------
-    K_flat : jnp.ndarray, shape (M,)
-        Kernel values at each lag.
-    """
-    # Fast path for EdgeOnVisibilityFunction
-    if edgeon_cn_sq is not None:
-        return _kernel_eval_edgeon(theta_arr, lag_flat, n_harmonics,
-                                   r_gamma_func=r_gamma_func,
-                                   cn_sq_fixed=edgeon_cn_sq)
-
-    peq    = theta_arr[0]
-    kappa  = theta_arr[1]
-    inc    = theta_arr[2]
-    sigma_k = theta_arr[-1]
-
-    # R_Gamma: envelope-specific or default symmetric trapezoid
-    if r_gamma_func is not None:
-        R = r_gamma_func(theta_arr, lag_flat)
-    else:
-        lspot    = theta_arr[3]
-        tau_spot = theta_arr[4]
-        R = _R_Gamma_symmetric(lag_flat, lspot, tau_spot)
-
-    # Quadrature grid
-    if quad_nodes is not None:
-        phi_grid = quad_nodes
-        weights = quad_weights
-    else:
-        phi_min, phi_max = lat_range
-        phi_grid = jnp.linspace(phi_min, phi_max, n_lat)
-        dphi = phi_grid[1] - phi_grid[0]
-        weights = jnp.ones_like(phi_grid) * dphi
-
-    # Apply dynamic latitude weights from theta (e.g. band boundaries)
-    if lat_weight_func is not None:
-        lat_w = lat_weight_func(theta_arr, phi_grid)
-        weights = weights * lat_w
-
-    norm = jnp.sum(weights)
-
-    # Precompute cn_sq for all latitudes at once: shape (n_lat, n_harmonics+1).
-    # Outer vmap over latitudes, inner vmap over harmonics — avoids tracing
-    # the inner vmap once per latitude step as was the case inside scan.
-    ns = jnp.arange(n_harmonics + 1)
-    cn_sq_all = jax.vmap(
-        lambda phi: jax.vmap(lambda n: _cn_general_jax(n, inc, phi))(ns) ** 2
-    )(phi_grid)  # (n_lat, n_harmonics+1)
-
-    harm_ns = jnp.arange(1, n_harmonics + 1)
-
-    # Per-latitude cosine sum given pre-computed cn_sq: returns shape (M,)
-    def _lat_contribution(phi, cn_sq):
-        w0 = 2 * jnp.pi * (1 - kappa * jnp.sin(phi) ** 2) / peq
-        cosine_terms = jnp.sum(
-            cn_sq[1:] * jnp.cos(harm_ns * w0 * lag_flat[:, None]), axis=1
-        )
-        return cn_sq[0] + 2 * cosine_terms
-
-    # vmap over all latitudes simultaneously: shape (n_lat, M)
-    all_contribs = jax.vmap(_lat_contribution)(phi_grid, cn_sq_all)
-
-    # Weighted sum over latitudes: shape (M,)
-    K = jnp.sum(weights[:, None] * all_contribs, axis=0) / norm
-
-    K = R * K * sigma_k ** 2
-    return K
+# _kernel_eval and _kernel_eval_edgeon are imported from analytic_kernel.py
+# (the single source of truth for kernel math).
 
 
 def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
@@ -208,13 +54,21 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
                        r_gamma_func=None,
                        quad_nodes=None, quad_weights=None,
                        edgeon_cn_sq=None,
-                       lat_weight_func=None):
+                       lat_weight_func=None,
+                       uniform_dt=None,
+                       lag_table=None):
     """
     Pure-functional GP marginal log-likelihood.
 
-    Exploits the symmetry of the covariance matrix by evaluating the
-    kernel only on the upper-triangular lags (N*(N+1)/2 instead of N^2),
-    halving memory and compute for the kernel evaluation step.
+    When ``uniform_dt`` is given (Toeplitz fast path), the stationary
+    kernel takes only N distinct values over the whole matrix, so it is
+    evaluated once per distinct lag and gathered: K[i, j] = K1d[|i - j|].
+    ``lag_table`` generalizes this to uniform-cadence data *with gaps*
+    (the common Kepler/TESS case): the kernel is evaluated once per
+    distinct integer-cadence lag and gathered through a precomputed
+    index table.  Otherwise the kernel is evaluated on the
+    upper-triangular lags (N*(N+1)/2 instead of N^2), halving memory and
+    compute relative to the naive full-matrix evaluation.
 
     Parameters
     ----------
@@ -233,6 +87,15 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
         JAX-traceable envelope R_Gamma function (see _kernel_eval).
     quad_nodes, quad_weights : jnp.ndarray or None
         Gauss-Legendre nodes/weights. If None, uses trapezoid rule.
+    uniform_dt : float or None
+        Sample spacing when ``x`` is a uniform grid (compile-time
+        constant). Enables the Toeplitz fast path; None disables it.
+    lag_table : (jnp.ndarray, jnp.ndarray) or None
+        ``(unique_lags, inv_idx)`` for uniform-cadence data with gaps:
+        ``unique_lags`` holds the distinct pairwise lags and ``inv_idx``
+        is an (N, N) integer map with ``|x_i - x_j| =
+        unique_lags[inv_idx[i, j]]``.  Ignored when ``uniform_dt`` is
+        given.
 
     Returns
     -------
@@ -247,21 +110,43 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
         theta_kernel = theta_full
         sigma_n = 0.0
 
-    # Upper-triangular indices (includes diagonal)
-    row_idx, col_idx = jnp.triu_indices(N)
-    lag_upper = jnp.abs(x[row_idx] - x[col_idx])
-
-    K_upper = _kernel_eval(theta_kernel, lag_upper,
+    if uniform_dt is not None:
+        # Toeplitz fast path: N distinct lags instead of N*(N+1)/2.
+        lag_unique = jnp.arange(N) * uniform_dt
+        K1d = _kernel_eval(theta_kernel, lag_unique,
                            n_harmonics, n_lat, lat_range,
                            quad_nodes=quad_nodes, quad_weights=quad_weights,
                            r_gamma_func=r_gamma_func,
                            edgeon_cn_sq=edgeon_cn_sq,
                            lat_weight_func=lat_weight_func)
+        idx = jnp.abs(jnp.arange(N)[:, None] - jnp.arange(N)[None, :])
+        K = K1d[idx]
+    elif lag_table is not None:
+        # Gappy-uniform fast path: distinct lags gathered by index table.
+        lags_unique, inv_idx = lag_table
+        K1d = _kernel_eval(theta_kernel, lags_unique,
+                           n_harmonics, n_lat, lat_range,
+                           quad_nodes=quad_nodes, quad_weights=quad_weights,
+                           r_gamma_func=r_gamma_func,
+                           edgeon_cn_sq=edgeon_cn_sq,
+                           lat_weight_func=lat_weight_func)
+        K = K1d[inv_idx]
+    else:
+        # Upper-triangular indices (includes diagonal)
+        row_idx, col_idx = jnp.triu_indices(N)
+        lag_upper = jnp.abs(x[row_idx] - x[col_idx])
 
-    # Reconstruct symmetric matrix from upper triangle
-    K = jnp.zeros((N, N))
-    K = K.at[row_idx, col_idx].set(K_upper)
-    K = K + K.T - jnp.diag(jnp.diag(K))
+        K_upper = _kernel_eval(theta_kernel, lag_upper,
+                               n_harmonics, n_lat, lat_range,
+                               quad_nodes=quad_nodes, quad_weights=quad_weights,
+                               r_gamma_func=r_gamma_func,
+                               edgeon_cn_sq=edgeon_cn_sq,
+                               lat_weight_func=lat_weight_func)
+
+        # Reconstruct symmetric matrix from upper triangle
+        K = jnp.zeros((N, N))
+        K = K.at[row_idx, col_idx].set(K_upper)
+        K = K + K.T - jnp.diag(jnp.diag(K))
 
     noise_var = yerr ** 2 + sigma_n ** 2
     K_noise = K + jnp.diag(noise_var) + 1e-8 * jnp.eye(N)
@@ -281,11 +166,20 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
                               r_gamma_func=None,
                               quad_nodes=None, quad_weights=None,
                               edgeon_cn_sq=None,
-                              lat_weight_func=None):
+                              lat_weight_func=None,
+                              uniform_dt=None,
+                              band_lag_table=None):
     """
     Build the kernel covariance directly in compact (b+1, N) banded storage.
 
-    Evaluates only the O(N*b) within-band lags instead of the full N^2 matrix.
+    Evaluates only the O(N*b) within-band lags instead of the full N^2
+    matrix.  When ``uniform_dt`` is given (Toeplitz fast path), every
+    diagonal d of the band holds the single value K(d*dt), so the kernel
+    is evaluated at just b+1 distinct lags and broadcast across the band
+    — O(b) kernel evaluations instead of O(N*b).  ``band_lag_table``
+    generalizes this to uniform-cadence data with gaps: the kernel is
+    evaluated once per distinct within-band lag and gathered through a
+    precomputed index table.
 
     Parameters
     ----------
@@ -299,6 +193,15 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
     r_gamma_func : callable or None
         JAX-traceable envelope R_Gamma function (see _kernel_eval).
     quad_nodes, quad_weights : jnp.ndarray or None
+    uniform_dt : float or None
+        Sample spacing when ``x`` is a uniform grid (compile-time
+        constant). Enables the Toeplitz fast path; None disables it.
+    band_lag_table : (jnp.ndarray, jnp.ndarray) or None
+        ``(unique_lags, inv_idx)`` for uniform-cadence data with gaps:
+        ``unique_lags`` holds the distinct within-band lags and
+        ``inv_idx`` is a (b+1, N) integer map with ``x[i+d] - x[i] =
+        unique_lags[inv_idx[d, i]]``.  Ignored when ``uniform_dt`` is
+        given.
 
     Returns
     -------
@@ -311,9 +214,34 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
     d_idx = jnp.arange(b + 1)[:, None]
     i_idx = jnp.arange(N)[None, :]
     j_idx = i_idx + d_idx
-    j_safe = jnp.minimum(j_idx, N - 1)
     valid = j_idx < N
 
+    if uniform_dt is not None:
+        # Toeplitz fast path: b+1 distinct lags instead of (b+1)*N.
+        lag_unique = jnp.arange(b + 1) * uniform_dt
+        K_unique = _kernel_eval(theta_kernel, lag_unique,
+                                n_harmonics, n_lat, lat_range,
+                                quad_nodes=quad_nodes,
+                                quad_weights=quad_weights,
+                                r_gamma_func=r_gamma_func,
+                                edgeon_cn_sq=edgeon_cn_sq,
+                                lat_weight_func=lat_weight_func)
+        return jnp.where(valid, K_unique[:, None], 0.0)
+
+    if band_lag_table is not None:
+        # Gappy-uniform fast path: distinct within-band lags, gathered
+        # through the precomputed index table.
+        lags_unique, inv_idx = band_lag_table
+        K_unique = _kernel_eval(theta_kernel, lags_unique,
+                                n_harmonics, n_lat, lat_range,
+                                quad_nodes=quad_nodes,
+                                quad_weights=quad_weights,
+                                r_gamma_func=r_gamma_func,
+                                edgeon_cn_sq=edgeon_cn_sq,
+                                lat_weight_func=lat_weight_func)
+        return jnp.where(valid, K_unique[inv_idx], 0.0)
+
+    j_safe = jnp.minimum(j_idx, N - 1)
     lags_flat = jnp.abs(x[j_safe] - x[i_idx]).ravel()
     K_flat = _kernel_eval(theta_kernel, lags_flat,
                           n_harmonics, n_lat, lat_range,
@@ -333,14 +261,17 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                r_gamma_func=None,
                                quad_nodes=None, quad_weights=None,
                                edgeon_cn_sq=None,
-                               lat_weight_func=None):
+                               lat_weight_func=None,
+                               uniform_dt=None,
+                               band_lag_table=None):
     """
     Pure-functional GP marginal log-likelihood using banded Cholesky.
 
     Builds the covariance directly in compact (b+1, N) banded storage,
-    evaluating only the O(N*b) within-band lags.  The Cholesky factorization
-    and solve operate entirely in compact storage — no (N, N) matrix is
-    ever allocated.
+    evaluating only the O(N*b) within-band lags — or, on a uniform grid
+    (``uniform_dt`` given), only the b+1 distinct lags of the Toeplitz
+    band.  The Cholesky factorization and solve operate entirely in
+    compact storage — no (N, N) matrix is ever allocated.
 
     ``bandwidth`` must be a Python ``int`` (captured in the JIT closure
     at trace time so the inner scan loop can be unrolled statically).
@@ -353,6 +284,9 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
         Number of kernel parameters (default 6 for backward compat).
     r_gamma_func : callable or None
         JAX-traceable envelope R_Gamma function (see _kernel_eval).
+    uniform_dt : float or None
+        Sample spacing when ``x`` is a uniform grid (compile-time
+        constant). Enables the Toeplitz fast path; None disables it.
     All other parameters are the same as ``_gp_log_likelihood``.
     """
     N = x.shape[0]
@@ -371,7 +305,9 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                    quad_nodes=quad_nodes,
                                    quad_weights=quad_weights,
                                    edgeon_cn_sq=edgeon_cn_sq,
-                                   lat_weight_func=lat_weight_func)
+                                   lat_weight_func=lat_weight_func,
+                                   uniform_dt=uniform_dt,
+                                   band_lag_table=band_lag_table)
 
     # Add noise to diagonal (row 0 of compact storage)
     noise_var = yerr ** 2 + sigma_n ** 2
@@ -411,11 +347,139 @@ def _validate_hparam(hparam):
     resolve_hparam(hparam)  # raises TypeError / ValueError on bad input
 
 
+def _detect_uniform_dt(x, rtol=1e-6):
+    """
+    Return the sample spacing if ``x`` is a uniform grid, else None.
+
+    A uniform grid enables the Toeplitz fast path: the stationary kernel
+    takes only one distinct value per diagonal of the covariance matrix,
+    so it can be evaluated once per distinct lag instead of once per
+    matrix entry.
+
+    Parameters
+    ----------
+    x : array_like, shape (N,)
+        Observation times, assumed sorted.
+    rtol : float
+        Maximum relative deviation of any spacing from the median
+        spacing (default 1e-6).
+
+    Returns
+    -------
+    dt : float or None
+        The common spacing, or None if the grid is irregular.
+        Uniform-cadence data *with gaps* also returns None here but is
+        handled by the second detection tier
+        (``_detect_cadence_offsets``).
+    """
+    x = np.asarray(x, dtype=np.float64)
+    if x.shape[0] < 2:
+        return None
+    diffs = np.diff(x)
+    dt = float(np.median(diffs))
+    if dt <= 0.0:
+        return None
+    if np.allclose(diffs, dt, rtol=rtol, atol=0.0):
+        return dt
+    return None
+
+
+def _detect_cadence_offsets(x, rtol=1e-3):
+    """
+    Detect a uniform cadence with gaps and return integer lag offsets.
+
+    Handles the common Kepler/TESS case: samples on a regular cadence
+    ``dt`` with missing chunks.  Every pairwise lag is then an integer
+    multiple of ``dt``, so the stationary kernel takes far fewer distinct
+    values than there are matrix entries and can be evaluated once per
+    distinct within-band lag (see ``GPSolver._band_lag_table``).
+
+    Parameters
+    ----------
+    x : array_like, shape (N,)
+        Observation times, assumed sorted.
+    rtol : float
+        Maximum deviation of any sample from its cadence grid point,
+        relative to ``dt`` (default 1e-3).
+
+    Returns
+    -------
+    dt : float or None
+        The cadence, or None if ``x`` is not on a uniform cadence grid.
+    offsets : np.ndarray of int64 or None
+        Integer grid index of each sample, ``x ≈ x[0] + offsets * dt``.
+    """
+    x = np.asarray(x, dtype=np.float64)
+    if x.shape[0] < 2:
+        return None, None
+    diffs = np.diff(x)
+    dt = float(np.median(diffs))
+    if dt <= 0.0:
+        return None, None
+    k = np.round((x - x[0]) / dt)
+    on_grid = np.max(np.abs(x - (x[0] + k * dt))) <= rtol * dt
+    if on_grid and np.all(np.diff(k) >= 1):
+        return dt, k.astype(np.int64)
+    return None, None
+
+
+def _make_lbfgsb_batch_runner(vg_fn, n_free, maxiter, gtol):
+    """
+    Build a compiled multi-start L-BFGS-B runner.
+
+    The returned callable maps a ``(n_starts, n_free)`` batch of starting
+    points in unit-cube coordinates to ``(u, fun, nit)`` arrays, running
+    every restart inside a single ``jax.vmap``-ed ``jaxopt.LBFGSB``
+    program instead of one scipy optimizer per start in a thread pool.
+
+    Compilation of the vmapped solver is expensive (it traces the full
+    while-loop optimizer around the covariance build), so callers cache
+    the returned runner and reuse it across calls; only the first call
+    per (objective, maxiter, gtol) pays the compile.
+
+    Parameters
+    ----------
+    vg_fn : callable
+        JAX-traceable objective mapping a length-``n_free`` vector in
+        [0, 1] coordinates to ``(value, grad)``.
+    n_free : int
+        Number of free parameters.
+    maxiter : int
+        Maximum L-BFGS-B iterations per start.
+    gtol : float
+        Convergence tolerance passed to the solver.
+
+    Raises
+    ------
+    ImportError
+        If jaxopt is not installed.  Callers fall back to the
+        thread-pool implementation.
+    """
+    from jaxopt import LBFGSB
+
+    solver = LBFGSB(fun=vg_fn, value_and_grad=True,
+                    maxiter=int(maxiter), tol=float(gtol))
+    lo = jnp.zeros(n_free, dtype=jnp.float64)
+    hi = jnp.ones(n_free, dtype=jnp.float64)
+
+    def _run_one(u0):
+        res = solver.run(u0, bounds=(lo, hi))
+        return res.params, res.state.value, res.state.iter_num
+
+    vmapped = jax.jit(jax.vmap(_run_one))
+
+    def runner(u0_batch):
+        u, fun, nit = vmapped(jnp.asarray(u0_batch, dtype=jnp.float64))
+        return np.asarray(u), np.asarray(fun), np.asarray(nit)
+
+    return runner
+
+
 # =====================================================================
 # GPSolver class
 # =====================================================================
 
-class GPSolver:
+class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
     """
     JAX-accelerated Gaussian Process solver for stellar lightcurves.
 
@@ -499,6 +563,25 @@ class GPSolver:
         self.y = jnp.asarray(self.data.y, dtype=jnp.float64)
         self.yerr = jnp.asarray(self.data.yerr, dtype=jnp.float64)
         self.N = len(self.x)
+
+        # Detect uniform sampling.  On a uniform grid the covariance is
+        # Toeplitz, so the kernel needs evaluating only once per distinct
+        # lag (b+1 values for the banded solver, N for the full solver)
+        # instead of once per matrix entry.  None for irregular grids.
+        self.uniform_dt = _detect_uniform_dt(self.data.x)
+
+        # Second tier: uniform cadence *with gaps* (Kepler/TESS-style).
+        # Pairwise lags are then integer multiples of the cadence, so the
+        # kernel is evaluated once per distinct within-band lag and
+        # gathered through a precomputed index table (see
+        # _band_lag_table / _full_lag_table).
+        if self.uniform_dt is None:
+            self._cadence_dt, self._cadence_offsets = \
+                _detect_cadence_offsets(self.data.x)
+        else:
+            self._cadence_dt, self._cadence_offsets = self.uniform_dt, None
+        self._band_lag_table_cache = None
+        self._full_lag_table_cache = None
 
         # Accept SpotEvolutionModel or legacy hparam dict
         if isinstance(model_or_hparam, SpotEvolutionModel):
@@ -590,8 +673,11 @@ class GPSolver:
             _n_banded = (self.bandwidth + 1) * self.N
             _n_full   = self.N * self.N
             _sparsity = 100.0 * (1.0 - _n_banded / _n_full)
-            print(f"Banded Cholesky: bandwidth={self.bandwidth}, "
-                  f"N={self.N}, sparsity={_sparsity:.1f}%")
+            _toep = (", Toeplitz fast path (uniform grid)"
+                     if self.uniform_dt is not None else "")
+            logger.info("Banded Cholesky: bandwidth=%d, N=%d, sparsity=%.1f%%%s",
+                       self.bandwidth, self.N, _sparsity, _toep)
+            self._check_bandwidth_efficiency()
 
         # Build covariance and factorize
         self._build_covariance()
@@ -684,7 +770,7 @@ class GPSolver:
         import os as _os
         path = _os.path.join(self.save_dir, filename)
         np.savez(path, **arrays)
-        print(f"Saved {filename} → {path}")
+        logger.debug("Saved %s → %s", filename, path)
 
     def _build_kernel(self):
         """Instantiate the kernel object from the SpotEvolutionModel."""
@@ -736,14 +822,81 @@ class GPSolver:
         (it determines array shapes), so it must cover the entire prior
         support rather than just the initial hyperparameters.
 
-        Assumes uniform sampling; uses ``x[1] - x[0]`` as the step size.
+        Uses the detected uniform spacing when available, otherwise the
+        median spacing (robust to gaps, unlike ``x[1] - x[0]``).
         """
         if self.N < 2:
             return self.N
-        dt = float(self.x[1] - self.x[0])
+        if self.uniform_dt is not None:
+            dt = self.uniform_dt
+        else:
+            dt = float(np.median(np.diff(np.asarray(self.x))))
         support = self.spot_model.bandwidth_support(self.param_keys, self.bounds)
         b = int(np.ceil(support / dt))
         return min(b, self.N - 1)
+
+    def _check_bandwidth_efficiency(self):
+        """Warn when the band is so wide that banded loses to dense.
+
+        The bandwidth is derived from the prior *upper bounds* of the
+        envelope parameters, so a generous prior (e.g. ``lspot`` up to
+        tens of days) combined with a fine cadence can silently push
+        ``b`` toward ``N`` — where the O(N b^2) banded solver costs as
+        much as dense O(N^3) Cholesky while adding overhead.
+        """
+        if 2 * self.bandwidth >= self.N:
+            warnings.warn(
+                f"Banded solver bandwidth b={self.bandwidth} is >= N/2 "
+                f"(N={self.N}), so the banded Cholesky has (almost) no "
+                "sparsity to exploit and is likely slower than the dense "
+                "solver. The bandwidth is set by the prior upper bounds "
+                "of the envelope parameters (kernel support ~ lspot + "
+                "2*tau_spot) divided by the cadence; tighten those "
+                "bounds, downsample the lightcurve, or switch to "
+                "matrix_solver='cholesky_full'.",
+                stacklevel=3)
+
+    def _band_lag_table(self):
+        """(unique_lags, inv_idx) for the banded build on gappy-uniform grids.
+
+        Returns None when the grid is strictly uniform (the cheaper
+        ``uniform_dt`` broadcast applies) or genuinely irregular.  The
+        table is cached; ``inv_idx`` has shape (b+1, N) and satisfies
+        ``x[min(i+d, N-1)] - x[i] = unique_lags[inv_idx[d, i]]``.
+        """
+        if self.uniform_dt is not None or self._cadence_offsets is None:
+            return None
+        if self._band_lag_table_cache is None:
+            off = self._cadence_offsets
+            b, N = self.bandwidth, self.N
+            d = np.arange(b + 1)[:, None]
+            i = np.arange(N)[None, :]
+            j = np.minimum(i + d, N - 1)
+            lag_int = off[j] - off[i]
+            uniq, inv = np.unique(lag_int, return_inverse=True)
+            self._band_lag_table_cache = (
+                jnp.asarray(uniq * self._cadence_dt, dtype=jnp.float64),
+                jnp.asarray(inv.reshape(b + 1, N).astype(np.int32)))
+        return self._band_lag_table_cache
+
+    def _full_lag_table(self):
+        """(unique_lags, inv_idx) for the dense build on gappy-uniform grids.
+
+        Returns None when the grid is strictly uniform or irregular.
+        ``inv_idx`` has shape (N, N) with ``|x_i - x_j| =
+        unique_lags[inv_idx[i, j]]``; the dense path is O(N^2) anyway,
+        so the int32 index table does not change its memory scaling.
+        """
+        if self.uniform_dt is not None or self._cadence_offsets is None:
+            return None
+        if self._full_lag_table_cache is None:
+            off = self._cadence_offsets
+            lag_int = np.abs(off[:, None] - off[None, :])
+            uniq, inv = np.unique(lag_int, return_inverse=True)
+            self._full_lag_table_cache = (
+                jnp.asarray(uniq * self._cadence_dt, dtype=jnp.float64),
+                jnp.asarray(inv.reshape(self.N, self.N).astype(np.int32)))
+        return self._full_lag_table_cache
 
     def _build_covariance(self):
         """Build the covariance matrix and Cholesky-factorize it.
@@ -770,13 +923,25 @@ class GPSolver:
             d_idx = jnp.arange(b + 1)[:, None]   # (b+1, 1)
             i_idx = jnp.arange(N)[None, :]       # (1, N)
             j_idx = i_idx + d_idx                 # (b+1, N)
-            j_safe = jnp.minimum(j_idx, N - 1)
             valid = j_idx < N
 
-            lags_flat = jnp.abs(self.x[j_safe] - self.x[i_idx]).ravel()
-            K_flat = self._eval_kernel(lags_flat)
-            cb = K_flat.reshape(b + 1, N)
-            cb = jnp.where(valid, cb, 0.0)
+            band_tab = self._band_lag_table()
+            if self.uniform_dt is not None:
+                # Toeplitz fast path: b+1 distinct lags, broadcast per row
+                K_unique = self._eval_kernel(
+                    jnp.arange(b + 1) * self.uniform_dt)
+                cb = jnp.where(valid, K_unique[:, None], 0.0)
+            elif band_tab is not None:
+                # Gappy-uniform fast path: distinct within-band lags,
+                # gathered through the precomputed index table
+                K_unique = self._eval_kernel(band_tab[0])
+                cb = jnp.where(valid, K_unique[band_tab[1]], 0.0)
+            else:
+                j_safe = jnp.minimum(j_idx, N - 1)
+                lags_flat = jnp.abs(self.x[j_safe] - self.x[i_idx]).ravel()
+                K_flat = self._eval_kernel(lags_flat)
+                cb = K_flat.reshape(b + 1, N)
+                cb = jnp.where(valid, cb, 0.0)
 
             # Add noise to diagonal (row 0)
             cb = cb.at[0, :].add(self.yerr ** 2 + 1e-8)
@@ -789,13 +954,24 @@ class GPSolver:
                 self._Lc, self._resid, self.bandwidth)
         else:
             N = self.N
-            row_idx, col_idx = jnp.triu_indices(N)
-            lag_upper = jnp.abs(self.x[row_idx] - self.x[col_idx])
-            K_upper = self._eval_kernel(lag_upper)
+            full_tab = self._full_lag_table()
+            if self.uniform_dt is not None:
+                # Toeplitz fast path: N distinct lags, gathered by |i - j|
+                K1d = self._eval_kernel(jnp.arange(N) * self.uniform_dt)
+                idx = jnp.abs(jnp.arange(N)[:, None] - jnp.arange(N)[None, :])
+                K = K1d[idx]
+            elif full_tab is not None:
+                # Gappy-uniform fast path: distinct lags via index table
+                K1d = self._eval_kernel(full_tab[0])
+                K = K1d[full_tab[1]]
+            else:
+                row_idx, col_idx = jnp.triu_indices(N)
+                lag_upper = jnp.abs(self.x[row_idx] - self.x[col_idx])
+                K_upper = self._eval_kernel(lag_upper)
 
-            K = jnp.zeros((N, N))
-            K = K.at[row_idx, col_idx].set(K_upper)
-            K = K + K.T - jnp.diag(jnp.diag(K))
+                K = jnp.zeros((N, N))
+                K = K.at[row_idx, col_idx].set(K_upper)
+                K = K + K.T - jnp.diag(jnp.diag(K))
             self.K = K
             self.K_noise = K + jnp.diag(self.yerr ** 2) + 1e-8 * jnp.eye(N)
 
@@ -804,7 +980,18 @@ class GPSolver:
             self._alpha = jla.cho_solve((self._L, True), self._resid)
 
     def _build_logposterior(self):
-        """Build JIT-compiled log-posterior and its gradient."""
+        """Build the JIT-compiled log-posterior and its value-and-gradient.
+
+        A single raw log-posterior is compiled exactly twice: once
+        value-only (``log_posterior``, the traceable log-density handed to
+        samplers) and once wrapped in ``jax.value_and_grad``
+        (``value_and_grad_log_posterior``, the workhorse for optimizers).
+        ``neg_log_posterior``, ``grad_log_posterior`` and
+        ``grad_neg_log_posterior`` are thin Python wrappers that negate or
+        slice those two compiled functions outside XLA, so they trigger no
+        additional compilation (previously each was a separate XLA
+        compilation, quadrupling warm-up time).
+        """
         bounds = self.bounds
         x, y, yerr = self.x, self.y, self.yerr
         mean_val = self.mean_val
@@ -813,6 +1000,13 @@ class GPSolver:
         fit_sn = self.fit_sigma_n
         qn, qw = self._quad_nodes, self._quad_weights
         to_phys = self._to_physical  # sampling theta → physical theta
+        u_dt = self.uniform_dt       # Toeplitz fast path (None = disabled)
+        # Gappy-uniform lag tables (None on strictly-uniform or irregular
+        # grids); captured as compile-time constants in the closures.
+        band_tab = (self._band_lag_table()
+                    if self.matrix_solver == "cholesky_banded" else None)
+        full_tab = (self._full_lag_table()
+                    if self.matrix_solver != "cholesky_banded" else None)
 
         # Envelope-specific R_Gamma function (JAX-traceable, captured in closure)
         r_gamma_fn = self.spot_model.get_r_gamma_func()
@@ -833,69 +1027,58 @@ class GPSolver:
             # jax.lax.scan inside banded_cholesky is unrolled statically.
             b = self.bandwidth
 
-            @jax.jit
-            def log_posterior(theta_arr):
-                ll = _gp_log_likelihood_banded(
-                    to_phys(theta_arr), x, y, yerr, mean_val,
-                    n_h, n_l, lr, fit_sn, b,
-                    n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
-                    quad_nodes=qn, quad_weights=qw,
-                    edgeon_cn_sq=eo_cn,
-                    lat_weight_func=lat_wt_fn)
-                lp = (custom_prior(theta_arr) if custom_prior is not None
-                      else _default_log_prior(theta_arr, bounds))
-                return ll + lp
-        else:
-            @jax.jit
-            def log_posterior(theta_arr):
-                ll = _gp_log_likelihood(to_phys(theta_arr), x, y, yerr, mean_val,
-                                        n_h, n_l, lr, fit_sn,
-                                        n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
-                                        quad_nodes=qn, quad_weights=qw,
-                                        edgeon_cn_sq=eo_cn,
-                                        lat_weight_func=lat_wt_fn)
-                lp = (custom_prior(theta_arr) if custom_prior is not None
-                      else _default_log_prior(theta_arr, bounds))
-                return ll + lp
-
-        @jax.jit
-        def neg_log_posterior(theta_arr):
-            return -log_posterior(theta_arr)
-
-        self.log_posterior = log_posterior
-        self.neg_log_posterior = neg_log_posterior
-        self.grad_log_posterior = jax.jit(jax.grad(log_posterior))
-        self.grad_neg_log_posterior = jax.jit(jax.grad(neg_log_posterior))
-
-        # Separate log-prior and log-likelihood for SMC tempering.
-        @jax.jit
-        def _log_prior_fn(theta_arr):
-            return (custom_prior(theta_arr) if custom_prior is not None
-                    else _default_log_prior(theta_arr, bounds))
-
-        if self.matrix_solver == "cholesky_banded":
-            @jax.jit
-            def _log_likelihood_fn(theta_arr):
+            def _log_likelihood_raw(theta_arr):
                 return _gp_log_likelihood_banded(
                     to_phys(theta_arr), x, y, yerr, mean_val,
                     n_h, n_l, lr, fit_sn, b,
                     n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
-                    lat_weight_func=lat_wt_fn)
+                    lat_weight_func=lat_wt_fn,
+                    uniform_dt=u_dt,
+                    band_lag_table=band_tab)
         else:
-            @jax.jit
-            def _log_likelihood_fn(theta_arr):
+            def _log_likelihood_raw(theta_arr):
                 return _gp_log_likelihood(
                     to_phys(theta_arr), x, y, yerr, mean_val,
                     n_h, n_l, lr, fit_sn,
                     n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
-                    lat_weight_func=lat_wt_fn)
+                    lat_weight_func=lat_wt_fn,
+                    uniform_dt=u_dt,
+                    lag_table=full_tab)
 
-        self.log_prior_fn = _log_prior_fn
-        self.log_likelihood_fn = _log_likelihood_fn
+        def _log_prior_raw(theta_arr):
+            return (custom_prior(theta_arr) if custom_prior is not None
+                    else _default_log_prior(theta_arr, bounds))
+
+        def _log_posterior_raw(theta_arr):
+            return _log_likelihood_raw(theta_arr) + _log_prior_raw(theta_arr)
+
+        self.log_posterior = jax.jit(_log_posterior_raw)
+        self.value_and_grad_log_posterior = jax.jit(
+            jax.value_and_grad(_log_posterior_raw))
+
+        vag = self.value_and_grad_log_posterior
+
+        def neg_log_posterior(theta_arr):
+            return -self.log_posterior(theta_arr)
+
+        def grad_log_posterior(theta_arr):
+            return vag(theta_arr)[1]
+
+        def grad_neg_log_posterior(theta_arr):
+            return -vag(theta_arr)[1]
+
+        self.neg_log_posterior = neg_log_posterior
+        self.grad_log_posterior = grad_log_posterior
+        self.grad_neg_log_posterior = grad_neg_log_posterior
+
+        # Separate log-prior and log-likelihood for SMC tempering.
+        # Compiled lazily on first call (only run_smc uses them).
+        self.log_prior_fn = jax.jit(_log_prior_raw)
+        self.log_likelihood_fn = jax.jit(_log_likelihood_raw)
 
     # =================================================================
     # JAX compilation warmup
@@ -903,17 +1086,19 @@ class GPSolver:
 
     def build_jax(self, recompute=True):
         """
-        Pre-compile and warm up all JAX JIT functions for this solver.
+        Pre-compile and warm up the solver's JAX JIT functions.
 
-        ``_build_logposterior()`` creates four ``@jax.jit``-decorated
-        functions (``log_posterior``, ``neg_log_posterior``,
-        ``grad_log_posterior``, ``grad_neg_log_posterior``) that each
-        trigger a separate XLA compilation on their first call.  Combined
-        with the banded Cholesky solver, that can add up to 10–30 s of
-        invisible overhead before a fit or MCMC run starts.
+        Exactly two XLA compilations are triggered: the value-only
+        ``log_posterior`` (the log-density handed to samplers) and
+        ``value_and_grad_log_posterior`` (used by ``fit_map`` and the
+        gradient accessors).  The remaining public functions
+        (``neg_log_posterior``, ``grad_log_posterior``,
+        ``grad_neg_log_posterior``) are Python wrappers around these two
+        and need no compilation of their own.
 
         Call ``build_jax()`` once after constructing the solver to pay
-        that cost upfront.
+        the compilation cost upfront instead of inside the first fit or
+        MCMC step.
 
         Returns
         -------
@@ -927,18 +1112,14 @@ class GPSolver:
 
         t0 = time.time()
         jax.block_until_ready(self.log_posterior(theta0))
-        jax.block_until_ready(self.neg_log_posterior(theta0))
-        jax.block_until_ready(self.grad_log_posterior(theta0))
-        jax.block_until_ready(self.grad_neg_log_posterior(theta0))
-        print(f"JAX GP solver compiled in {np.round(time.time() - t0, 2)}s")
+        jax.block_until_ready(self.value_and_grad_log_posterior(theta0))
+        logger.info("JAX GP solver compiled in %.2fs", time.time() - t0)
 
         if recompute:
             t0 = time.time()
             jax.block_until_ready(self.log_posterior(theta0))
-            jax.block_until_ready(self.neg_log_posterior(theta0))
-            jax.block_until_ready(self.grad_log_posterior(theta0))
-            jax.block_until_ready(self.grad_neg_log_posterior(theta0))
-            print(f"JAX GP solver recompute in {np.round(time.time() - t0, 2)}s")
+            jax.block_until_ready(self.value_and_grad_log_posterior(theta0))
+            logger.info("JAX GP solver recompute in %.2fs", time.time() - t0)
 
         return self
 
@@ -1010,88 +1191,6 @@ class GPSolver:
             var_pred = k0 - jnp.einsum('ij,ji->i', Ks, V)
             return np.asarray(mu_pred), np.asarray(var_pred)
 
-    def plot_prediction(self, theta=None, n_points=2000, n_sigma=(1, 2),
-                        ax=None, data_color="k", model_color="r",
-                        show_legend=True, xlim=None, ylim=None, 
-                        model_label="GP mean", data_label="Data"):
-        """
-        Plot the GP posterior mean and uncertainty bands over the data.
-
-        If ``theta`` is provided the GP is temporarily updated to those
-        hyperparameters before predicting, so the prediction reflects the
-        given parameter values rather than whatever was last set internally.
-
-        Parameters
-        ----------
-        theta : dict or array_like, shape (6,), optional
-            Kernel parameters.  Accepts a physical dict with keys from
-            ``KERNEL_HPARAM_KEYS``, a sampling-space dict with ``log_``-
-            prefixed keys (e.g. ``log_sigma_k``), or a length-6 array.
-            If None, uses the current internal hyperparameters.
-        n_points : int
-            Number of prediction points spanning the data baseline.
-        n_sigma : int or sequence of int
-            Which sigma levels to shade.  E.g. ``(1, 2)`` draws both
-            ±1σ and ±2σ bands (default).  Pass a single int for one band.
-        ax : matplotlib Axes, optional
-            Axes to plot on. If None, creates a new figure.
-        data_color, model_color : str
-            Colors for data points and model curve/bands.
-        show_legend : bool
-            Whether to draw a legend.
-        xlim : tuple, optional
-            Limits for the x-axis. If None, defaults to the data range.
-        ylim : tuple, optional
-            Limits for the y-axis. If None, defaults to the data range.
-
-        Returns
-        -------
-        ax : matplotlib Axes
-        """
-        import matplotlib.pyplot as plt
-
-        if theta is not None:
-            phys = {}
-            for k, v in (theta.items() if isinstance(theta, dict)
-                         else zip(self.spot_model.param_keys, theta)):
-                if isinstance(k, str) and k.startswith("log_"):
-                    phys[k[4:]] = 10.0 ** float(v)
-                else:
-                    phys[k] = float(v)
-            self.update_hparam(phys)
-
-        xpred = np.linspace(float(self.x[0]), float(self.x[-1]), n_points)
-        mu, var = self.predict(xpred)
-        sigma = np.sqrt(np.maximum(var, 0.0))
-
-        if ax is None:
-            fig, ax = plt.subplots(figsize=(12, 4))
-
-        ax.errorbar(np.asarray(self.x), np.asarray(self.y),
-                    yerr=np.asarray(self.yerr),
-                    fmt=".", color=data_color, capsize=0, alpha=0.5,
-                    label=data_label)
-        ax.plot(xpred, mu, color=model_color, lw=1.5, label=model_label)
-
-        alphas = {1: 0.35, 2: 0.18, 3: 0.10}
-        for ns in (n_sigma if hasattr(n_sigma, "__iter__") else (n_sigma,)):
-            ax.fill_between(xpred, mu - ns * sigma, mu + ns * sigma,
-                            color=model_color,
-                            alpha=alphas.get(ns, 0.15),
-                            label=rf"$\pm{ns}\sigma$")
-        if xlim is not None:
-            ax.set_xlim(xlim)
-        else:
-            ax.set_xlim(float(self.x[0]), float(self.x[-1]))
-        if ylim is not None:
-            ax.set_ylim(ylim)
-
-        ax.set_xlabel("Time [days]", fontsize=22)
-        ax.set_ylabel("Flux", fontsize=22)
-        if show_legend:
-            ax.legend()
-
-        return ax
 
     def sample_prior(self, xpred, n_samples=1, rng=None):
         """Draw samples from the GP prior."""
@@ -1180,85 +1279,6 @@ class GPSolver:
 
         return xpred, samples
 
-    def plot_samples(self, theta=None, xpred=None, n_samples=5,
-                     n_points=2000, source="prior", rng=None,
-                     ax=None, show_data=True, data_color="k",
-                     sample_alpha=0.7, sample_lw=1.0, cmap="tab10",
-                     show_legend=True, xlim=None, ylim=None):
-        """
-        Plot sampled lightcurves from the GP prior or posterior.
-
-        Parameters
-        ----------
-        theta : dict or array_like, optional
-            Kernel parameters (see ``sample_lightcurves``).
-        xpred : array_like, optional
-            Prediction times.  If None, ``n_points`` evenly spaced.
-        n_samples : int
-            Number of samples to draw and plot (default 5).
-        n_points : int
-            Number of prediction points when ``xpred`` is None.
-        source : {'prior', 'posterior'}
-            Sample from the GP prior or posterior (default 'prior').
-        rng : numpy.random.Generator, optional
-            Random number generator for reproducibility.
-        ax : matplotlib Axes, optional
-            Axes to plot on.  If None, creates a new figure.
-        show_data : bool
-            Whether to overlay the observed data (default True).
-        data_color : str
-            Color for data points (default 'k').
-        sample_alpha : float
-            Opacity for sample curves (default 0.7).
-        sample_lw : float
-            Line width for sample curves (default 1.0).
-        cmap : str
-            Matplotlib colormap name for sample colors (default 'tab10').
-        show_legend : bool
-            Whether to draw a legend (default True).
-        xlim, ylim : tuple, optional
-            Axis limits.
-
-        Returns
-        -------
-        ax : matplotlib Axes
-        """
-        import matplotlib.pyplot as plt
-
-        xpred, samples = self.sample_lightcurves(
-            theta=theta, xpred=xpred, n_samples=n_samples,
-            n_points=n_points, source=source, rng=rng,
-        )
-
-        if ax is None:
-            fig, ax = plt.subplots(figsize=(12, 4))
-
-        colormap = plt.get_cmap(cmap)
-        for i, sample in enumerate(samples):
-            label = f"Sample {i + 1}" if i < 10 else None
-            ax.plot(xpred, sample, color=colormap(i % colormap.N),
-                    alpha=sample_alpha, lw=sample_lw, label=label)
-
-        if show_data:
-            ax.errorbar(np.asarray(self.x), np.asarray(self.y),
-                        yerr=np.asarray(self.yerr),
-                        fmt=".", color=data_color, capsize=0, alpha=0.4,
-                        label="Data", zorder=0)
-
-        if xlim is not None:
-            ax.set_xlim(xlim)
-        else:
-            ax.set_xlim(float(self.x[0]), float(self.x[-1]))
-        if ylim is not None:
-            ax.set_ylim(ylim)
-
-        ax.set_xlabel("Time [days]", fontsize=22)
-        ax.set_ylabel("Flux", fontsize=22)
-        ax.set_title(f"GP {source} samples", fontsize=16)
-        if show_legend:
-            ax.legend()
-
-        return ax
 
     # =================================================================
     # ACF and kernel evaluation
@@ -1321,875 +1341,6 @@ class GPSolver:
         """
         tlags = jnp.asarray(tlags, dtype=jnp.float64)
         return np.asarray(self._eval_kernel(jnp.abs(tlags)))
-
-    def fit_acf(self, theta0=None, keys=None, tlags=None, n_bins=50,
-                method="L-BFGS-B", maxiter=500, ftol=0, gtol=1e-8,
-                disp=False, nopt=1, ncore=None, rng=None, _save=True):
-        """
-        Fit the analytic kernel to the empirical ACF via least-squares.
-
-        Minimizes sum_i (ACF_data(lag_i) - K(lag_i; theta))^2 over the
-        kernel hyperparameters, using JAX gradients and scipy.
-
-        Parameters
-        ----------
-        theta0 : dict or array_like, optional
-            Starting point. Can be:
-              - None: uses self.theta0 (kernel params only, no sigma_n).
-              - dict: values for any subset of kernel keys set the
-                starting point. If ``keys`` is not given, the dict
-                keys that overlap with ``KERNEL_HPARAM_KEYS`` are
-                treated as the free variables; the rest are held fixed.
-                Extra keys not in ``KERNEL_HPARAM_KEYS`` are ignored.
-              - array_like: full kernel theta vector (6 elements).
-        keys : list of str, optional
-            Which parameters to vary during optimization. Overrides
-            the automatic inference from a dict ``theta0``. Parameters
-            not listed are held fixed at their current values. If None
-            and theta0 is not a dict, all kernel parameters are varied.
-        tlags : array_like, optional
-            Bin edges for compute_acf. If None, linearly spaced from 0 to
-            half the baseline with n_bins+1 edges.
-        n_bins : int
-            Number of lag bins (used when tlags is None).
-        method : str
-            Scipy optimizer method.
-        maxiter : int
-            Maximum iterations.
-        ftol : float
-            Function-value convergence tolerance (default 0, disabled).
-        gtol : float
-            Gradient-norm convergence tolerance (default 1e-8).
-        disp : bool
-            If True, print optimizer convergence messages (default False).
-
-        nopt : int
-            Number of independent optimisation trials (default 1).
-            When > 1, ``fit_acf_parallel`` is called and the best
-            result across all trials is returned.
-        ncore : int or None
-            Number of parallel workers. Only used when ``nopt > 1``.
-        rng : numpy.random.Generator, optional
-            RNG for random starting points. Only used when ``nopt > 1``.
-
-        Returns
-        -------
-        theta_dict : dict
-            Full dictionary of all kernel hyperparameters (fixed + optimized).
-        result : scipy.optimize.OptimizeResult
-            Full optimizer output.
-        """
-        if nopt > 1:
-            return self.fit_acf_parallel(
-                nopt=nopt, ncore=ncore, keys=keys, tlags=tlags,
-                n_bins=n_bins, method=method, maxiter=maxiter,
-                ftol=ftol, gtol=gtol, disp=disp, rng=rng,
-            )
-
-        from scipy.optimize import minimize
-
-        # Build lag bins
-        if tlags is None:
-            baseline = float(jnp.max(self.x) - jnp.min(self.x))
-            tlags = np.linspace(0, baseline / 2, n_bins + 1)
-
-        # Compute empirical ACF (unnormalized so units match the kernel)
-        lag_centers, acf_data = self.compute_acf(tlags=tlags, n_bins=n_bins,
-                                                  normalize=False)
-        lag_centers_jax = jnp.asarray(lag_centers)
-        acf_data_jax = jnp.asarray(acf_data)
-
-        # --- Parse theta0 -------------------------------------------------
-        # Use envelope-aware param_keys (excludes sigma_n)
-        kernel_keys = list(self.spot_model.param_keys)
-        n_kernel = len(kernel_keys)
-        if theta0 is None:
-            theta0_arr = self.theta0[:n_kernel]
-        elif isinstance(theta0, dict):
-            theta0_arr = self.theta0[:n_kernel].copy()
-            dict_keys_in_kernel = []
-            for k, v in theta0.items():
-                if k in kernel_keys:
-                    idx = kernel_keys.index(k)
-                    theta0_arr = theta0_arr.at[idx].set(float(v))
-                    dict_keys_in_kernel.append(k)
-            if keys is None and dict_keys_in_kernel:
-                keys = dict_keys_in_kernel
-        else:
-            theta0_arr = jnp.asarray(theta0, dtype=jnp.float64)
-
-        # Resolve free vs fixed parameters (within kernel keys only)
-        if keys is None:
-            free_idx = list(range(n_kernel))
-            fixed_idx = []
-            fixed_vals = jnp.array([])
-        else:
-            for k in keys:
-                if k not in kernel_keys:
-                    raise ValueError(
-                        f"Unknown key '{k}'. Valid kernel keys: {kernel_keys}")
-            free_idx = [i for i, k in enumerate(kernel_keys) if k in keys]
-            fixed_idx = [i for i, k in enumerate(kernel_keys) if k not in keys]
-            fixed_vals = (theta0_arr[jnp.array(fixed_idx)]
-                          if fixed_idx else jnp.array([]))
-
-        free0_theta = theta0_arr[jnp.array(free_idx)]
-        bounds_kernel = self.bounds[:n_kernel]
-        free_bounds = bounds_kernel[jnp.array(free_idx)]
-        blo = free_bounds[:, 0]
-        bhi = free_bounds[:, 1]
-        brange = bhi - blo
-
-        # Optimize in normalized coordinates u = (theta - lo) / (hi - lo)
-        u0 = np.asarray((free0_theta - blo) / brange, dtype=np.float64)
-
-        qn, qw = self._quad_nodes, self._quad_weights
-        n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
-        r_gamma_fn = self.spot_model.get_r_gamma_func()
-        lat_wt_fn = self.spot_model.get_lat_weight_func()
-
-        @jax.jit
-        def loss_u(u_arr):
-            free_theta = blo + u_arr * brange
-            theta_full = self._theta_from_free(
-                free_theta, free_idx, fixed_idx, fixed_vals)
-            K_model = _kernel_eval(theta_full, lag_centers_jax,
-                                   n_h, n_l, lr,
-                                   quad_nodes=qn, quad_weights=qw,
-                                   r_gamma_func=r_gamma_fn,
-                                   lat_weight_func=lat_wt_fn)
-            return jnp.sum((acf_data_jax - K_model) ** 2)
-
-        vg_fn = jax.jit(jax.value_and_grad(loss_u))
-
-        # Warm up the JIT-compiled function before the optimizer starts so
-        # the CUDA kernel is compiled and timed accurately from the first call.
-        jax.block_until_ready(vg_fn(jnp.array(u0, dtype=jnp.float64)))
-
-        n_free = len(free_idx)
-        _gradient_free = method.lower() in ("nelder-mead", "cobyla", "powell")
-
-        if _gradient_free:
-            def objective(u_np):
-                u_jax = jnp.array(u_np, dtype=jnp.float64)
-                val, _ = vg_fn(u_jax)
-                v = float(val)
-                return 1e30 if not np.isfinite(v) else v
-        else:
-            def objective(u_np):
-                u_jax = jnp.array(u_np, dtype=jnp.float64)
-                val, grad = vg_fn(u_jax)
-                v = float(val)
-                g = np.asarray(grad, dtype=np.float64)
-                if not np.isfinite(v):
-                    return 1e30, np.zeros_like(g)
-                if not np.all(np.isfinite(g)):
-                    return v, np.zeros_like(g)
-                return v, g
-        if _gradient_free:
-            _minimize_kwargs = dict(
-                method=method,
-                options={"maxiter": maxiter, "xatol": ftol, "fatol": ftol,
-                         "disp": disp},
-            )
-        else:
-            _minimize_kwargs = dict(
-                jac=True, method=method,
-                bounds=[(0.0, 1.0)] * n_free,
-                options={"maxiter": maxiter, "ftol": ftol, "gtol": gtol,
-                         "disp": disp},
-            )
-        result = minimize(objective, u0, **_minimize_kwargs)
-
-        # Transform back to physical coordinates
-        free_best = blo + jnp.array(result.x, dtype=jnp.float64) * brange
-        theta_full = self._theta_from_free(
-            free_best, free_idx, fixed_idx, fixed_vals)
-
-        # Store results
-        self.acf_fit_theta = theta_full
-        self._acf_fit_result = result
-        self._acf_lag_centers = lag_centers
-        self._acf_data = acf_data
-
-        theta_dict = {k: float(theta_full[i])
-                      for i, k in enumerate(kernel_keys)}
-        if _save:
-            self._autosave("acf_fit_results.npz", theta_acf=theta_dict)
-        return theta_dict, result
-
-    def fit_acf_parallel(self, nopt=10, ncore=None, keys=None,
-                         tlags=None, n_bins=50, method="nelder-mead",
-                         maxiter=500, ftol=0, gtol=1e-8, disp=False,
-                         return_all=False, rng=None):
-        """
-        Run ``fit_acf`` from multiple random starting points in parallel.
-
-        Starting points are drawn uniformly within the kernel parameter
-        bounds.
-
-        Parameters
-        ----------
-        nopt : int
-            Number of independent optimization trials (default 10).
-        ncore : int or None
-            Number of parallel workers. If None, uses ``nopt`` or the
-            number of available CPUs, whichever is smaller.
-        keys : list of str, optional
-            Free parameters (forwarded to ``fit_acf``).
-        tlags, n_bins
-            Forwarded to ``fit_acf``.
-        method : str
-            Optimizer method (default "nelder-mead").
-        maxiter, ftol, gtol, disp
-            Forwarded to ``fit_acf``.
-        return_all : bool
-            If True, return all solutions sorted by objective value.
-            If False (default), return only the best solution.
-        rng : numpy.random.Generator, optional
-            Random number generator for reproducibility.
-
-        Returns
-        -------
-        theta_best : dict  (or list of dict if ``return_all=True``)
-            Best-fit kernel hyperparameters.
-        result_best : scipy.optimize.OptimizeResult
-            (or list of OptimizeResult if ``return_all=True``)
-        """
-        from concurrent.futures import ThreadPoolExecutor
-        import os
-
-        if ncore is None:
-            ncore = min(nopt, os.cpu_count() or 1)
-        if rng is None:
-            rng = np.random.default_rng()
-
-        # Determine which kernel indices are free
-        kernel_keys = list(self.spot_model.param_keys)
-        n_kernel = len(kernel_keys)
-        if keys is None:
-            free_keys = list(kernel_keys)
-            free_bounds_np = np.asarray(self.bounds[:n_kernel])
-        else:
-            for k in keys:
-                if k not in kernel_keys:
-                    raise ValueError(
-                        f"Unknown key '{k}'. Valid kernel keys: {kernel_keys}")
-            free_keys = [k for k in kernel_keys if k in keys]
-            idx = [kernel_keys.index(k) for k in free_keys]
-            free_bounds_np = np.asarray(self.bounds[jnp.array(idx)])
-        blo = free_bounds_np[:, 0]
-        bhi = free_bounds_np[:, 1]
-
-        # Generate random starting points using independent child RNGs
-        seeds = rng.integers(0, 2**31, size=nopt)
-        starts = []
-        for i in range(nopt):
-            child_rng = np.random.default_rng(int(seeds[i]))
-            theta0_dict = {}
-            u = child_rng.uniform(size=len(free_keys))
-            for j, k in enumerate(free_keys):
-                theta0_dict[k] = float(blo[j] + u[j] * (bhi[j] - blo[j]))
-            starts.append(theta0_dict)
-
-        def _run_one(theta0_dict):
-            return self.fit_acf(theta0=theta0_dict, keys=keys,
-                                tlags=tlags, n_bins=n_bins,
-                                method=method, maxiter=maxiter,
-                                ftol=ftol, gtol=gtol, disp=disp,
-                                _save=False)
-
-        with ThreadPoolExecutor(max_workers=ncore) as pool:
-            futures = [pool.submit(_run_one, s) for s in starts]
-            results = [f.result() for f in futures]
-
-        # Sort by objective value (lower is better)
-        results.sort(key=lambda tr: float(tr[1].fun))
-
-        if return_all:
-            return ([r[0] for r in results], [r[1] for r in results])
-
-        best_theta, best_result = results[0]
-        # Store the best
-        self.acf_fit_theta = jnp.array(
-            [float(best_theta[k]) for k in kernel_keys],
-            dtype=jnp.float64)
-        self._acf_fit_result = best_result
-        theta_all = np.array(
-            [[float(r[0][k]) for k in kernel_keys] for r in results])
-        self._autosave("acf_fit_results.npz",
-                       theta_acf=best_theta, theta_all=theta_all)
-        return best_theta, best_result
-
-    def fit_acf_psd(self, theta0=None, keys=None,
-                    tlags=None, n_bins=50,
-                    n_freq=200, dt_kernel=None,
-                    acf_weight=1.0, psd_weight=1.0,
-                    method="L-BFGS-B", maxiter=500, ftol=0, gtol=1e-8,
-                    disp=False):
-        """
-        Fit kernel parameters jointly to the empirical ACF and PSD.
-
-        Minimizes a weighted sum of two normalized mean-squared-error terms:
-
-            loss = acf_weight * acf_loss + psd_weight * psd_loss
-
-        where
-
-            acf_loss = mean((ACF_data - K_model)^2) / mean(ACF_data^2)
-
-        is the relative MSE of the kernel against the empirical ACF
-        (unnormalized autocovariance), and
-
-            psd_loss = mean((PSD_data_norm - PSD_model_norm)^2)
-
-        is the MSE between the Lomb-Scargle periodogram and the analytic
-        kernel PSD, both normalized to unit integral so the comparison is
-        independent of overall amplitude.
-
-        The model PSD is computed via a direct cosine transform of the kernel
-        evaluated on a uniform lag grid, making it fully differentiable with
-        respect to the kernel parameters.
-
-        Parameters
-        ----------
-        theta0 : dict or array_like, optional
-            Starting point in ``self.param_keys`` space (sampling space,
-            with ``log_``-prefixed keys where applicable).  Follows the same
-            convention as ``fit_map``: None uses ``self.theta0``, a dict
-            overrides named entries and infers free keys, an array is used
-            directly.
-        keys : list of str, optional
-            Parameters to vary during optimization (names from
-            ``self.param_keys``).  Defaults to all kernel parameters
-            (first 6 entries of ``self.param_keys``, i.e. excluding
-            ``sigma_n`` if present).
-        tlags : array_like, optional
-            Bin edges for the empirical ACF. If None, ``n_bins+1`` edges
-            linearly spaced from 0 to half the baseline.
-        n_bins : int
-            Number of ACF lag bins when ``tlags`` is None (default 50).
-        n_freq : int
-            Number of frequency points for the Lomb-Scargle periodogram
-            (default 200).
-        dt_kernel : float, optional
-            Uniform lag spacing [days] for evaluating the analytic kernel
-            before the direct cosine transform.  Defaults to one-fifth of
-            the median data spacing.
-        acf_weight : float
-            Weight for the ACF loss term (default 1.0).
-        psd_weight : float
-            Weight for the PSD loss term (default 1.0).
-        method : str
-            Scipy optimizer method (default ``"L-BFGS-B"``).
-        maxiter : int
-            Maximum optimizer iterations (default 500).
-        ftol, gtol : float
-            Convergence tolerances forwarded to scipy.
-        disp : bool
-            Print optimizer messages if True.
-
-        Returns
-        -------
-        theta_dict : dict
-            Best-fit parameters in ``self.param_keys`` space.
-        result : scipy.optimize.OptimizeResult
-        """
-        from scipy.optimize import minimize
-        from scipy.signal import lombscargle
-
-        n_kernel = len(self.spot_model.param_keys)  # envelope-dependent
-        to_phys = self._to_physical
-        qn, qw = self._quad_nodes, self._quad_weights
-        n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
-        r_gamma_fn = self.spot_model.get_r_gamma_func()
-        lat_wt_fn = self.spot_model.get_lat_weight_func()
-        w_acf = float(acf_weight)
-        w_psd = float(psd_weight)
-
-        x     = np.asarray(self.x)
-        resid = np.asarray(self.y) - self.mean_val
-        dt_med   = float(np.median(np.diff(x)))
-        baseline = float(x[-1] - x[0])
-
-        # --- Empirical ACF (skipped when acf_weight == 0) -------------------
-        if w_acf != 0.0:
-            if tlags is None:
-                tlags = np.linspace(0, baseline / 2, n_bins + 1)
-            lag_centers, acf_data = self.compute_acf(tlags, normalize=False)
-            lag_jax = jnp.asarray(lag_centers, dtype=jnp.float64)
-            acf_jax = jnp.asarray(acf_data,    dtype=jnp.float64)
-            acf_rms = jnp.sqrt(jnp.mean(acf_jax ** 2)) + 1e-30
-        else:
-            lag_jax = acf_jax = acf_rms = None
-
-        # --- Empirical PSD via Lomb-Scargle (skipped when psd_weight == 0) --
-        if w_psd != 0.0:
-            freq_min  = 1.0 / baseline
-            freq_max  = 1.0 / (2.0 * dt_med)
-            freqs     = np.linspace(freq_min, freq_max, n_freq)
-            pgram     = lombscargle(x, resid, 2.0 * np.pi * freqs, normalize=False)
-            df        = freqs[1] - freqs[0]
-            psd_data_norm = pgram / (np.sum(pgram) * df)
-            psd_jax   = jnp.asarray(psd_data_norm, dtype=jnp.float64)
-            freqs_jax = jnp.asarray(freqs,         dtype=jnp.float64)
-            if dt_kernel is None:
-                dt_kernel = dt_med / 5.0
-            tau_grid = np.arange(0.0, baseline, dt_kernel)
-            tau_jax  = jnp.asarray(tau_grid, dtype=jnp.float64)
-            cos_mat  = jnp.cos(2.0 * jnp.pi * tau_jax[:, None] * freqs_jax[None, :])
-        else:
-            psd_jax = freqs_jax = tau_jax = cos_mat = df = None
-
-        # --- Parse theta0 ---------------------------------------------------
-        if theta0 is None:
-            theta0_arr = self.theta0[:n_kernel].copy()
-        elif isinstance(theta0, dict):
-            theta0_arr = self.theta0[:n_kernel].copy()
-            dict_keys_in_params = []
-            for k, v in theta0.items():
-                if k in self.param_keys[:n_kernel]:
-                    idx = list(self.param_keys).index(k)
-                    theta0_arr = theta0_arr.at[idx].set(float(v))
-                    dict_keys_in_params.append(k)
-            if keys is None and dict_keys_in_params:
-                keys = dict_keys_in_params
-        else:
-            theta0_arr = jnp.asarray(theta0, dtype=jnp.float64)
-
-        # --- Resolve free vs fixed parameters -------------------------------
-        kernel_param_keys = list(self.param_keys[:n_kernel])
-        if keys is None:
-            free_idx  = list(range(n_kernel))
-            fixed_idx = []
-            fixed_vals = jnp.array([])
-        else:
-            for k in keys:
-                if k not in kernel_param_keys:
-                    raise ValueError(
-                        f"Unknown key '{k}'. Valid keys: {kernel_param_keys}")
-            free_idx  = [i for i, k in enumerate(kernel_param_keys) if k in keys]
-            fixed_idx = [i for i, k in enumerate(kernel_param_keys) if k not in keys]
-            fixed_vals = (theta0_arr[jnp.array(fixed_idx)]
-                          if fixed_idx else jnp.array([]))
-
-        free0     = theta0_arr[jnp.array(free_idx)]
-        bds       = self.bounds[:n_kernel]
-        free_bds  = bds[jnp.array(free_idx)]
-        blo, bhi  = free_bds[:, 0], free_bds[:, 1]
-        brange    = bhi - blo
-        u0        = np.asarray((free0 - blo) / brange, dtype=np.float64)
-
-        @jax.jit
-        def loss_u(u_arr):
-            free_theta  = blo + u_arr * brange
-            theta_samp  = self._theta_from_free(
-                free_theta, free_idx, fixed_idx, fixed_vals)
-            theta_phys  = to_phys(theta_samp)
-
-            loss = 0.0
-
-            if w_acf != 0.0:
-                K_acf    = _kernel_eval(theta_phys, lag_jax, n_h, n_l, lr,
-                                        quad_nodes=qn, quad_weights=qw,
-                                        r_gamma_func=r_gamma_fn,
-                                        lat_weight_func=lat_wt_fn)
-                acf_loss = jnp.mean(((acf_jax - K_acf) / acf_rms) ** 2)
-                loss = loss + w_acf * acf_loss
-
-            if w_psd != 0.0:
-                K_tau = _kernel_eval(theta_phys, tau_jax, n_h, n_l, lr,
-                                     quad_nodes=qn, quad_weights=qw,
-                                     r_gamma_func=r_gamma_fn,
-                                     lat_weight_func=lat_wt_fn)
-                psd_model = jnp.maximum(
-                    dt_kernel * (K_tau[0] + 2.0 * jnp.dot(K_tau[1:], cos_mat[1:])),
-                    0.0)
-                psd_norm  = jnp.sum(psd_model) * df
-                psd_model_norm = psd_model / (psd_norm + 1e-30)
-                psd_loss = jnp.mean((psd_jax - psd_model_norm) ** 2)
-                loss = loss + w_psd * psd_loss
-
-            return loss
-
-        vg_fn = jax.jit(jax.value_and_grad(loss_u))
-
-        n_free = len(free_idx)
-        _gradient_free = method.lower() in ("nelder-mead", "cobyla", "powell")
-
-        if _gradient_free:
-            def objective(u_np):
-                val, _ = vg_fn(jnp.array(u_np, dtype=jnp.float64))
-                v = float(val)
-                return 1e30 if not np.isfinite(v) else v
-        else:
-            def objective(u_np):
-                val, grad = vg_fn(jnp.array(u_np, dtype=jnp.float64))
-                v = float(val)
-                g = np.asarray(grad, dtype=np.float64)
-                if not np.isfinite(v):
-                    return 1e30, np.zeros_like(g)
-                if not np.all(np.isfinite(g)):
-                    return v, np.zeros_like(g)
-                return v, g
-
-        if _gradient_free:
-            _minimize_kwargs = dict(
-                method=method,
-                options={"maxiter": maxiter, "xatol": ftol, "fatol": ftol,
-                         "disp": disp},
-            )
-        else:
-            _minimize_kwargs = dict(
-                jac=True, method=method,
-                bounds=[(0.0, 1.0)] * n_free,
-                options={"maxiter": maxiter, "ftol": ftol, "gtol": gtol,
-                         "disp": disp},
-            )
-        result = minimize(objective, u0, **_minimize_kwargs)
-
-        free_best  = blo + jnp.array(result.x, dtype=jnp.float64) * brange
-        theta_full = self._theta_from_free(
-            free_best, free_idx, fixed_idx, fixed_vals)
-
-        theta_dict = {k: float(theta_full[i])
-                      for i, k in enumerate(kernel_param_keys)}
-        return theta_dict, result
-
-    def _theta_dict_to_phys_array(self, theta):
-        """Convert a theta dict or array to a physical kernel parameter array.
-
-        Handles sampling-space dicts that may contain ``log_``-prefixed keys
-        (e.g. ``log_sigma_k``), converting them to physical values via
-        ``10 ** value`` before building the array.  Plain arrays are returned
-        as-is (assumed already physical).
-
-        Parameters
-        ----------
-        theta : dict or array_like
-            Kernel parameters, either as a dict (physical or log-space keys)
-            or an array in spot_model.param_keys order.
-
-        Returns
-        -------
-        theta_arr : jnp.ndarray
-            Physical kernel parameters in spot_model.param_keys order.
-        """
-        kernel_keys = list(self.spot_model.param_keys)
-        if isinstance(theta, dict):
-            phys = {}
-            for k, v in theta.items():
-                if k.startswith("log_"):
-                    phys[k[4:]] = 10.0 ** float(v)
-                else:
-                    phys[k] = float(v)
-            return jnp.array([float(phys[k]) for k in kernel_keys],
-                             dtype=jnp.float64)
-        return jnp.asarray(theta, dtype=jnp.float64)
-
-    def plot_acf(self, theta=None, tlags=None, n_bins=50, ax=None,
-                 normalize=False, data_color="k", model_color="r",
-                 show_legend=True, xlim=None, ylim=None, 
-                 model_label="Analytic ACF", data_label="Data ACF"):
-        """
-        Plot the empirical ACF and optionally the analytic kernel.
-
-        Parameters
-        ----------
-        theta : dict or array_like, shape (6,), optional
-            Kernel parameters.  Accepts a physical dict with keys from
-            ``KERNEL_HPARAM_KEYS``, a sampling-space dict with ``log_``-
-            prefixed keys (e.g. ``log_sigma_k``), or a length-6 array.
-            If provided, the analytic kernel is overplotted.
-        tlags : array_like, optional
-            Bin edges for compute_acf. If None, linearly spaced from 0 to
-            half the baseline with n_bins+1 edges.
-        n_bins : int
-            Number of lag bins (used when tlags is None).
-        ax : matplotlib Axes, optional
-            Axes to plot on. If None, creates a new figure.
-        normalize : bool
-            If True (default), normalize both curves by the data variance
-            so ACF(0) ≈ 1.
-        xlim : tuple, optional
-            Limits for the x-axis. If None, defaults to the data range.
-        ylim : tuple, optional
-            Limits for the y-axis. If None, defaults to the data range.
-
-        Returns
-        -------
-        ax : matplotlib Axes
-        """
-        import matplotlib.pyplot as plt
-
-        if tlags is None:
-            baseline = float(jnp.max(self.x) - jnp.min(self.x))
-            tlags = np.linspace(0, baseline / 2, n_bins + 1)
-
-        lag_centers, acf_data = self.compute_acf(tlags=tlags, n_bins=n_bins,
-                                                    normalize=normalize)
-
-        if ax is None:
-            fig, ax = plt.subplots()
-
-        ax.plot(lag_centers, acf_data, color=data_color, label=data_label)
-
-        if theta is not None:
-            theta_arr = self._theta_dict_to_phys_array(theta)
-            lag_fine = np.linspace(0.0, float(tlags[-1]), 300)
-            K_model = np.asarray(_kernel_eval(
-                theta_arr, jnp.asarray(lag_fine),
-                self.n_harmonics, self.n_lat, self.lat_range,
-                quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
-                r_gamma_func=self.spot_model.get_r_gamma_func(),
-                lat_weight_func=self.spot_model.get_lat_weight_func()))
-            if normalize:
-                y_full = getattr(self.data, '_y_full', self.data.y)
-                var = np.var(y_full)
-                if var > 0:
-                    K_model = K_model / var
-            ax.plot(lag_fine, K_model, color=model_color, label=model_label)
-
-        if xlim is not None:
-            ax.set_xlim(xlim)
-        else:
-            ax.set_xlim(min(tlags), max(tlags))
-        if ylim is not None:
-            ax.set_ylim(ylim)
-        ax.set_xlabel("Time lag [days]", fontsize=22)
-        ax.set_ylabel("ACF" if normalize else "Autocovariance", fontsize=22)
-        if show_legend:
-            ax.legend()
-
-        return ax
-
-    def plot_psd(self, theta=None, n_freq=500, dt_kernel=None, ax=None,
-                 data_color="k", model_color="r", show_legend=True,
-                 xlim=None, ylim=None, model_label="Analytic PSD", 
-                 data_label="Data Lomb-Scargle"):
-        """
-        Plot the empirical PSD (Lomb-Scargle) and optionally the analytic
-        kernel PSD (FFT of the autocovariance function).
-
-        Both curves are normalized so their integral over positive frequencies
-        equals the data variance, making them directly comparable.
-
-        Parameters
-        ----------
-        theta : dict or array_like, shape (6,), optional
-            Kernel parameters.  Accepts a physical dict with keys from
-            ``KERNEL_HPARAM_KEYS``, a sampling-space dict with ``log_``-
-            prefixed keys (e.g. ``log_sigma_k``), or a length-6 array.
-            If provided, the analytic kernel PSD is overplotted.
-        n_freq : int
-            Number of frequency points for the Lomb-Scargle periodogram.
-        dt_kernel : float, optional
-            Time step [days] for evaluating the analytic kernel on a uniform
-            grid before FFT.  Defaults to one-fifth of the median data spacing.
-        ax : matplotlib Axes, optional
-            Axes to plot on. If None, creates a new figure.
-        data_color, model_color : str
-            Colors for the data and model curves.
-        show_legend : bool
-            Whether to draw a legend.
-        xlim : tuple, optional
-            Limits for the x-axis. If None, defaults to the data range.
-        ylim : tuple, optional
-            Limits for the y-axis. If None, defaults to the data range.
-
-        Returns
-        -------
-        ax : matplotlib Axes
-        """
-        import matplotlib.pyplot as plt
-
-        x = np.asarray(self.x)
-        resid = np.asarray(self.y) - self.mean_val
-        var = float(np.mean(resid ** 2))
-
-        baseline = float(x[-1] - x[0])
-        dt_med = float(np.median(np.diff(x)))
-        freq_min = 1.0 / baseline
-        freq_max = 1.0 / (2.0 * dt_med)
-
-        # Data PSD via TimeSeriesData
-        freqs, psd_data = self.data.compute_psd(
-            normalization="psd", n_freq=n_freq,
-            freq_min=freq_min, freq_max=freq_max)
-        # Normalize so ∫PSD df = var(data)
-        integral = np.trapezoid(psd_data, freqs)
-        if integral > 0:
-            psd_data = psd_data * var / integral
-
-        if ax is None:
-            fig, ax = plt.subplots()
-
-        ax.semilogy(freqs, psd_data, color=data_color, lw=0.8, label=data_label)
-
-        if theta is not None:
-            theta_arr = self._theta_dict_to_phys_array(theta)
-
-            if dt_kernel is None:
-                dt_kernel = dt_med / 5.0
-            tau_grid = np.arange(0.0, baseline, dt_kernel)
-            K = np.asarray(_kernel_eval(
-                theta_arr, jnp.asarray(tau_grid),
-                self.n_harmonics, self.n_lat, self.lat_range,
-                quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
-                r_gamma_func=self.spot_model.get_r_gamma_func(),
-                lat_weight_func=self.spot_model.get_lat_weight_func()))
-            # Extend to two-sided symmetric sequence, then rfft → one-sided PSD
-            K_twosided = np.concatenate([K[::-1], K[1:]])
-            psd_model = np.abs(np.fft.rfft(K_twosided)) * dt_kernel
-            freqs_model = np.fft.rfftfreq(len(K_twosided), d=dt_kernel)
-            # Restrict to the data frequency range and skip DC
-            mask = (freqs_model > 0) & (freqs_model <= freq_max)
-            fm, pm = freqs_model[mask], psd_model[mask]
-            # Normalize so ∫PSD df = var(data)
-            pm = pm * var / np.trapezoid(pm, fm)
-            ax.semilogy(fm, pm, color=model_color, lw=1.5, label=model_label)
-            
-        if xlim is not None:
-            ax.set_xlim(xlim)
-        else:
-            ax.set_xlim(freq_min, freq_max)
-        if ylim is not None:
-            ax.set_ylim(ylim)
-
-        ax.set_xlabel("Frequency [1/day]", fontsize=22)
-        ax.set_ylabel("PSD", fontsize=22)
-        if show_legend:
-            ax.legend()
-
-        return ax
-
-    def plot_covariance_matrix(self, theta=None, ax=None, cmap="RdBu_r",
-                               show_colorbar=True, vmax=None, nbins=50,
-                               show=False, filename="covariance_matrix.png"):
-        """
-        Plot the GP covariance matrix K (signal only, no noise).
-
-        Entries outside the banded support are set to zero, matching the
-        ``cholesky_banded`` approximation.  The matrix is binned to
-        ``nbins x nbins`` before plotting.  The bandwidth boundary is drawn
-        as dashed lines, and band width plus matrix sparsity are annotated.
-
-        Parameters
-        ----------
-        theta : dict or array_like, optional
-            Kernel hyperparameters.  Accepts a physical dict with keys from
-            ``param_keys``, a sampling-space dict with ``log_``-prefixed keys,
-            or a raw array.  If None, uses the current ``self.hparam`` values.
-        ax : matplotlib Axes, optional
-            Axes to plot on.  If None, a new figure is created.
-        cmap : str, optional
-            Colormap name.  Defaults to ``"RdBu_r"`` (diverging, centred at
-            zero).
-        show_colorbar : bool, optional
-            Whether to add a colorbar.  Default True.
-        vmax : float, optional
-            Symmetric color scale limit ``[-vmax, vmax]``.  If None, uses the
-            maximum absolute value of the banded matrix.
-        nbins : int, optional
-            Bin the N x N matrix down to ``nbins x nbins`` by averaging
-            non-overlapping blocks before plotting.  Default 50.
-        show : bool, optional
-            If True, call ``plt.show()``.  Default False.
-        filename : str, optional
-            Filename used when saving to ``save_dir``.
-            Default ``"covariance_matrix.png"``.
-
-        Returns
-        -------
-        ax : matplotlib Axes
-        """
-        import os
-        import matplotlib.pyplot as plt
-
-        if theta is not None:
-            theta_arr = self._theta_dict_to_phys_array(theta)
-        else:
-            theta_arr = self._theta_dict_to_phys_array(self.hparam)
-
-        N = self.N
-        b = self.bandwidth
-        dt = float(self.x[1] - self.x[0]) if N > 1 else 1.0
-        band_days = b * dt
-
-        # Build banded K: evaluate only the b+1 diagonals, zero elsewhere
-        K = np.zeros((N, N))
-        for d in range(b + 1):
-            i_idx = np.arange(N - d)
-            j_idx = i_idx + d
-            lags = jnp.abs(self.x[i_idx] - self.x[j_idx])
-            K_diag = np.asarray(_kernel_eval(
-                theta_arr, lags,
-                self.n_harmonics, self.n_lat, self.lat_range,
-                quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
-                r_gamma_func=self.spot_model.get_r_gamma_func(),
-                lat_weight_func=self.spot_model.get_lat_weight_func()))
-            K[i_idx, j_idx] = K_diag
-            if d > 0:
-                K[j_idx, i_idx] = K_diag
-
-        # Sparsity: fraction of entries outside the band
-        n_nonzero = int(N) * (2 * int(b) + 1) - int(b) * (int(b) + 1)
-        n_nonzero = min(n_nonzero, N * N)
-        sparsity = 100.0 * (1.0 - n_nonzero / (N * N))
-
-        # Bin down to nbins x nbins by block-averaging
-        n_plot = min(nbins, N)
-        block = N // n_plot
-        n_trim = block * n_plot
-        K_bin = (K[:n_trim, :n_trim]
-                 .reshape(n_plot, block, n_plot, block)
-                 .mean(axis=(1, 3)))
-
-        del K
-
-        if vmax is None:
-            vmax = float(np.max(np.abs(K_bin)))
-
-        # Bandwidth in binned-matrix units
-        b_bin = b / block
-
-        if ax is None:
-            fig, ax = plt.subplots()
-
-        im = ax.imshow(K_bin, origin="upper", cmap=cmap,
-                       vmin=-vmax, vmax=vmax, aspect="auto")
-        if show_colorbar:
-            plt.colorbar(im, ax=ax, label="Covariance")
-
-        # Dashed lines marking the bandwidth boundary in binned coordinates
-        M = n_plot
-        diag_x = np.array([-0.5, M - 0.5])
-        ax.plot(diag_x + b_bin, diag_x, color="k", lw=1, ls="--", alpha=0.6)
-        ax.plot(diag_x - b_bin, diag_x, color="k", lw=1, ls="--", alpha=0.6)
-        ax.set_xlim(-0.5, M - 0.5)
-        ax.set_ylim(M - 0.5, -0.5)
-
-        # Sparsity annotation in upper-right corner
-        ax.text(0.98, 0.02, f"sparsity = {sparsity:.1f}%",
-                ha="right", va="bottom", fontsize=11,
-                transform=ax.transAxes,
-                bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.7))
-
-        ax.set_title(f"bandwidth = {b} pts ({band_days:.1f} d)", fontsize=13)
-        ax.set_xticks([])
-        ax.set_yticks([])
-
-        del K_bin
-
-        if self.save_dir is not None:
-            path = os.path.join(self.save_dir, filename)
-            ax.figure.savefig(path, bbox_inches="tight")
-            print(f"Saved {filename} → {path}")
-
-        if show:
-            plt.show()
-
-        return ax
 
     def get_theta(self):
         """
@@ -2312,6 +1463,8 @@ class GPSolver:
             new_bw = self._compute_bandwidth()
             if new_bw != self.bandwidth:
                 self.bandwidth = new_bw
+                self._band_lag_table_cache = None
+                self._check_bandwidth_efficiency()
                 self._build_covariance()
                 self._build_logposterior()
             else:
@@ -2328,589 +1481,4 @@ class GPSolver:
         ], dtype=jnp.float64)
 
     # =================================================================
-    # MAP estimation
-    # =================================================================
 
-    def fit_map(self, theta0=None, keys=None, method="L-BFGS-B",
-                 maxiter=500, ftol=0, gtol=1e-8, disp=False, nopt=1,
-                 ncore=None, rng=None, _save=True):
-        """
-        Find the maximum a posteriori (MAP) estimate.
-
-        Uses scipy.optimize.minimize with JAX-computed gradients.
-        When ``nopt > 1``, delegates to ``fit_map_parallel`` which
-        runs ``nopt`` independent trials from random starting points
-        (drawn uniformly within the bounds) and returns the best result.
-
-        Parameters
-        ----------
-        theta0 : dict or array_like, optional
-            Starting point. Can be:
-              - None: uses self.theta0 (current hyperparameters).
-              - dict: values for any subset of param_keys set the
-                starting point. If ``keys`` is not given, the dict
-                keys that overlap with ``self.param_keys`` are treated
-                as the free variables to optimize; the rest are held
-                fixed. Extra keys not in ``param_keys`` are ignored.
-              - array_like: full theta vector (length ``n_params``).
-
-            Ignored when ``nopt > 1`` (starting points are randomised).
-        keys : list of str, optional
-            Which parameters to vary during optimization. Overrides
-            the automatic inference from a dict ``theta0``. Parameters
-            not listed are held fixed at their current values. If None
-            and theta0 is not a dict, all parameters are varied.
-        method : str
-            Scipy optimizer method (default "L-BFGS-B").
-        maxiter : int
-            Maximum iterations.
-        ftol : float
-            Function-value convergence tolerance for L-BFGS-B
-            (default 0, i.e. disabled so that convergence is
-            controlled by ``gtol``).
-        gtol : float
-            Gradient-norm convergence tolerance (default 1e-8).
-        disp : bool
-            If True, print optimizer convergence messages (default False).
-        nopt : int
-            Number of independent optimisation trials (default 1).
-            When > 1, ``fit_map_parallel`` is called and the best
-            result across all trials is returned.
-        ncore : int or None
-            Number of parallel workers for multi-start runs. If None,
-            uses ``nopt`` or the number of available CPUs, whichever is
-            smaller. Only used when ``nopt > 1``.
-        rng : numpy.random.Generator, optional
-            RNG for random starting points. Only used when ``nopt > 1``.
-
-        Returns
-        -------
-        theta_dict : dict
-            Full dictionary of all hyperparameters (fixed + optimized).
-        result : scipy OptimizeResult
-            Full optimizer output.
-        """
-        if nopt > 1:
-            return self.fit_map_parallel(
-                nopt=nopt, ncore=ncore, keys=keys, method=method,
-                maxiter=maxiter, ftol=ftol, gtol=gtol, disp=disp, rng=rng,
-                theta0=theta0,
-            )
-        from scipy.optimize import minimize
-
-        # --- Parse theta0 -------------------------------------------------
-        if theta0 is None:
-            theta0_arr = self.theta0.copy()
-        elif isinstance(theta0, dict):
-            # Build full array from current values, overriding with dict
-            theta0_arr = self.theta0.copy()
-            dict_keys_in_params = []
-            for k, v in theta0.items():
-                if k in self.param_keys:
-                    idx = self.param_keys.index(k)
-                    theta0_arr = theta0_arr.at[idx].set(float(v))
-                    dict_keys_in_params.append(k)
-            # Infer free keys from dict when keys is not explicitly given
-            if keys is None and dict_keys_in_params:
-                keys = dict_keys_in_params
-        else:
-            theta0_arr = jnp.asarray(theta0, dtype=jnp.float64)
-
-        free_idx, fixed_idx, fixed_vals = self._resolve_keys(keys)
-
-        free0_theta = theta0_arr[jnp.array(free_idx)]
-        free_bounds = self.bounds[jnp.array(free_idx)]
-        blo = free_bounds[:, 0]
-        bhi = free_bounds[:, 1]
-        brange = bhi - blo
-
-        # Optimize in normalized coordinates u = (theta - lo) / (hi - lo)
-        # so all free parameters live in [0, 1] with comparable scale.
-        u0 = np.asarray((free0_theta - blo) / brange, dtype=np.float64)
-
-        # Build objective directly from raw functions (no nested JIT).
-        x, y, yerr = self.x, self.y, self.yerr
-        mean_val = self.mean_val
-        n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
-        fit_sn = self.fit_sigma_n
-        qn, qw = self._quad_nodes, self._quad_weights
-        all_bounds = self.bounds
-        custom_prior = self._custom_log_prior
-        to_phys = self._to_physical
-
-        @jax.jit
-        def neg_logpost_u(u_arr):
-            free_theta = blo + u_arr * brange
-            theta_full = self._theta_from_free(
-                free_theta, free_idx, fixed_idx, fixed_vals)
-            ll = _gp_log_likelihood(to_phys(theta_full), x, y, yerr, mean_val,
-                                    n_h, n_l, lr, fit_sn,
-                                    quad_nodes=qn, quad_weights=qw)
-            if custom_prior is not None:
-                lp = custom_prior(theta_full)
-            else:
-                lp = _default_log_prior(theta_full, all_bounds)
-            return -(ll + lp)
-
-        vg_fn = jax.jit(jax.value_and_grad(neg_logpost_u))
-
-        # Warm up the JIT-compiled function before the optimizer starts so
-        # the CUDA kernel is compiled and timed accurately from the first call.
-        jax.block_until_ready(vg_fn(jnp.array(u0, dtype=jnp.float64)))
-
-        n_free = len(free_idx)
-        _gradient_free = method.lower() in ("nelder-mead", "cobyla", "powell")
-
-        if _gradient_free:
-            def objective(u_np):
-                u_jax = jnp.array(u_np, dtype=jnp.float64)
-                val, _ = vg_fn(u_jax)
-                v = float(val)
-                return 1e30 if not np.isfinite(v) else v
-        else:
-            def objective(u_np):
-                u_jax = jnp.array(u_np, dtype=jnp.float64)
-                val, grad = vg_fn(u_jax)
-                v = float(val)
-                g = np.asarray(grad, dtype=np.float64)
-                if not np.isfinite(v):
-                    return 1e30, np.zeros_like(g)
-                if not np.all(np.isfinite(g)):
-                    return v, np.zeros_like(g)
-                return v, g
-        if _gradient_free:
-            _minimize_kwargs = dict(
-                method=method,
-                options={"maxiter": maxiter, "xatol": ftol, "fatol": ftol,
-                         "disp": disp},
-            )
-        else:
-            _minimize_kwargs = dict(
-                jac=True, method=method,
-                bounds=[(0.0, 1.0)] * n_free,
-                options={"maxiter": maxiter, "ftol": ftol, "gtol": gtol,
-                         "disp": disp},
-            )
-        result = minimize(objective, u0, **_minimize_kwargs)
-
-        # Transform back to physical coordinates
-        free_best = blo + jnp.array(result.x, dtype=jnp.float64) * brange
-        theta_full = self._theta_from_free(
-            free_best, free_idx, fixed_idx, fixed_vals)
-
-        self.map_estimate = theta_full
-        self._map_result = result
-        theta_dict = self._result_dict(theta_full)
-        if _save:
-            self._autosave("map_fit_results.npz", theta_map=theta_dict)
-        return theta_dict, result
-
-    def fit_map_parallel(self, nopt=10, ncore=None, keys=None,
-                          method="nelder-mead", maxiter=500, ftol=0,
-                          gtol=1e-8, disp=False, return_all=False,
-                          rng=None, theta0=None, jitter=0.01):
-        """
-        Run ``fit_map`` from multiple random starting points in parallel.
-
-        Starting points are drawn uniformly within the parameter bounds.
-
-        Parameters
-        ----------
-        nopt : int
-            Number of independent optimization trials (default 10).
-        ncore : int or None
-            Number of parallel workers. If None, uses ``nopt`` or the
-            number of available CPUs, whichever is smaller.
-        keys : list of str, optional
-            Free parameters (forwarded to ``fit_map``).
-        method : str
-            Optimizer method (default "nelder-mead").
-        maxiter, ftol, gtol, disp
-            Forwarded to ``fit_map``.
-        return_all : bool
-            If True, return all solutions sorted by objective value.
-            If False (default), return only the best solution.
-        rng : numpy.random.Generator, optional
-            Random number generator for reproducibility.
-        theta0 : dict, optional
-            Initial parameter guess to include as one of the starting
-            points.  Replaces one random start so the total number of
-            trials stays ``nopt``.
-
-        Returns
-        -------
-        theta_best : dict  (or list of dict if ``return_all=True``)
-            Best-fit hyperparameters.
-        result_best : scipy.optimize.OptimizeResult
-            (or list of OptimizeResult if ``return_all=True``)
-        """
-        from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-        import os
-
-        if ncore is None:
-            ncore = min(nopt, os.cpu_count() or 1)
-        if rng is None:
-            rng = np.random.default_rng()
-
-        # Determine which indices are free
-        free_idx, fixed_idx, _ = self._resolve_keys(keys)
-        free_keys = [self.param_keys[i] for i in free_idx]
-        free_bounds = np.asarray(self.bounds[jnp.array(free_idx)])
-        blo = free_bounds[:, 0]
-        bhi = free_bounds[:, 1]
-
-        # Generate starting points using independent child RNGs.
-        # If theta0 is provided, use it as the first start and fill the
-        # rest with random draws so the total count stays nopt.
-        if theta0 is not None:
-            # For keys in theta0, use the provided value; for the rest,
-            # draw a random starting point within bounds.
-            child_rng0 = np.random.default_rng(int(rng.integers(0, 2**31)))
-            u0 = child_rng0.uniform(size=len(free_keys))
-            first_start = {}
-            for j, k in enumerate(free_keys):
-                if k in theta0:
-                    # Add small jitter (1% of bound range) to theta0 values
-                    span = bhi[j] - blo[j]
-                    jitter_val = child_rng0.uniform(-jitter, jitter) * span
-                    first_start[k] = float(np.clip(theta0[k] + jitter_val, blo[j], bhi[j]))
-                else:
-                    first_start[k] = float(blo[j] + u0[j] * (bhi[j] - blo[j]))
-            starts = [first_start]
-            n_random = max(nopt - 1, 0)
-        else:
-            starts = []
-            n_random = nopt
-
-        seeds = rng.integers(0, 2**31, size=n_random)
-        for i in range(n_random):
-            child_rng = np.random.default_rng(int(seeds[i]))
-            theta0_dict = {}
-            u = child_rng.uniform(size=len(free_keys))
-            for j, k in enumerate(free_keys):
-                theta0_dict[k] = float(blo[j] + u[j] * (bhi[j] - blo[j]))
-            starts.append(theta0_dict)
-
-        # Distribute work across available JAX devices (GPUs/TPUs)
-        devices = jax.devices()
-        n_devices = len(devices)
-
-        def _run_one(device_idx, theta0_dict):
-            with jax.default_device(devices[device_idx % n_devices]):
-                return self.fit_map(theta0=theta0_dict, keys=keys,
-                                     method=method, maxiter=maxiter,
-                                     ftol=ftol, gtol=gtol, disp=disp,
-                                     _save=False)
-
-        # Run the first trial sequentially to warm up JIT on device 0
-        results = [_run_one(0, starts[0])]
-
-        # Run remaining trials in parallel using threads, distributed
-        # across devices.  JAX releases the GIL during compiled
-        # computation, so threads give real parallelism.
-        if len(starts) > 1:
-            with ThreadPoolExecutor(max_workers=ncore) as pool:
-                futures = [pool.submit(_run_one, i + 1, s)
-                           for i, s in enumerate(starts[1:])]
-                results.extend(f.result() for f in futures)
-
-        # Sort by objective value (lower is better for neg_log_posterior)
-        results.sort(key=lambda tr: float(tr[1].fun))
-
-        if return_all:
-            return ([r[0] for r in results], [r[1] for r in results])
-
-        best_theta, best_result = results[0]
-        # Store the best as the MAP estimate
-        self.map_estimate = jnp.array(
-            [float(best_theta[k]) for k in self.param_keys],
-            dtype=jnp.float64)
-        self._map_result = best_result
-        theta_all = np.array(
-            [[float(r[0][k]) for k in self.param_keys] for r in results])
-        self._autosave("map_fit_results.npz",
-                       theta_map=best_theta, theta_all=theta_all)
-        return best_theta, best_result
-
-    # =================================================================
-    # Mass matrix helpers
-    # =================================================================
-
-    def _build_neg_log_lik(self, force_dense=False):
-        """Return a JIT-compiled negative log-likelihood function.
-
-        Parameters
-        ----------
-        force_dense : bool
-            If True, always use the dense ``_gp_log_likelihood`` regardless of
-            ``self.matrix_solver``.  Required for second-order autodiff (Hessian):
-            the banded compact storage format does not differentiate cleanly
-            through JAX's AD and produces NaNs in the Hessian.
-        """
-        x, y, yerr = self.x, self.y, self.yerr
-        mean_val = self.mean_val
-        n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
-        fit_sn = self.fit_sigma_n
-        qn, qw = self._quad_nodes, self._quad_weights
-        to_phys = self._to_physical
-
-        if self.matrix_solver == "cholesky_banded" and not force_dense:
-            b = self.bandwidth
-
-            @jax.jit
-            def neg_log_lik(theta_arr):
-                return -_gp_log_likelihood_banded(
-                    to_phys(theta_arr), x, y, yerr, mean_val,
-                    n_h, n_l, lr, fit_sn, b,
-                    quad_nodes=qn, quad_weights=qw)
-        else:
-            @jax.jit
-            def neg_log_lik(theta_arr):
-                return -_gp_log_likelihood(
-                    to_phys(theta_arr), x, y, yerr, mean_val,
-                    n_h, n_l, lr, fit_sn,
-                    quad_nodes=qn, quad_weights=qw)
-
-        return neg_log_lik
-
-    # =================================================================
-    # Mass matrix estimation: Method 1 -- Hessian at MAP
-    # =================================================================
-
-    def mass_matrix_hessian_map(self, theta_map=None):
-        """
-        Estimate the inverse mass matrix from the Hessian of the
-        negative log-likelihood at the MAP.
-
-        ``M^{-1} = H^{-1}``  where  ``H = d^2(-log L)/d theta^2`` at the MAP.
-
-        Parameters
-        ----------
-        theta_map : array_like, optional
-            MAP estimate. If None, calls fit_map() first.
-
-        Returns
-        -------
-        inv_mass_matrix : jnp.ndarray, shape (n_params, n_params)
-        """
-        if theta_map is None:
-            if self.map_estimate is None:
-                self.fit_map()
-            theta_map = self.map_estimate
-        else:
-            theta_map = jnp.asarray(theta_map, dtype=jnp.float64)
-
-        # Always use dense solver: banded compact storage does not differentiate
-        # cleanly through JAX's second-order AD and produces NaNs in the Hessian.
-        neg_log_lik = self._build_neg_log_lik(force_dense=True)
-
-        hessian_fn = jax.jit(jax.hessian(neg_log_lik))
-        H = jax.block_until_ready(hessian_fn(theta_map))
-
-        # Regularize: ensure positive-definite
-        eigvals, eigvecs = jnp.linalg.eigh(H)
-        eigvals = jnp.maximum(eigvals, 1e-6)
-        H_reg = eigvecs @ jnp.diag(eigvals) @ eigvecs.T
-
-        self.inverse_mass_matrix = jnp.linalg.inv(H_reg)
-        self._hessian = H
-        return self.inverse_mass_matrix
-
-    # =================================================================
-    # Mass matrix estimation: Method 2 -- Fisher information (analytic)
-    # =================================================================
-
-    def mass_matrix_fisher(self, theta_map=None, eigval_clip=1e-6, white_noise=1e-8):
-        """
-        Estimate the inverse mass matrix from the Fisher information.
-
-        For the GP log-likelihood:
-
-            I_{ij} = (1/2) tr(K^{-1} dK/dtheta_i  K^{-1} dK/dtheta_j)
-
-        When ``matrix_solver="cholesky_full"``, the kernel derivatives
-        dK/dtheta_i are computed via JAX forward-mode autodiff (jacfwd)
-        on the full N×N covariance matrix.
-
-        When ``matrix_solver="cholesky_banded"``, the exact Fisher requires
-        the dense N×N kernel and its inverse, which would defeat the purpose
-        of banded storage.  Instead, the Fisher is approximated by the
-        Hessian of the banded negative log-likelihood at the MAP
-        (Fisher ≈ observed information at the MLE).
-
-        Parameters
-        ----------
-        theta_map : array_like, optional
-            Point at which to evaluate Fisher. If None, uses MAP.
-
-        Returns
-        -------
-        inv_mass_matrix : jnp.ndarray, shape (n_params, n_params)
-        """
-        if theta_map is None:
-            if self.map_estimate is None:
-                self.fit_map()
-            theta_map = self.map_estimate
-        else:
-            theta_map = jnp.asarray(theta_map, dtype=jnp.float64)
-
-        # Banded path: approximate Fisher via Hessian of dense log-likelihood.
-        # Must use force_dense=True — banded compact storage does not differentiate
-        # cleanly through JAX's second-order AD and produces NaNs in the Hessian.
-        if self.matrix_solver == "cholesky_banded":
-            neg_log_lik = self._build_neg_log_lik(force_dense=True)
-            hessian_fn = jax.jit(jax.hessian(neg_log_lik))
-            H = jax.block_until_ready(hessian_fn(theta_map))
-
-            eigvals, eigvecs = jnp.linalg.eigh(H)
-            eigvals = jnp.maximum(eigvals, eigval_clip)
-            fisher_reg = eigvecs @ jnp.diag(eigvals) @ eigvecs.T
-
-            self.inverse_mass_matrix = jnp.linalg.inv(fisher_reg)
-            self._fisher_matrix = H
-            return self.inverse_mass_matrix
-
-        # Dense path: exact Fisher via kernel Jacobian
-        N = self.N
-        n_params = theta_map.shape[0]
-        if self._lag_flat is None:
-            self._lag_flat = jnp.abs(
-                self.x[:, None] - self.x[None, :]).ravel()
-        lag_flat = self._lag_flat
-        fit_sn = self.fit_sigma_n
-        qn, qw = self._quad_nodes, self._quad_weights
-
-        to_phys = self._to_physical
-
-        def K_noise_flat_from_theta(theta_arr):
-            """Return the full K_noise matrix as a flat vector."""
-            theta_arr = to_phys(theta_arr)
-            n_kernel = 6
-            if fit_sn:
-                theta_kernel = theta_arr[:n_kernel]
-                sigma_n = theta_arr[n_kernel]
-            else:
-                theta_kernel = theta_arr
-                sigma_n = 0.0
-
-            K_flat = _kernel_eval(theta_kernel, lag_flat,
-                                  self.n_harmonics, self.n_lat,
-                                  self.lat_range,
-                                  quad_nodes=qn, quad_weights=qw,
-                                  r_gamma_func=self.spot_model.get_r_gamma_func(),
-                                  lat_weight_func=self.spot_model.get_lat_weight_func())
-            K = K_flat.reshape(N, N)
-            noise_var = self.yerr ** 2 + sigma_n ** 2
-            K_noise = K + jnp.diag(noise_var) + white_noise * jnp.eye(N)
-            return K_noise.ravel()
-
-        jacfwd_fn = jax.jit(jax.jacfwd(K_noise_flat_from_theta))
-        dK_flat_dtheta = jax.block_until_ready(jacfwd_fn(theta_map))
-        dK_dtheta = dK_flat_dtheta.reshape(N, N, n_params)
-
-        K_noise_flat = K_noise_flat_from_theta(theta_map)
-        K = K_noise_flat.reshape(N, N)
-        K_inv = jnp.linalg.inv(K)
-
-        K_inv_dK = jnp.einsum('ab,bcj->acj', K_inv, dK_dtheta)
-        fisher = 0.5 * jnp.einsum('abi,baj->ij', K_inv_dK, K_inv_dK)
-
-        # Regularize
-        eigvals, eigvecs = jnp.linalg.eigh(fisher)
-        eigvals = jnp.maximum(eigvals, eigval_clip)
-        fisher_reg = eigvecs @ jnp.diag(eigvals) @ eigvecs.T
-
-        self.inverse_mass_matrix = jnp.linalg.inv(fisher_reg)
-        self._fisher_matrix = fisher
-        return self.inverse_mass_matrix
-
-    # =================================================================
-    # Mass matrix estimation: Method 3 -- Laplace approximation
-    # =================================================================
-
-    def mass_matrix_laplace(self, theta_map=None, eigval_clip=1e-6):
-        """
-        Laplace approximation: inverse mass matrix = inverse Hessian
-        of the negative log-likelihood at the MAP.
-
-        The posterior is approximated as:
-
-            p(theta | data) ~ N(theta_MAP, H^{-1})
-
-        Parameters
-        ----------
-        theta_map : array_like, optional
-            MAP estimate. If None, calls fit_map() first.
-
-        Returns
-        -------
-        inv_mass_matrix : jnp.ndarray, shape (n_params, n_params)
-        """
-        if theta_map is None:
-            if self.map_estimate is None:
-                self.fit_map()
-            theta_map = self.map_estimate
-        else:
-            theta_map = jnp.asarray(theta_map, dtype=jnp.float64)
-
-        neg_log_lik = self._build_neg_log_lik()
-
-        hessian_fn = jax.jit(jax.hessian(neg_log_lik))
-        H = jax.block_until_ready(hessian_fn(theta_map))
-
-        # Regularize
-        eigvals, eigvecs = jnp.linalg.eigh(H)
-        eigvals = jnp.maximum(eigvals, eigval_clip)
-        H_reg = eigvecs @ jnp.diag(eigvals) @ eigvecs.T
-
-        self.inverse_mass_matrix = jnp.linalg.inv(H_reg)
-        self._laplace_hessian = H
-        self._laplace_mean = theta_map
-        return self.inverse_mass_matrix
-
-    def laplace_samples(self, n_samples=1000, rng_key=None):
-        """
-        Draw samples from the Laplace (Gaussian) approximation
-        to the posterior.
-
-        Parameters
-        ----------
-        n_samples : int
-        rng_key : jax.random.PRNGKey, optional
-
-        Returns
-        -------
-        samples : jnp.ndarray, shape (n_samples, n_params)
-        """
-        if self.inverse_mass_matrix is None:
-            self.mass_matrix_laplace()
-
-        if rng_key is None:
-            rng_key = jax.random.PRNGKey(0)
-
-        mean = self.map_estimate
-        cov = self.inverse_mass_matrix
-
-        return jax.random.multivariate_normal(
-            rng_key, mean, cov, shape=(n_samples,))
-
-    def _get_mass_matrix(self, method, theta_ref):
-        """Compute inverse mass matrix using the specified method."""
-        if method is None:
-            n = theta_ref.shape[0]
-            self.inverse_mass_matrix = jnp.eye(n)
-        elif method == "hessian_map":
-            self.mass_matrix_hessian_map(theta_ref)
-        elif method == "fisher":
-            self.mass_matrix_fisher(theta_ref)
-        elif method == "laplace":
-            self.mass_matrix_laplace(theta_ref)
-        elif method == "diagonal":
-            hessian_fn = jax.jit(jax.hessian(self.neg_log_posterior))
-            H = jax.block_until_ready(hessian_fn(theta_ref))
-            diag = jnp.maximum(jnp.diag(H), 1e-6)
-            self.inverse_mass_matrix = jnp.diag(1.0 / diag)
-        else:
-            raise ValueError(f"Unknown mass_matrix_method: {method}")
-
-        return self.inverse_mass_matrix

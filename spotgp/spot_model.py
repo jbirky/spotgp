@@ -16,10 +16,7 @@ import numpy as np
 _UNSET = object()  # sentinel to distinguish "not passed" from explicit None
 import jax.numpy as jnp
 
-try:
-    from .distributions import as_distribution, is_distributed, DeltaDistribution
-except ImportError:
-    from distributions import as_distribution, is_distributed, DeltaDistribution
+from .distributions import as_distribution, is_distributed, DeltaDistribution
 
 try:
     from .envelope import (
@@ -28,8 +25,6 @@ try:
         TrapezoidAsymmetricEnvelope,
         SkewedGaussianEnvelope,
         ExponentialEnvelope,
-        _R_Gamma_symmetric,
-        _R_Gamma_asymmetric,
     )
     from .params import resolve_hparam
     from .latitude import LatitudeDistributionFunction, UniformDoubleHemisphereBand
@@ -48,8 +43,6 @@ except ImportError:
         TrapezoidAsymmetricEnvelope,
         SkewedGaussianEnvelope,
         ExponentialEnvelope,
-        _R_Gamma_symmetric,
-        _R_Gamma_asymmetric,
     )
     from params import resolve_hparam
     from latitude import LatitudeDistributionFunction, UniformDoubleHemisphereBand
@@ -273,10 +266,10 @@ class SpotEvolutionModel:
           [peq, kappa, inc, <envelope params...>, sigma_k]
 
         When envelope is None, returns a function that always yields 1.0
-        (pure visibility kernel).  The R_Gamma function is selected based
-        on the envelope type and captured (together with any precomputed
-        grids) in a closure so that the returned callable is safe to use
-        inside jax.jit.
+        (pure visibility kernel).  Delegates to
+        ``EnvelopeFunction.r_gamma_jax`` for the actual computation, so
+        user-defined envelope subclasses that override ``r_gamma_jax``
+        are automatically supported.
         """
         if self.envelope is None:
             def r_gamma(theta_arr, lag):  # noqa: ARG001
@@ -284,47 +277,12 @@ class SpotEvolutionModel:
             return r_gamma
 
         n_vis = len(self.visibility.param_keys) if self.visibility is not None else 0
+        n_env = len(self.envelope.param_dict)
+        envelope = self.envelope
 
-        if isinstance(self.envelope, TrapezoidSymmetricEnvelope):
-            def r_gamma(theta_arr, lag):
-                lspot     = theta_arr[n_vis]        # index 3
-                tau_spot  = theta_arr[n_vis + 1]    # index 4
-                return _R_Gamma_symmetric(lag, lspot, tau_spot)
-
-        elif isinstance(self.envelope, TrapezoidAsymmetricEnvelope):
-            def r_gamma(theta_arr, lag):
-                lspot   = theta_arr[n_vis]       # index 3
-                tau_em  = theta_arr[n_vis + 1]   # index 4
-                tau_dec = theta_arr[n_vis + 2]   # index 5
-                te = jnp.minimum(tau_em, tau_dec)
-                td = jnp.maximum(tau_em, tau_dec)
-                return _R_Gamma_asymmetric(lag, lspot, te, td)
-
-        elif isinstance(self.envelope, SkewedGaussianEnvelope):
-            # sigma_sn and n_sn are in theta but R_Gamma uses the
-            # precomputed interpolation grid (fixed at init time).
-            lag_grid = self.envelope._R_lag_grid
-            R_vals   = self.envelope._R_vals
-
-            def r_gamma(theta_arr, lag):  # noqa: ARG001 (theta_arr unused)
-                return jnp.interp(jnp.abs(lag), lag_grid, R_vals)
-
-        elif isinstance(self.envelope, ExponentialEnvelope):
-            def r_gamma(theta_arr, lag):
-                tau_spot = theta_arr[n_vis]  # index 3 (no lspot for exponential)
-                abs_lag = jnp.abs(lag)
-                return (tau_spot + abs_lag) * jnp.exp(-abs_lag / tau_spot)
-
-        else:
-            # Generic fallback via precomputed grid (like skew-normal)
-            env = self.envelope
-            tau_ref = env.tau_spot if env.tau_spot > 0 else 1.0
-            env_np = lambda t_arr: np.asarray(env.Gamma(jnp.array(t_arr)))
-            from .envelope import compute_R_Gamma_numerical
-            lag_grid, R_vals = compute_R_Gamma_numerical(env_np, tau_ref)
-
-            def r_gamma(theta_arr, lag):  # noqa: ARG001
-                return jnp.interp(jnp.abs(lag), lag_grid, R_vals)
+        def r_gamma(theta_arr, lag):
+            theta_env = theta_arr[n_vis:n_vis + n_env]
+            return envelope.r_gamma_jax(theta_env, lag)
 
         return r_gamma
 
@@ -358,7 +316,14 @@ class SpotEvolutionModel:
                                  1.0, 0.0)
             return lat_weight_fn
 
-        # Generic fallback: not JAX-traceable, but works for fixed params
+        import warnings
+        warnings.warn(
+            f"{type(lat_dist).__name__} has free parameters "
+            f"{tuple(lat_dist.param_dict.keys())} but no JAX-traceable "
+            f"weight function. Latitude parameters will appear in the "
+            f"fit vector but have zero gradient. Implement a "
+            f"lat_weight_fn for this distribution or use fixed parameters.",
+            stacklevel=2)
         return None
 
     # ── Bandwidth support ───────────────────────────────────────────────────
@@ -368,7 +333,8 @@ class SpotEvolutionModel:
         Estimate the kernel support using upper bounds of parameters.
 
         Used by GPSolver._compute_bandwidth to determine the banded
-        Cholesky bandwidth as a compile-time constant.
+        Cholesky bandwidth as a compile-time constant.  Delegates to
+        ``EnvelopeFunction.support_from_bounds``.
 
         Parameters
         ----------
@@ -377,10 +343,13 @@ class SpotEvolutionModel:
         bounds_arr : array_like, shape (n_params, 2)
             Lower and upper bounds for each parameter.
         """
+        if self.envelope is None:
+            return 0.0
+
         keys = list(param_keys)
         bounds_arr = np.asarray(bounds_arr)
 
-        def upper(key, fallback):
+        def upper_fn(key, fallback):
             if key in keys:
                 return float(bounds_arr[keys.index(key), 1])
             log_key = f"log_{key}"
@@ -388,26 +357,7 @@ class SpotEvolutionModel:
                 return 10.0 ** float(bounds_arr[keys.index(log_key), 1])
             return float(fallback)
 
-        if self.envelope is None:
-            return 0.0
-
-        if isinstance(self.envelope, TrapezoidSymmetricEnvelope):
-            return (upper("lspot", self.lspot)
-                    + 2.0 * upper("tau_spot", self.tau_spot))
-
-        elif isinstance(self.envelope, TrapezoidAsymmetricEnvelope):
-            return (upper("lspot",   self.lspot)
-                    + upper("tau_em",  self.envelope.tau_em)
-                    + upper("tau_dec", self.envelope.tau_dec))
-
-        elif isinstance(self.envelope, SkewedGaussianEnvelope):
-            return 12.0 * upper("sigma_sn", self.envelope.sigma_sn)
-
-        elif isinstance(self.envelope, ExponentialEnvelope):
-            return 6.0 * upper("tau_spot", self.tau_spot)
-
-        else:
-            return self.envelope.kernel_support()
+        return self.envelope.support_from_bounds(upper_fn)
 
     # ── Serialization ───────────────────────────────────────────────────────
 

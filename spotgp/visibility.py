@@ -247,13 +247,18 @@ class EdgeOnVisibilityFunction(VisibilityFunction):
     rotation (kappa = 0) and a uniform latitude distribution.
 
     For this special case, the latitude-averaged squared Fourier coefficients
-    are known analytically (Eq. 68 of Birky et al.):
+    are known analytically.  The per-latitude coefficients g_n (Eq. 68 of
+    Birky et al.) are:
+
+        g_0 = 1/pi,  g_1 = 1/4,  g_2 = 1/(3*pi)
+
+    and the latitude-averaged *squared* coefficients are <|c_n|^2> = g_n^2/2:
 
         <|c_0|^2> = 1 / (2 * pi^2)
-        <|c_1|^2> = 1 / 16
-        <|c_2|^2> = 1 / (9 * pi^2)
+        <|c_1|^2> = 1 / 32
+        <|c_2|^2> = 1 / (18 * pi^2)
 
-    and the rotation frequency is latitude-independent:
+    The rotation frequency is latitude-independent:
         omega_0 = 2 * pi / P_eq.
 
     This eliminates the need for numerical latitude quadrature, making

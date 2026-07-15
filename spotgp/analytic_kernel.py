@@ -1,37 +1,171 @@
+import logging
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 import numpy as np
-from functools import partial
 
-try:
-    from .params import resolve_hparam
-    from .envelope import (
-        EnvelopeFunction,
-        TrapezoidAsymmetricEnvelope,
-        SkewedGaussianEnvelope,
-        ExponentialEnvelope,
-        compute_R_Gamma_numerical,
-    )
-    from .spot_model import (
-        VisibilityFunction, EdgeOnVisibilityFunction, SpotEvolutionModel,
-        _cn_squared_coefficients_jax, _gauss_legendre_grid,
-    )
-except ImportError:
-    from params import resolve_hparam
-    from envelope import (
-        EnvelopeFunction,
-        TrapezoidAsymmetricEnvelope,
-        SkewedGaussianEnvelope,
-        ExponentialEnvelope,
-        compute_R_Gamma_numerical,
-    )
-    from spot_model import (
-        VisibilityFunction, EdgeOnVisibilityFunction, SpotEvolutionModel,
-        _cn_squared_coefficients_jax, _gauss_legendre_grid,
-    )
+from .params import resolve_hparam
+from .envelope import (
+    EnvelopeFunction,
+    TrapezoidAsymmetricEnvelope,
+    SkewedGaussianEnvelope,
+    ExponentialEnvelope,
+    compute_R_Gamma_numerical,
+    _R_Gamma_symmetric,
+)
+from .spot_model import (
+    VisibilityFunction, EdgeOnVisibilityFunction, SpotEvolutionModel,
+    _cn_squared_coefficients_jax, _cn_general_jax, _gauss_legendre_grid,
+)
 
 __all__ = ["AnalyticKernel", "NonstationaryAnalyticKernel",
-           "compute_R_Gamma_numerical"]
+           "compute_R_Gamma_numerical",
+           "_kernel_eval", "_kernel_eval_edgeon"]
+
+logger = logging.getLogger("spotgp")
+
+
+# =====================================================================
+# Pure-functional kernel evaluation (single source of truth)
+# =====================================================================
+
+def _kernel_eval_edgeon(theta_arr, lag_flat, n_harmonics,
+                        r_gamma_func=None, cn_sq_fixed=None):
+    """
+    Fast-path kernel evaluation for EdgeOnVisibilityFunction.
+
+    Skips the latitude quadrature loop entirely.  The latitude-averaged
+    |c_n|^2 are known constants passed in via ``cn_sq_fixed``.
+
+    Parameters
+    ----------
+    theta_arr : jnp.ndarray
+        Kernel parameters.  theta_arr[0] = peq, theta_arr[-1] = sigma_k.
+    lag_flat : jnp.ndarray, shape (M,)
+    n_harmonics : int
+    r_gamma_func : callable or None
+    cn_sq_fixed : jnp.ndarray, shape (n_harmonics+1,)
+        Pre-computed latitude-averaged |c_n|^2.
+
+    Returns
+    -------
+    K_flat : jnp.ndarray, shape (M,)
+    """
+    peq = theta_arr[0]
+    sigma_k = theta_arr[-1]
+
+    if r_gamma_func is not None:
+        R = r_gamma_func(theta_arr, lag_flat)
+    else:
+        lspot    = theta_arr[1]
+        tau_spot = theta_arr[2]
+        R = _R_Gamma_symmetric(lag_flat, lspot, tau_spot)
+
+    w0 = 2.0 * jnp.pi / peq
+    harm_ns = jnp.arange(1, n_harmonics + 1)
+    cosine_terms = jnp.sum(
+        cn_sq_fixed[1:] * jnp.cos(harm_ns * w0 * lag_flat[:, None]), axis=1)
+    K = sigma_k ** 2 * R * (cn_sq_fixed[0] + 2.0 * cosine_terms)
+    return K
+
+
+def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
+                  quad_nodes=None, quad_weights=None,
+                  r_gamma_func=None,
+                  edgeon_cn_sq=None,
+                  lat_weight_func=None):
+    """
+    Pure-functional kernel evaluation: theta_arr -> kernel values.
+
+    This is the single source of truth for the latitude-averaged kernel
+    math.  Both ``GPSolver`` (for the log-posterior) and ``AnalyticKernel``
+    (for prediction / covariance) call this function, ensuring consistent
+    normalization and identical numerical results.
+
+    Uses ``jax.vmap`` over the latitude grid so that all latitudes are
+    processed in parallel.
+
+    When ``edgeon_cn_sq`` is not None, delegates to the fast edge-on
+    path that skips all latitude quadrature.
+
+    Parameters
+    ----------
+    theta_arr : jnp.ndarray, shape (n_params,)
+        Kernel parameters. First three are always [peq, kappa, inc];
+        last is always sigma_k.
+    lag_flat : jnp.ndarray, shape (M,)
+        Flattened time lags.
+    n_harmonics, n_lat, lat_range : kernel config (static).
+    quad_nodes, quad_weights : jnp.ndarray or None
+        Quadrature nodes and weights. If None, uses trapezoid rule on a
+        linspace grid.
+    r_gamma_func : callable or None
+        JAX-traceable function ``f(theta_arr, lag) -> R_Gamma``.
+        If None, uses the symmetric-trapezoid closed-form (backward compat).
+    edgeon_cn_sq : jnp.ndarray or None
+        If not None, use the edge-on fast path with these fixed |c_n|^2.
+    lat_weight_func : callable or None
+        JAX-traceable function ``f(theta_arr, phi_grid) -> weights`` that
+        computes per-node latitude weights from the theta vector.
+
+    Returns
+    -------
+    K_flat : jnp.ndarray, shape (M,)
+        Kernel values at each lag.
+    """
+    if edgeon_cn_sq is not None:
+        return _kernel_eval_edgeon(theta_arr, lag_flat, n_harmonics,
+                                   r_gamma_func=r_gamma_func,
+                                   cn_sq_fixed=edgeon_cn_sq)
+
+    peq    = theta_arr[0]
+    kappa  = theta_arr[1]
+    inc    = theta_arr[2]
+    sigma_k = theta_arr[-1]
+
+    if r_gamma_func is not None:
+        R = r_gamma_func(theta_arr, lag_flat)
+    else:
+        lspot    = theta_arr[3]
+        tau_spot = theta_arr[4]
+        R = _R_Gamma_symmetric(lag_flat, lspot, tau_spot)
+
+    if quad_nodes is not None:
+        phi_grid = quad_nodes
+        weights = quad_weights
+    else:
+        phi_min, phi_max = lat_range
+        phi_grid = jnp.linspace(phi_min, phi_max, n_lat)
+        dphi = phi_grid[1] - phi_grid[0]
+        weights = jnp.ones_like(phi_grid) * dphi
+
+    if lat_weight_func is not None:
+        lat_w = lat_weight_func(theta_arr, phi_grid)
+        weights = weights * lat_w
+
+    norm = jnp.sum(weights)
+
+    ns = jnp.arange(n_harmonics + 1)
+    cn_sq_all = jax.vmap(
+        lambda phi: jax.vmap(lambda n: _cn_general_jax(n, inc, phi))(ns) ** 2
+    )(phi_grid)
+
+    harm_ns = jnp.arange(1, n_harmonics + 1)
+
+    def _lat_contribution(phi, cn_sq):
+        w0 = 2 * jnp.pi * (1 - kappa * jnp.sin(phi) ** 2) / peq
+        cosine_terms = jnp.sum(
+            cn_sq[1:] * jnp.cos(harm_ns * w0 * lag_flat[:, None]), axis=1
+        )
+        return cn_sq[0] + 2 * cosine_terms
+
+    all_contribs = jax.vmap(_lat_contribution)(phi_grid, cn_sq_all)
+
+    K = jnp.sum(weights[:, None] * all_contribs, axis=0) / norm
+
+    K = R * K * sigma_k ** 2
+    return K
 
 
 class AnalyticKernel:
@@ -120,7 +254,7 @@ class AnalyticKernel:
 
         if quadrature == "gauss-legendre":
             self._quad_nodes, self._quad_weights = _gauss_legendre_grid(
-                n_lat, lat_range[0], lat_range[1])
+                n_lat, self.lat_range[0], self.lat_range[1])
         elif quadrature == "trapezoid":
             self._quad_nodes   = None
             self._quad_weights = None
@@ -163,58 +297,48 @@ class AnalyticKernel:
         """
         Stationary kernel *without* the σ_k² prefactor.
 
-        Returns R_Γ(τ) · Σ_n w_n |c_n|² cos(n·ω₀·τ), averaged over latitude.
+        Delegates to the module-level ``_kernel_eval`` (the single source
+        of truth for the latitude-averaged kernel math), with sigma_k set
+        to 1.0 so that the caller can apply sigma_k² separately.
         """
         lag = jnp.asarray(lag, dtype=float)
         orig_shape = lag.shape
         lag_flat = lag.ravel()
 
+        theta0 = np.array(self.spot_model.theta0, dtype=np.float64)
+        theta0[-1] = 1.0
+        theta_arr = jnp.asarray(theta0)
+
+        r_gamma_func = self.spot_model.get_r_gamma_func()
+
         if isinstance(self.visibility, EdgeOnVisibilityFunction):
-            R = self.R_Gamma(lag_flat)
-            cn_sq = self.visibility.cn_squared(0.0, self.n_harmonics)
-            w0 = self.visibility.omega0(0.0)
-            ns = jnp.arange(1, self.n_harmonics + 1)
-            cosine_terms = jnp.sum(
-                cn_sq[1:] * jnp.cos(ns * w0 * lag_flat[:, None]), axis=1)
-            K = R * (cn_sq[0] + 2 * cosine_terms)
-            return K.reshape(orig_shape)
+            edgeon_cn_sq = jnp.array(self.visibility.cn_squared(
+                0.0, self.n_harmonics))
+        else:
+            edgeon_cn_sq = None
 
         if lat_dist is None:
             lat_dist = self.spot_model.latitude_distribution
 
-        R = self.R_Gamma(lag_flat)
-        n_harmonics = self.n_harmonics
-
-        def _lat_contribution(phi):
-            cn_sq = self.cn_squared(phi)
-            w0 = self.omega0(phi)
-            ns = jnp.arange(1, n_harmonics + 1)
-            cosine_terms = jnp.sum(
-                cn_sq[1:] * jnp.cos(ns * w0 * lag_flat[:, None]), axis=1)
-            return cn_sq[0] + 2 * cosine_terms
-
         if self.quadrature == "gauss-legendre":
-            phi_grid   = self._quad_nodes
-            quad_weights = self._quad_weights
-            user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
-            weights = user_weights * quad_weights
-            norm = jnp.sum(weights)
+            phi_grid = self._quad_nodes
+            raw_weights = self._quad_weights
         else:
             phi_min, phi_max = self.lat_range
             phi_grid = jnp.linspace(phi_min, phi_max, self.n_lat)
             dphi = phi_grid[1] - phi_grid[0]
-            user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
-            weights = user_weights * dphi
-            norm = jnp.trapezoid(user_weights, phi_grid)
+            raw_weights = jnp.ones_like(phi_grid) * dphi
 
-        def _scan_body(K_acc, idx):
-            phi = phi_grid[idx]
-            w   = weights[idx]
-            return K_acc + w * _lat_contribution(phi), None
+        user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
+        weights = user_weights * raw_weights
 
-        K, _ = jax.lax.scan(
-            _scan_body, jnp.zeros_like(lag_flat), jnp.arange(len(phi_grid)))
-        K = R * K / norm
+        K = _kernel_eval(
+            theta_arr, lag_flat, self.n_harmonics, self.n_lat, self.lat_range,
+            quad_nodes=phi_grid, quad_weights=weights,
+            r_gamma_func=r_gamma_func,
+            edgeon_cn_sq=edgeon_cn_sq,
+            lat_weight_func=None,
+        )
 
         return K.reshape(orig_shape)
 
@@ -266,14 +390,15 @@ class AnalyticKernel:
         else:
             phi_min, phi_max = self.lat_range
             phi_grid = jnp.linspace(phi_min, phi_max, self.n_lat)
+            dphi = phi_grid[1] - phi_grid[0]
             user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
-            norm = jnp.trapezoid(user_weights, phi_grid)
+            weights = user_weights * dphi
+            norm = jnp.sum(weights)
             all_cn_sq = jax.vmap(
                 lambda phi: _cn_squared_coefficients_jax(
                     self.inc, phi, self.n_harmonics))(phi_grid)
             cn_sq_avg = jnp.sum(
-                user_weights[:, None] * all_cn_sq, axis=0
-            ) * (phi_grid[1] - phi_grid[0]) / norm
+                user_weights[:, None] * all_cn_sq, axis=0) * dphi / norm
 
         w0 = 2 * jnp.pi / self.peq
         R  = self.R_Gamma(lag)
@@ -355,7 +480,8 @@ class AnalyticKernel:
             phi_grid = jnp.linspace(phi_min, phi_max, self.n_lat)
             dphi = phi_grid[1] - phi_grid[0]
             user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
-            norm = jnp.trapezoid(user_weights, phi_grid)
+            weights = user_weights * dphi
+            norm = jnp.sum(weights)
             all_contribs = jax.vmap(_psd_at_lat)(phi_grid)
             psd = jnp.sum(user_weights[:, None] * all_contribs, axis=0) * dphi / norm
 
@@ -399,12 +525,12 @@ class AnalyticKernel:
         t0 = time.time()
         jax.block_until_ready(self.kernel(dummy_lag))
         jax.block_until_ready(self.compute_psd(dummy_omega))
-        print(f"JAX kernel compiled in {np.round(time.time() - t0, 2)}s")
+        logger.info("JAX kernel compiled in %.2fs", time.time() - t0)
 
         t0 = time.time()
         jax.block_until_ready(self.kernel(dummy_lag))
         jax.block_until_ready(self.compute_psd(dummy_omega))
-        print(f"JAX kernel recompute in {np.round(time.time() - t0, 2)}s")
+        logger.info("JAX kernel recompute in %.2fs", time.time() - t0)
 
         return self
 

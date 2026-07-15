@@ -8,5 +8,6 @@ coverage.xml
 animations/
 notebooks/
 spotgp.egg-info/
+build/
 data/
 scripts/

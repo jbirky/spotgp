@@ -7,22 +7,21 @@ name = "spotgp"
 version = "0.1.0"
 description = "Gaussian Process kernels for stellar variability from starspot models"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "Jessica Birky"},
 ]
 dependencies = [
-    "numpy",
+    "numpy>=2.0",
     "scipy",
     "matplotlib",
-    "astropy",
-    "scikit-learn",
-    "tqdm",
+    "jax",
 ]
 
 [project.optional-dependencies]
-jax = ["jax", "jaxopt"]
+astropy = ["astropy"]
+jaxopt = ["jaxopt"]
 docs = [
     "sphinx>=7.0",
     "sphinx-book-theme>=1.0",

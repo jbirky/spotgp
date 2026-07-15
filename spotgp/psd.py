@@ -1,4 +1,3 @@
-from astropy.timeseries import LombScargle
 import numpy as np
 
 __all__ = ["compute_psd"]
@@ -53,6 +52,15 @@ def compute_psd(y, t=None, dt=None,
             dt = float(np.median(np.diff(t)))
 
     # --- build LombScargle object ---
+    # Lazy import: astropy is only needed for PSD computation, so the
+    # rest of the package works without it (and without paying its
+    # import cost).
+    try:
+        from astropy.timeseries import LombScargle
+    except ImportError as e:
+        raise ImportError(
+            "compute_psd requires astropy; install it with "
+            "`pip install astropy`.") from e
     ls = LombScargle(t, y)
 
     # --- frequency grid ---

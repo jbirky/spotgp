@@ -1,15 +1,70 @@
-from .distributions import *
-from .envelope import *
-from .latitude import *
-from .visibility import *
-from .spot_model import *
-from .lightcurve import *
-from .analytic_kernel import *
-from .numerical_kernel import *
-from .psd import *
-from .gp_solver import *
-from .mcmc import *
-from .observations import *
-from .plotting import *
-from .sensitivity import *
-from .transit import *
+"""spotgp — Gaussian Process kernels for stellar variability from starspot models."""
+
+from .distributions import (
+    ParameterDistribution, DeltaDistribution, UniformDistribution,
+    GaussianDistribution, LogNormalDistribution,
+    as_distribution, is_distributed,
+)
+from .envelope import (
+    EnvelopeFunction, TrapezoidSymmetricEnvelope, TrapezoidAsymmetricEnvelope,
+    SkewedGaussianEnvelope, ExponentialEnvelope, ExponentialAsymmetricEnvelope,
+    compute_R_Gamma_numerical,
+)
+from .latitude import LatitudeDistributionFunction, UniformDoubleHemisphereBand
+from .visibility import (
+    VisibilityFunction, EdgeOnVisibilityFunction, FullGeometryVisibilityFunction,
+)
+from .spot_model import SpotEvolutionModel
+from .lightcurve import LightcurveModel, compute_sigmak
+from .analytic_kernel import AnalyticKernel, NonstationaryAnalyticKernel
+from .numerical_kernel import NumericalKernel, generate_sims, avg_covariance_tlag
+from .psd import compute_psd
+from .gp_solver import GPSolver
+from .mcmc import MCMCSampler, BlackJAXSampler, DynestySampler
+from .observations import TimeSeriesData
+from .plotting import crb_corner_plot
+from .sensitivity import sobol_indices
+from .transit import KeplerianOrbit, QuadLimbDarkLightCurve, SpotTransitModel
+from .params import (
+    EnvelopeSpec, AmplitudeSpec, register_envelope, resolve_hparam,
+    KERNEL_HPARAM_KEYS, HPARAM_KEYS_WITH_NOISE,
+)
+
+__all__ = [
+    # distributions
+    "ParameterDistribution", "DeltaDistribution", "UniformDistribution",
+    "GaussianDistribution", "LogNormalDistribution",
+    "as_distribution", "is_distributed",
+    # envelope
+    "EnvelopeFunction", "TrapezoidSymmetricEnvelope", "TrapezoidAsymmetricEnvelope",
+    "SkewedGaussianEnvelope", "ExponentialEnvelope", "ExponentialAsymmetricEnvelope",
+    "compute_R_Gamma_numerical",
+    # latitude
+    "LatitudeDistributionFunction", "UniformDoubleHemisphereBand",
+    # visibility
+    "VisibilityFunction", "EdgeOnVisibilityFunction", "FullGeometryVisibilityFunction",
+    # spot_model
+    "SpotEvolutionModel",
+    # lightcurve
+    "LightcurveModel", "compute_sigmak",
+    # kernel
+    "AnalyticKernel", "NonstationaryAnalyticKernel",
+    "NumericalKernel", "generate_sims", "avg_covariance_tlag",
+    # psd
+    "compute_psd",
+    # solver
+    "GPSolver",
+    # mcmc
+    "MCMCSampler", "BlackJAXSampler", "DynestySampler",
+    # observations
+    "TimeSeriesData",
+    # plotting
+    "crb_corner_plot",
+    # sensitivity
+    "sobol_indices",
+    # transit
+    "KeplerianOrbit", "QuadLimbDarkLightCurve", "SpotTransitModel",
+    # params
+    "EnvelopeSpec", "AmplitudeSpec", "register_envelope", "resolve_hparam",
+    "KERNEL_HPARAM_KEYS", "HPARAM_KEYS_WITH_NOISE",
+]

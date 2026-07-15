@@ -170,13 +170,36 @@ Includes `plot_lightcurve()` and `animate_lightcurve()` for visualization.
 #### `gp_solver.py` — `GPSolver`
 
 Builds the GP covariance matrix from `AnalyticKernel`, factorises it via
-Cholesky (full or banded), and evaluates the marginal log-posterior. Four
-JIT-compiled functions are exposed: `log_posterior`, `neg_log_posterior`,
-`grad_log_posterior`, `grad_neg_log_posterior`.
+Cholesky (full or banded), and evaluates the marginal log-posterior. Two
+functions are JIT-compiled: `log_posterior` (the log-density handed to
+samplers) and `value_and_grad_log_posterior` (used by `fit_map` and the
+gradient accessors); `neg_log_posterior`, `grad_log_posterior`, and
+`grad_neg_log_posterior` are free Python wrappers around them.
 
-Call `build_jax()` once before fitting to pre-compile all four. The banded
+Call `build_jax()` once before fitting to pre-compile both. The banded
 Cholesky solver (default) uses the kernel support to determine bandwidth and
-achieves O(n·b) memory and O(n·b²) time.
+achieves O(n·b) memory and O(n·b²) time. On uniformly sampled data the
+covariance is Toeplitz, and the kernel is automatically evaluated only once
+per distinct lag (b+1 values banded, N values full) instead of once per
+matrix entry. Uniform-cadence data *with gaps* (the common Kepler/TESS case)
+gets the same treatment via integer cadence offsets: distinct lags are
+evaluated once and gathered through a precomputed index table. Genuinely
+irregular sampling falls back to the general per-entry evaluation.
+
+The bandwidth is derived from the prior *upper bounds* of the envelope
+parameters divided by the cadence, so wide priors on `lspot`/`tau_spot` at
+fine cadence can push b toward N — a warning is emitted when b ≥ N/2, since
+the banded solver then has no advantage over dense Cholesky; tighten the
+bounds, downsample, or pass `matrix_solver="cholesky_full"`.
+
+Multi-start fits (`fit_map(nopt=N)`, `fit_map_parallel`, `fit_acf_parallel`)
+with `method="L-BFGS-B"` and `batch=True` run all restarts as a single
+vmapped `jaxopt.LBFGSB` program instead of one scipy optimizer per thread
+(requires the optional `jaxopt` dependency; falls back to the thread pool
+otherwise). The compiled program is cached on the solver: the first call
+pays a large one-off XLA compilation, so this pays off when the same solver
+configuration is fit repeatedly in a session or on GPU — for a single fit
+the default thread pool is usually faster end-to-end.
 
 ```python
 data = TimeSeriesData(t, flux, flux_err)
