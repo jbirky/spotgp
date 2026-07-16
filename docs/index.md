@@ -71,6 +71,7 @@ tutorials/custom_latitude_distribution
 tutorials/custom_spot_distributions
 tutorials/blackjax_sampling
 tutorials/dynesty_sampling
+tutorials/save_load
 tutorials/cramer_rao_bound
 ```
 

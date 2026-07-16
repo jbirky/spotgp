@@ -1,12 +1,16 @@
 """Fitting methods (MAP, ACF, ACF+PSD), mixed into GPSolver."""
 
 import logging
+import time as _time
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
 from .analytic_kernel import _kernel_eval
+from .validation import (
+    raise_cholesky_error, format_nan_gradient_warning,
+)
 
 logger = logging.getLogger("spotgp")
 
@@ -154,12 +158,15 @@ class FittingMixin:
 
         vg_fn = jax.jit(jax.value_and_grad(loss_u))
 
-        # Warm up the JIT-compiled function before the optimizer starts so
-        # the CUDA kernel is compiled and timed accurately from the first call.
+        logger.info("Compiling ACF fit objective (one-time cost)...")
+        _t0 = _time.time()
         jax.block_until_ready(vg_fn(jnp.array(u0, dtype=jnp.float64)))
+        logger.info("ACF fit compiled in %.2fs", _time.time() - _t0)
 
         n_free = len(free_idx)
+        free_keys = [kernel_keys[i] for i in free_idx]
         _gradient_free = method.lower() in ("nelder-mead", "cobyla", "powell")
+        _nan_grad_warned = [False]
 
         if _gradient_free:
             def objective(u_np):
@@ -176,6 +183,12 @@ class FittingMixin:
                 if not np.isfinite(v):
                     return 1e30, np.zeros_like(g)
                 if not np.all(np.isfinite(g)):
+                    if not _nan_grad_warned[0]:
+                        theta_here = blo + u_jax * brange
+                        msg = format_nan_gradient_warning(
+                            theta_here, g, free_keys, free_bounds)
+                        logger.warning("fit_acf: %s", msg)
+                        _nan_grad_warned[0] = True
                     return v, np.zeros_like(g)
                 return v, g
         if _gradient_free:
@@ -639,8 +652,15 @@ class FittingMixin:
 
         vg_fn = jax.jit(jax.value_and_grad(loss_u))
 
+        logger.info("Compiling ACF+PSD fit objective (one-time cost)...")
+        _t0 = _time.time()
+        jax.block_until_ready(vg_fn(jnp.array(u0, dtype=jnp.float64))[0])
+        logger.info("ACF+PSD fit compiled in %.2fs", _time.time() - _t0)
+
         n_free = len(free_idx)
+        free_keys = [kernel_param_keys[i] for i in free_idx]
         _gradient_free = method.lower() in ("nelder-mead", "cobyla", "powell")
+        _nan_grad_warned = [False]
 
         if _gradient_free:
             def objective(u_np):
@@ -649,12 +669,20 @@ class FittingMixin:
                 return 1e30 if not np.isfinite(v) else v
         else:
             def objective(u_np):
-                val, grad = vg_fn(jnp.array(u_np, dtype=jnp.float64))
+                u_jax = jnp.array(u_np, dtype=jnp.float64)
+                val, grad = vg_fn(u_jax)
                 v = float(val)
                 g = np.asarray(grad, dtype=np.float64)
                 if not np.isfinite(v):
                     return 1e30, np.zeros_like(g)
                 if not np.all(np.isfinite(g)):
+                    if not _nan_grad_warned[0]:
+                        theta_here = blo + u_jax * brange
+                        free_bds_arr = bds[jnp.array(free_idx)]
+                        msg = format_nan_gradient_warning(
+                            theta_here, g, free_keys, free_bds_arr)
+                        logger.warning("fit_acf_psd: %s", msg)
+                        _nan_grad_warned[0] = True
                     return v, np.zeros_like(g)
                 return v, g
 
@@ -832,12 +860,25 @@ class FittingMixin:
             val, grad_theta = vag(theta_full)
             return -val, -(grad_theta[free_idx_arr] * brange)
 
-        # Warm up the compiled function before the optimizer starts so
-        # compilation is not mistaken for a slow first iteration.
-        jax.block_until_ready(vg_fn(jnp.array(u0, dtype=jnp.float64))[0])
+        logger.info("Compiling MAP objective (one-time cost)...")
+        _t0 = _time.time()
+        try:
+            jax.block_until_ready(
+                vg_fn(jnp.array(u0, dtype=jnp.float64))[0])
+        except Exception as e:
+            theta_at_fail = blo + jnp.array(u0, dtype=jnp.float64) * brange
+            theta_full_fail = self._theta_from_free(
+                theta_at_fail, free_idx, fixed_idx, fixed_vals)
+            raise_cholesky_error(
+                e, theta=theta_full_fail,
+                param_keys=self.param_keys, bounds=self.bounds,
+                context="MAP optimization (initial evaluation)")
+        logger.info("MAP objective compiled in %.2fs", _time.time() - _t0)
 
         n_free = len(free_idx)
+        free_keys = [list(self.param_keys)[i] for i in free_idx]
         _gradient_free = method.lower() in ("nelder-mead", "cobyla", "powell")
+        _nan_grad_warned = [False]
 
         if _gradient_free:
             def objective(u_np):
@@ -854,6 +895,13 @@ class FittingMixin:
                 if not np.isfinite(v):
                     return 1e30, np.zeros_like(g)
                 if not np.all(np.isfinite(g)):
+                    if not _nan_grad_warned[0]:
+                        theta_here = blo + u_jax * brange
+                        free_bounds = self.bounds[jnp.array(free_idx)]
+                        msg = format_nan_gradient_warning(
+                            theta_here, g, free_keys, free_bounds)
+                        logger.warning("fit_map: %s", msg)
+                        _nan_grad_warned[0] = True
                     return v, np.zeros_like(g)
                 return v, g
         if _gradient_free:

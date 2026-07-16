@@ -33,6 +33,9 @@ from .banded_cholesky import (banded_cholesky, banded_solve,
 from .fitting import FittingMixin
 from .gp_plots import GPPlotsMixin
 from .mass_matrix import MassMatrixMixin
+from .validation import (
+    validate_data, validate_data_vs_model, raise_cholesky_error,
+)
 
 __all__ = ["GPSolver"]
 
@@ -564,6 +567,9 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         self.yerr = jnp.asarray(self.data.yerr, dtype=jnp.float64)
         self.N = len(self.x)
 
+        # ── Validate data quality ───────────────────────────────────────
+        validate_data(self.data.x, self.data.y, self.data.yerr)
+
         # Detect uniform sampling.  On a uniform grid the covariance is
         # Toeplitz, so the kernel needs evaluating only once per distinct
         # lag (b+1 values for the banded solver, N for the full solver)
@@ -660,6 +666,9 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                 dtype=jnp.float64)
         else:
             self.bounds = jnp.asarray(bounds, dtype=jnp.float64)
+
+        # ── Validate data vs model configuration ───────────────────────
+        validate_data_vs_model(self.data.x, self.bounds, self.param_keys)
 
         # Bandwidth for banded solver (compile-time constant).
         # Can be set explicitly via the bandwidth argument; otherwise derived
@@ -948,7 +957,14 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
 
             self.K = None
             self.K_noise = None
-            self._Lc = banded_cholesky_compact(cb, self.bandwidth)
+            try:
+                self._Lc = banded_cholesky_compact(cb, self.bandwidth)
+            except Exception as e:
+                raise_cholesky_error(
+                    e, theta=self.theta0 if hasattr(self, 'theta0') else None,
+                    param_keys=self.param_keys if hasattr(self, 'param_keys') else None,
+                    bounds=self.bounds if hasattr(self, 'bounds') else None,
+                    context="initial covariance build (banded solver)")
             self._L = None
             self._alpha = banded_solve_compact(
                 self._Lc, self._resid, self.bandwidth)
@@ -976,7 +992,14 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
             self.K_noise = K + jnp.diag(self.yerr ** 2) + 1e-8 * jnp.eye(N)
 
             self._Lc = None
-            self._L = jla.cholesky(self.K_noise, lower=True)
+            try:
+                self._L = jla.cholesky(self.K_noise, lower=True)
+            except Exception as e:
+                raise_cholesky_error(
+                    e, theta=self.theta0 if hasattr(self, 'theta0') else None,
+                    param_keys=self.param_keys if hasattr(self, 'param_keys') else None,
+                    bounds=self.bounds if hasattr(self, 'bounds') else None,
+                    context="initial covariance build (dense solver)")
             self._alpha = jla.cho_solve((self._L, True), self._resid)
 
     def _build_logposterior(self):
@@ -1110,10 +1133,18 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
 
         theta0 = self.theta0
 
+        logger.info("Compiling JAX functions (one-time cost)...")
         t0 = time.time()
-        jax.block_until_ready(self.log_posterior(theta0))
-        jax.block_until_ready(self.value_and_grad_log_posterior(theta0))
-        logger.info("JAX GP solver compiled in %.2fs", time.time() - t0)
+        try:
+            jax.block_until_ready(self.log_posterior(theta0))
+            jax.block_until_ready(self.value_and_grad_log_posterior(theta0))
+        except Exception as e:
+            raise_cholesky_error(
+                e, theta=theta0, param_keys=self.param_keys,
+                bounds=self.bounds,
+                context="JIT compilation of log-posterior")
+        elapsed = time.time() - t0
+        logger.info("JAX GP solver compiled in %.2fs", elapsed)
 
         if recompute:
             t0 = time.time()
@@ -1481,4 +1512,41 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         ], dtype=jnp.float64)
 
     # =================================================================
+    # HDF5 save / load
+    # =================================================================
+
+    def save(self, path):
+        """Save solver state to an HDF5 file.
+
+        Writes data, model configuration, bounds, and any completed
+        fit results (MAP, ACF, mass matrix).  Can be called repeatedly
+        — each call overwrites only the groups whose data changed.
+
+        Parameters
+        ----------
+        path : str
+            File path (should end in ``.h5`` or ``.hdf5``).
+        """
+        from .io import save_gp
+        save_gp(path, self)
+
+    @classmethod
+    def load(cls, path):
+        """Reconstruct a GPSolver from an HDF5 file.
+
+        The returned solver has fit results restored but is NOT
+        JIT-compiled.  Call ``.build_jax()`` before running fits
+        or sampling.
+
+        Parameters
+        ----------
+        path : str
+            Path to an HDF5 file previously written by :meth:`save`.
+
+        Returns
+        -------
+        GPSolver
+        """
+        from .io import load_gp
+        return load_gp(path)
 

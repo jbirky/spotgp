@@ -354,6 +354,12 @@ class DynestySampler(MCMCSampler):
             raise ValueError(
                 "No path provided and no checkpoint_file set.")
 
+        from ..io import _is_hdf5
+        if _is_hdf5(path):
+            from ..io import save_sampler
+            save_sampler(path, self, append_samples=False)
+            return
+
         save_kwargs = {
             "samples": np.asarray(self.samples) if self.samples is not None else np.array([]),
         }
@@ -390,6 +396,12 @@ class DynestySampler(MCMCSampler):
         path = self._checkpoint_file
         if path is None:
             raise ValueError("No checkpoint_file provided or set.")
+
+        from ..io import _is_hdf5
+        if _is_hdf5(path):
+            from ..io import load_sampler
+            load_sampler(path, self)
+            return
 
         data = np.load(path, allow_pickle=True)
 
@@ -438,6 +450,11 @@ class DynestySampler(MCMCSampler):
         samples : np.ndarray
             Shape ``(n_samples, n_params)``.
         """
+        from ..io import _is_hdf5
+        if _is_hdf5(path):
+            from ..io import load_samples
+            return load_samples(path, flatten_chains=flatten_chains)
+
         data = np.load(path)
         samples = data["samples"].copy()
         data.close()

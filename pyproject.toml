@@ -21,6 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 astropy = ["astropy"]
+hdf5 = ["h5py"]
 jaxopt = ["jaxopt"]
 docs = [
     "sphinx>=7.0",

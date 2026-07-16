@@ -22,6 +22,8 @@ from .psd import compute_psd
 from .gp_solver import GPSolver
 from .mcmc import MCMCSampler, BlackJAXSampler, DynestySampler
 from .observations import TimeSeriesData
+from .results import MAPResult, is_complete, mark_complete
+from .io import save_gp, load_gp, save_sampler, load_sampler, load_samples
 from .plotting import crb_corner_plot
 from .sensitivity import sobol_indices
 from .transit import KeplerianOrbit, QuadLimbDarkLightCurve, SpotTransitModel
@@ -58,6 +60,10 @@ __all__ = [
     "MCMCSampler", "BlackJAXSampler", "DynestySampler",
     # observations
     "TimeSeriesData",
+    # results
+    "MAPResult", "is_complete", "mark_complete",
+    # io
+    "save_gp", "load_gp", "save_sampler", "load_sampler", "load_samples",
     # plotting
     "crb_corner_plot",
     # sensitivity

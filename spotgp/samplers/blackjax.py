@@ -710,6 +710,14 @@ class BlackJAXSampler(MCMCSampler):
                 "No path provided, no checkpoint_file set, and no save_dir. "
                 "Pass a path, set checkpoint_file in run_warmup, or set save_dir.")
 
+        from ..io import _is_hdf5
+        if _is_hdf5(path):
+            from ..io import save_sampler
+            save_sampler(path, self, append_samples=append_samples)
+            if plot_corner:
+                self._corner_after_hdf5_save(path)
+            return
+
         samples_to_save = np.asarray(self.samples) if self.samples is not None else None
 
         # Merge with samples already on disk
@@ -837,6 +845,12 @@ class BlackJAXSampler(MCMCSampler):
             raise ValueError(
                 "No checkpoint_file provided and no save_dir was set. "
                 "Pass a checkpoint_file or set save_dir.")
+
+        from ..io import _is_hdf5
+        if _is_hdf5(path):
+            from ..io import load_sampler
+            load_sampler(path, self)
+            return
 
         data = np.load(path)
 
@@ -1575,6 +1589,11 @@ class BlackJAXSampler(MCMCSampler):
             Shape ``(n_total, n_params)`` when ``flatten_chains=True``,
             or ``(n_chains, n_samples, n_params)`` otherwise.
         """
+        from ..io import _is_hdf5
+        if _is_hdf5(path):
+            from ..io import load_samples
+            return load_samples(path, flatten_chains=flatten_chains)
+
         data = np.load(path)
         samples = data["samples"].copy()
         data.close()
@@ -1582,6 +1601,39 @@ class BlackJAXSampler(MCMCSampler):
             n_chains, n_samp, n_params = samples.shape
             samples = samples.reshape(n_chains * n_samp, n_params)
         return samples
+
+    def _corner_after_hdf5_save(self, path):
+        """Write a corner plot after an HDF5 save_checkpoint."""
+        import os
+        from ..io import load_samples
+        all_samples = load_samples(path)
+        if all_samples is None or len(all_samples) == 0:
+            return
+        import corner
+        import matplotlib
+        import matplotlib.pyplot as plt
+        corner_dir = (self.save_dir if self.save_dir is not None
+                      else os.path.dirname(os.path.abspath(path)))
+        corner_path = os.path.join(corner_dir, "corner_plot.png")
+        has_maps = (hasattr(self, 'all_theta_maps')
+                    and self.all_theta_maps is not None
+                    and len(self.all_theta_maps) > 0)
+        if has_maps:
+            fig, _ = self.plot_corner_map(
+                samples=all_samples, checkpoint_path=path,
+                savefig=corner_path)
+        else:
+            old_usetex = matplotlib.rcParams.get("text.usetex", False)
+            matplotlib.rcParams["text.usetex"] = False
+            try:
+                fig = corner.corner(
+                    all_samples,
+                    labels=list(self.param_keys),
+                    show_titles=True, title_fmt=".3f")
+                fig.savefig(corner_path, dpi=150, bbox_inches="tight")
+            finally:
+                matplotlib.rcParams["text.usetex"] = old_usetex
+        plt.close(fig)
 
 
 # =====================================================================
