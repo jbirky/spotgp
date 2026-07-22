@@ -13,6 +13,7 @@ from .envelope import (
 from .latitude import LatitudeDistributionFunction, UniformDoubleHemisphereBand
 from .visibility import (
     VisibilityFunction, EdgeOnVisibilityFunction, FullGeometryVisibilityFunction,
+    LimbDarkenedVisibilityFunction,
 )
 from .spot_model import SpotEvolutionModel
 from .lightcurve import LightcurveModel, compute_sigmak
@@ -28,8 +29,8 @@ from .plotting import crb_corner_plot
 from .sensitivity import sobol_indices
 from .transit import KeplerianOrbit, QuadLimbDarkLightCurve, SpotTransitModel
 from .params import (
-    EnvelopeSpec, AmplitudeSpec, register_envelope, resolve_hparam,
-    KERNEL_HPARAM_KEYS, HPARAM_KEYS_WITH_NOISE,
+    EnvelopeSpec, AmplitudeSpec, register_envelope, register_amplitude,
+    resolve_hparam, KERNEL_HPARAM_KEYS, HPARAM_KEYS_WITH_NOISE,
 )
 
 __all__ = [
@@ -45,6 +46,7 @@ __all__ = [
     "LatitudeDistributionFunction", "UniformDoubleHemisphereBand",
     # visibility
     "VisibilityFunction", "EdgeOnVisibilityFunction", "FullGeometryVisibilityFunction",
+    "LimbDarkenedVisibilityFunction",
     # spot_model
     "SpotEvolutionModel",
     # lightcurve
@@ -71,6 +73,6 @@ __all__ = [
     # transit
     "KeplerianOrbit", "QuadLimbDarkLightCurve", "SpotTransitModel",
     # params
-    "EnvelopeSpec", "AmplitudeSpec", "register_envelope", "resolve_hparam",
-    "KERNEL_HPARAM_KEYS", "HPARAM_KEYS_WITH_NOISE",
+    "EnvelopeSpec", "AmplitudeSpec", "register_envelope", "register_amplitude",
+    "resolve_hparam", "KERNEL_HPARAM_KEYS", "HPARAM_KEYS_WITH_NOISE",
 ]

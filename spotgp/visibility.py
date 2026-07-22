@@ -15,6 +15,7 @@ __all__ = [
     "VisibilityFunction",
     "EdgeOnVisibilityFunction",
     "FullGeometryVisibilityFunction",
+    "LimbDarkenedVisibilityFunction",
     # low-level helpers re-exported for backward compat
     "_cn_general_jax",
     "_cn_squared_coefficients_jax",
@@ -51,7 +52,12 @@ def _cn_general_jax(n, inc, phi):
                   jnp.where(never_visible, 0.0,
                             _safe_arccos(ratio))))
 
-    c0 = jnp.where(tiny_a1, a0,
+    # At tiny_a1 the spot sits at a constant angle from the line of sight
+    # (pole-on viewing, or a spot at a rotational pole): cos(beta) = a0 for
+    # all longitudes, so the mean visible projected area is max(a0, 0).
+    # The clamp matters when a0 < 0 (spot hidden on the far hemisphere at
+    # phi = -pi/2); without it c_0 picked up a spurious negative value.
+    c0 = jnp.where(tiny_a1, jnp.maximum(a0, 0.0),
                    (a0 * theta_vis + a1 * jnp.sin(theta_vis)) / jnp.pi)
     c0 = jnp.where(never_visible & ~tiny_a1, 0.0, c0)
 
@@ -499,3 +505,184 @@ class FullGeometryVisibilityFunction(VisibilityFunction):
         # c_0 is the DC component, c_n for n>=1 are the cosine amplitudes
         cn = jnp.abs(fft_coeffs[:n_harmonics + 1])
         return cn ** 2
+
+
+class LimbDarkenedVisibilityFunction(VisibilityFunction):
+    """
+    Visibility function including stellar limb darkening.
+
+    The base ``VisibilityFunction`` assumes a uniformly bright disk, so in
+    the small-spot limit a spot's flux deficit follows the projected area
+    alone,
+
+        V(mu) = max(mu, 0),
+        mu = cos(beta) = cos(i) sin(phi) + sin(i) cos(phi) cos(theta),
+
+    where ``theta`` is the rotational longitude.  With limb darkening the
+    deficit is weighted by the local specific intensity at the spot and
+    normalized by the disk-integrated flux,
+
+        V(mu) = mu I(mu) / F,    F = int_0^1 2 mu I(mu) dmu,
+
+    so that V reduces *exactly* to the base class when I(mu) == 1.
+
+    Two intensity laws are supported:
+
+    - ``law="quadratic"``: I(mu)/I(1) = 1 - u1 (1 - mu) - u2 (1 - mu)^2,
+      with F = 1 - u1/3 - u2/6.
+
+    - ``law="claret"``: the four-coefficient nonlinear law
+      I(mu)/I(1) = 1 - sum_k c_k (1 - mu^(k/2)),  k = 1..4,
+      with F = 1 - sum_k c_k k / (k + 4).  This matches the coefficient
+      convention used by ``LightcurveModel.limbc``.
+
+    Unlike the uniform-disk case, ``c_n`` has no closed form for a general
+    I(mu), so the coefficients are obtained by evaluating V over one full
+    rotation and taking the DFT -- the same strategy used by
+    ``FullGeometryVisibilityFunction``.  ``n_lon`` sets the longitude
+    resolution; 512 gives |c_n|^2 accurate to ~1e-7.
+
+    Limb darkening redistributes power toward higher harmonics: the
+    intensity weighting sharpens the visibility profile, so harmonics that
+    vanish for a uniform disk acquire real power.  Prefer a larger
+    ``n_harmonics`` on the kernel than you would use for the uniform-disk
+    case.
+
+    Parameters
+    ----------
+    peq : float
+        Equatorial rotation period [days].
+    kappa : float
+        Differential rotation shear (dimensionless).
+    inc : float
+        Stellar inclination [radians].
+    u : sequence of float
+        Limb-darkening coefficients: ``(u1, u2)`` for ``law="quadratic"``,
+        ``(c1, c2, c3, c4)`` for ``law="claret"``.
+    law : {"quadratic", "claret"}
+        Intensity law (default "quadratic").
+    n_lon : int
+        Number of longitude grid points for the DFT (default 512).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from spotgp import (SpotEvolutionModel, TrapezoidSymmetricEnvelope,
+    ...                     LimbDarkenedVisibilityFunction)
+    >>> vis = LimbDarkenedVisibilityFunction(
+    ...     peq=4.0, kappa=0.0, inc=np.pi / 3, u=(0.4, 0.2))
+    >>> model = SpotEvolutionModel(
+    ...     envelope=TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=2.0),
+    ...     visibility=vis, sigma_k=0.01)
+    """
+
+    def __init__(self, peq, kappa, inc, u=(0.3, 0.2), law="quadratic",
+                 n_lon=512):
+        super().__init__(peq=peq, kappa=kappa, inc=inc)
+        if law not in ("quadratic", "claret"):
+            raise ValueError(
+                f"Unknown limb-darkening law: {law!r}. "
+                "Use 'quadratic' or 'claret'.")
+        if law == "quadratic" and len(u) != 2:
+            raise ValueError(
+                "quadratic law needs 2 coefficients (u1, u2), "
+                f"got {len(u)}")
+        if law == "claret" and len(u) != 4:
+            raise ValueError(
+                f"claret law needs 4 coefficients (c1..c4), got {len(u)}")
+        self.law = law
+        self.u = tuple(float(x) for x in u)
+        self.n_lon = int(n_lon)
+
+    @property
+    def param_dict(self) -> dict:
+        return {"peq": self.peq, "kappa": self.kappa, "inc": self.inc}
+
+    @property
+    def param_keys(self) -> tuple:
+        return ("peq", "kappa", "inc")
+
+    # ── Intensity profile ───────────────────────────────────────────────────
+
+    def intensity(self, mu):
+        """Normalized specific intensity I(mu)/I(1)."""
+        if self.law == "quadratic":
+            u1, u2 = self.u
+            return 1.0 - u1 * (1.0 - mu) - u2 * (1.0 - mu) ** 2
+        total = 1.0
+        for k, ck in enumerate(self.u, start=1):
+            total = total - ck * (1.0 - mu ** (k / 2.0))
+        return total
+
+    @property
+    def flux_norm(self):
+        """Disk-integrated flux F = int_0^1 2 mu I(mu) dmu."""
+        if self.law == "quadratic":
+            u1, u2 = self.u
+            return 1.0 - u1 / 3.0 - u2 / 6.0
+        return 1.0 - sum(ck * k / (k + 4.0)
+                         for k, ck in enumerate(self.u, start=1))
+
+    # ── Visibility profile ──────────────────────────────────────────────────
+
+    def visibility_profile(self, phi, inc=None, n_lon=None):
+        """
+        Limb-darkened visibility over one rotation at latitude ``phi``.
+
+        ``inc`` may be supplied explicitly (e.g. a JAX tracer during
+        fitting); it defaults to ``self.inc``.
+
+        Returns
+        -------
+        lon : jnp.ndarray, shape (n_lon,)
+        V : jnp.ndarray, shape (n_lon,)
+        """
+        inc = self.inc if inc is None else inc
+        n_lon = self.n_lon if n_lon is None else n_lon
+        lon = jnp.linspace(0.0, 2.0 * jnp.pi, n_lon, endpoint=False)
+        mu = (jnp.cos(inc) * jnp.sin(phi)
+              + jnp.sin(inc) * jnp.cos(phi) * jnp.cos(lon))
+        # Clip to a strictly positive floor before evaluating I(mu).  The
+        # Claret law's mu**(k/2) terms have infinite slope at mu = 0, and
+        # jnp.where propagates gradients through *both* branches, so a floor
+        # of exactly 0.0 yields inf * 0 = NaN in reverse-mode autodiff.
+        mu_vis = jnp.clip(mu, 1e-12, 1.0)
+        V = mu_vis * self.intensity(mu_vis) / self.flux_norm
+        return lon, jnp.where(mu > 0.0, V, 0.0)
+
+    # ── Fourier coefficients ────────────────────────────────────────────────
+
+    def cn_squared(self, phi, n_harmonics: int = 3):
+        """Squared Fourier coefficients |c_n|^2 at latitude phi."""
+        return self.cn_sq_at(self.inc, phi, n_harmonics)
+
+    def cn_sq_at(self, inc, phi, n_harmonics: int = 3):
+        """
+        |c_n|^2 at an explicitly supplied inclination.
+
+        Separated from :meth:`cn_squared` so ``inc`` can be a JAX tracer,
+        which is what lets gradients flow to ``inc`` during fitting.
+        """
+        _, V = self.visibility_profile(phi, inc=inc)
+        cn = jnp.abs(jnp.fft.rfft(V) / V.shape[0])
+        return cn[:n_harmonics + 1] ** 2
+
+    def cn_sq_jax(self, theta_vis, phi, n_harmonics: int = 3):
+        """
+        JAX-traceable |c_n|^2 from the visibility slice of the theta vector.
+
+        ``theta_vis`` is ``[peq, kappa, inc]`` -- the leading entries of
+        ``theta_arr``, matching :attr:`param_keys`.  This method is the hook
+        ``SpotEvolutionModel.get_cn_sq_func`` looks for; defining it is what
+        makes a visibility subclass participate in the latitude-averaged
+        kernel (``AnalyticKernel.kernel`` and the ``GPSolver``
+        log-likelihood) rather than only the PSD / single-latitude paths.
+        """
+        return self.cn_sq_at(theta_vis[2], phi, n_harmonics)
+
+    def get_sympy(self, display=True, status=None):
+        """Limb-darkened c_n are numerical; there is no closed form."""
+        raise NotImplementedError(
+            "LimbDarkenedVisibilityFunction computes c_n numerically by DFT; "
+            "there is no closed-form expression to render. Use "
+            "visibility_profile() to inspect V(theta) instead.")

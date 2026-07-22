@@ -143,6 +143,7 @@ class FittingMixin:
         n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
         r_gamma_fn = self.spot_model.get_r_gamma_func()
         lat_wt_fn = self.spot_model.get_lat_weight_func()
+        cn_sq_fn = self.spot_model.get_cn_sq_func(n_h)
 
         @jax.jit
         def loss_u(u_arr):
@@ -153,7 +154,8 @@ class FittingMixin:
                                    n_h, n_l, lr,
                                    quad_nodes=qn, quad_weights=qw,
                                    r_gamma_func=r_gamma_fn,
-                                   lat_weight_func=lat_wt_fn)
+                                   lat_weight_func=lat_wt_fn,
+                                   cn_sq_func=cn_sq_fn)
             return jnp.sum((acf_data_jax - K_model) ** 2)
 
         vg_fn = jax.jit(jax.value_and_grad(loss_u))
@@ -284,6 +286,7 @@ class FittingMixin:
         n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
         r_gamma_fn = self.spot_model.get_r_gamma_func()
         lat_wt_fn = self.spot_model.get_lat_weight_func()
+        cn_sq_fn = self.spot_model.get_cn_sq_func(n_h)
 
         def loss_u(u_arr):
             free_theta = blo + u_arr * brange
@@ -293,7 +296,8 @@ class FittingMixin:
                                    n_h, n_l, lr,
                                    quad_nodes=qn, quad_weights=qw,
                                    r_gamma_func=r_gamma_fn,
-                                   lat_weight_func=lat_wt_fn)
+                                   lat_weight_func=lat_wt_fn,
+                                   cn_sq_func=cn_sq_fn)
             return jnp.sum((acf_data_jax - K_model) ** 2)
 
         vg_fn = jax.value_and_grad(loss_u)
@@ -542,6 +546,7 @@ class FittingMixin:
         n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
         r_gamma_fn = self.spot_model.get_r_gamma_func()
         lat_wt_fn = self.spot_model.get_lat_weight_func()
+        cn_sq_fn = self.spot_model.get_cn_sq_func(n_h)
         w_acf = float(acf_weight)
         w_psd = float(psd_weight)
 
@@ -631,7 +636,8 @@ class FittingMixin:
                 K_acf    = _kernel_eval(theta_phys, lag_jax, n_h, n_l, lr,
                                         quad_nodes=qn, quad_weights=qw,
                                         r_gamma_func=r_gamma_fn,
-                                        lat_weight_func=lat_wt_fn)
+                                        lat_weight_func=lat_wt_fn,
+                                        cn_sq_func=cn_sq_fn)
                 acf_loss = jnp.mean(((acf_jax - K_acf) / acf_rms) ** 2)
                 loss = loss + w_acf * acf_loss
 
@@ -639,7 +645,8 @@ class FittingMixin:
                 K_tau = _kernel_eval(theta_phys, tau_jax, n_h, n_l, lr,
                                      quad_nodes=qn, quad_weights=qw,
                                      r_gamma_func=r_gamma_fn,
-                                     lat_weight_func=lat_wt_fn)
+                                     lat_weight_func=lat_wt_fn,
+                                     cn_sq_func=cn_sq_fn)
                 psd_model = jnp.maximum(
                     dt_kernel * (K_tau[0] + 2.0 * jnp.dot(K_tau[1:], cos_mat[1:])),
                     0.0)

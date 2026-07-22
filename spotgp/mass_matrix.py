@@ -181,7 +181,8 @@ class MassMatrixMixin:
                                   self.lat_range,
                                   quad_nodes=qn, quad_weights=qw,
                                   r_gamma_func=self.spot_model.get_r_gamma_func(),
-                                  lat_weight_func=self.spot_model.get_lat_weight_func())
+                                  lat_weight_func=self.spot_model.get_lat_weight_func(),
+                                  cn_sq_func=self.spot_model.get_cn_sq_func(self.n_harmonics))
             K = K_flat.reshape(N, N)
             noise_var = self.yerr ** 2 + sigma_n ** 2
             K_noise = K + jnp.diag(noise_var) + white_noise * jnp.eye(N)

@@ -41,7 +41,7 @@ def _get_class_registry():
     )
     from .visibility import (
         VisibilityFunction, EdgeOnVisibilityFunction,
-        FullGeometryVisibilityFunction,
+        FullGeometryVisibilityFunction, LimbDarkenedVisibilityFunction,
     )
     from .latitude import (
         LatitudeDistributionFunction, UniformDoubleHemisphereBand,
@@ -56,6 +56,7 @@ def _get_class_registry():
         "VisibilityFunction": VisibilityFunction,
         "EdgeOnVisibilityFunction": EdgeOnVisibilityFunction,
         "FullGeometryVisibilityFunction": FullGeometryVisibilityFunction,
+        "LimbDarkenedVisibilityFunction": LimbDarkenedVisibilityFunction,
         "LatitudeDistributionFunction": LatitudeDistributionFunction,
         "UniformDoubleHemisphereBand": UniformDoubleHemisphereBand,
     }
@@ -106,10 +107,16 @@ def _write_model(f, model):
         vis.attrs["class_name"] = type(model.visibility).__name__
         for k, v in model.visibility.param_dict.items():
             vis.attrs[k] = float(v)
-        from .visibility import FullGeometryVisibilityFunction
+        from .visibility import (
+            FullGeometryVisibilityFunction, LimbDarkenedVisibilityFunction,
+        )
         if isinstance(model.visibility, FullGeometryVisibilityFunction):
             vis.attrs["alpha_ref"] = model.visibility.alpha_ref
             vis.attrs["n_lon"] = model.visibility.n_lon
+        elif isinstance(model.visibility, LimbDarkenedVisibilityFunction):
+            vis.attrs["law"] = model.visibility.law
+            vis.attrs["n_lon"] = model.visibility.n_lon
+            vis.attrs["u"] = np.asarray(model.visibility.u)
     else:
         vis.attrs["class_name"] = "none"
 
@@ -212,11 +219,16 @@ def _read_model(f):
         visibility = None
     else:
         cls = registry[vis_name]
-        skip = {"class_name", "alpha_ref", "n_lon"}
+        skip = {"class_name", "alpha_ref", "n_lon", "law", "u"}
         params = {k: float(v) for k, v in grp["visibility"].attrs.items()
                   if k not in skip}
         if vis_name == "FullGeometryVisibilityFunction":
             params["alpha_ref"] = float(grp["visibility"].attrs["alpha_ref"])
+            params["n_lon"] = int(grp["visibility"].attrs["n_lon"])
+        elif vis_name == "LimbDarkenedVisibilityFunction":
+            params["u"] = tuple(
+                float(x) for x in grp["visibility"].attrs["u"])
+            params["law"] = str(grp["visibility"].attrs["law"])
             params["n_lon"] = int(grp["visibility"].attrs["n_lon"])
         visibility = cls(**params)
 

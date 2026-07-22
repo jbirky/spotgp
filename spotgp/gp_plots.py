@@ -224,7 +224,8 @@ class GPPlotsMixin:
                 self.n_harmonics, self.n_lat, self.lat_range,
                 quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
                 r_gamma_func=self.spot_model.get_r_gamma_func(),
-                lat_weight_func=self.spot_model.get_lat_weight_func()))
+                lat_weight_func=self.spot_model.get_lat_weight_func(),
+                cn_sq_func=self.spot_model.get_cn_sq_func(self.n_harmonics)))
             if normalize:
                 y_full = getattr(self.data, '_y_full', self.data.y)
                 var = np.var(y_full)
@@ -320,7 +321,8 @@ class GPPlotsMixin:
                 self.n_harmonics, self.n_lat, self.lat_range,
                 quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
                 r_gamma_func=self.spot_model.get_r_gamma_func(),
-                lat_weight_func=self.spot_model.get_lat_weight_func()))
+                lat_weight_func=self.spot_model.get_lat_weight_func(),
+                cn_sq_func=self.spot_model.get_cn_sq_func(self.n_harmonics)))
             # Extend to two-sided symmetric sequence, then rfft → one-sided PSD
             K_twosided = np.concatenate([K[::-1], K[1:]])
             psd_model = np.abs(np.fft.rfft(K_twosided)) * dt_kernel
@@ -411,7 +413,8 @@ class GPPlotsMixin:
                 self.n_harmonics, self.n_lat, self.lat_range,
                 quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
                 r_gamma_func=self.spot_model.get_r_gamma_func(),
-                lat_weight_func=self.spot_model.get_lat_weight_func()))
+                lat_weight_func=self.spot_model.get_lat_weight_func(),
+                cn_sq_func=self.spot_model.get_cn_sq_func(self.n_harmonics)))
             K[i_idx, j_idx] = K_diag
             if d > 0:
                 K[j_idx, i_idx] = K_diag
