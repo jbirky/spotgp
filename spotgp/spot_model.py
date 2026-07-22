@@ -14,6 +14,7 @@ from __future__ import annotations
 import numpy as np
 
 _UNSET = object()  # sentinel to distinguish "not passed" from explicit None
+import jax
 import jax.numpy as jnp
 
 from .distributions import as_distribution, is_distributed, DeltaDistribution
@@ -32,6 +33,7 @@ try:
         VisibilityFunction,
         EdgeOnVisibilityFunction,
         FullGeometryVisibilityFunction,
+        LimbDarkenedVisibilityFunction,
         _cn_general_jax,
         _cn_squared_coefficients_jax,
         _gauss_legendre_grid,
@@ -50,6 +52,7 @@ except ImportError:
         VisibilityFunction,
         EdgeOnVisibilityFunction,
         FullGeometryVisibilityFunction,
+        LimbDarkenedVisibilityFunction,
         _cn_general_jax,
         _cn_squared_coefficients_jax,
         _gauss_legendre_grid,
@@ -61,6 +64,7 @@ __all__ = [
     "VisibilityFunction",
     "EdgeOnVisibilityFunction",
     "FullGeometryVisibilityFunction",
+    "LimbDarkenedVisibilityFunction",
     "_cn_general_jax",
     "_cn_squared_coefficients_jax",
     "_gauss_legendre_grid",
@@ -325,6 +329,40 @@ class SpotEvolutionModel:
             f"lat_weight_fn for this distribution or use fixed parameters.",
             stacklevel=2)
         return None
+
+    # ── JAX-compilable visibility coefficient function ─────────────────────
+
+    def get_cn_sq_func(self, n_harmonics: int):
+        """
+        Return a JAX-traceable ``cn_sq(theta_arr, phi_grid) -> (n_phi, n_h+1)``
+        function, or ``None`` to use the built-in analytic ``c_n``.
+
+        The default ``VisibilityFunction`` (and ``EdgeOnVisibilityFunction``)
+        rely on the closed-form ``_cn_general_jax`` coefficients that the
+        kernel already evaluates inline, so this returns ``None`` for them.
+        A visibility subclass that computes its own coefficients (e.g.
+        :class:`LimbDarkenedVisibilityFunction`) opts in by defining a
+        ``cn_sq_jax(theta_vis, phi, n_harmonics)`` method; this wraps that
+        method into the per-latitude-grid form expected by ``_kernel_eval``,
+        so the custom coefficients reach the latitude-averaged kernel and
+        not only the PSD / single-latitude paths.
+
+        The theta_arr layout follows ``self.param_keys``: the visibility
+        parameters are the leading ``len(visibility.param_keys)`` entries.
+        """
+        vis = self.visibility
+        if vis is None or not hasattr(vis, "cn_sq_jax"):
+            return None
+
+        n_vis = len(vis.param_keys)
+
+        def cn_sq_func(theta_arr, phi_grid):
+            theta_vis = theta_arr[:n_vis]
+            return jax.vmap(
+                lambda phi: vis.cn_sq_jax(theta_vis, phi, n_harmonics)
+            )(phi_grid)
+
+        return cn_sq_func
 
     # ── Bandwidth support ───────────────────────────────────────────────────
 

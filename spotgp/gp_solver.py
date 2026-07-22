@@ -58,6 +58,7 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
                        quad_nodes=None, quad_weights=None,
                        edgeon_cn_sq=None,
                        lat_weight_func=None,
+                       cn_sq_func=None,
                        uniform_dt=None,
                        lag_table=None):
     """
@@ -121,7 +122,8 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
                            quad_nodes=quad_nodes, quad_weights=quad_weights,
                            r_gamma_func=r_gamma_func,
                            edgeon_cn_sq=edgeon_cn_sq,
-                           lat_weight_func=lat_weight_func)
+                           lat_weight_func=lat_weight_func,
+                           cn_sq_func=cn_sq_func)
         idx = jnp.abs(jnp.arange(N)[:, None] - jnp.arange(N)[None, :])
         K = K1d[idx]
     elif lag_table is not None:
@@ -132,7 +134,8 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
                            quad_nodes=quad_nodes, quad_weights=quad_weights,
                            r_gamma_func=r_gamma_func,
                            edgeon_cn_sq=edgeon_cn_sq,
-                           lat_weight_func=lat_weight_func)
+                           lat_weight_func=lat_weight_func,
+                           cn_sq_func=cn_sq_func)
         K = K1d[inv_idx]
     else:
         # Upper-triangular indices (includes diagonal)
@@ -144,7 +147,8 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
                                quad_nodes=quad_nodes, quad_weights=quad_weights,
                                r_gamma_func=r_gamma_func,
                                edgeon_cn_sq=edgeon_cn_sq,
-                               lat_weight_func=lat_weight_func)
+                               lat_weight_func=lat_weight_func,
+                               cn_sq_func=cn_sq_func)
 
         # Reconstruct symmetric matrix from upper triangle
         K = jnp.zeros((N, N))
@@ -170,6 +174,7 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
                               quad_nodes=None, quad_weights=None,
                               edgeon_cn_sq=None,
                               lat_weight_func=None,
+                              cn_sq_func=None,
                               uniform_dt=None,
                               band_lag_table=None):
     """
@@ -228,7 +233,8 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
                                 quad_weights=quad_weights,
                                 r_gamma_func=r_gamma_func,
                                 edgeon_cn_sq=edgeon_cn_sq,
-                                lat_weight_func=lat_weight_func)
+                                lat_weight_func=lat_weight_func,
+                                cn_sq_func=cn_sq_func)
         return jnp.where(valid, K_unique[:, None], 0.0)
 
     if band_lag_table is not None:
@@ -241,7 +247,8 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
                                 quad_weights=quad_weights,
                                 r_gamma_func=r_gamma_func,
                                 edgeon_cn_sq=edgeon_cn_sq,
-                                lat_weight_func=lat_weight_func)
+                                lat_weight_func=lat_weight_func,
+                                cn_sq_func=cn_sq_func)
         return jnp.where(valid, K_unique[inv_idx], 0.0)
 
     j_safe = jnp.minimum(j_idx, N - 1)
@@ -251,7 +258,8 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
                           quad_nodes=quad_nodes, quad_weights=quad_weights,
                           r_gamma_func=r_gamma_func,
                           edgeon_cn_sq=edgeon_cn_sq,
-                          lat_weight_func=lat_weight_func)
+                          lat_weight_func=lat_weight_func,
+                          cn_sq_func=cn_sq_func)
     cb = K_flat.reshape(b + 1, N)
     cb = jnp.where(valid, cb, 0.0)
     return cb
@@ -265,6 +273,7 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                quad_nodes=None, quad_weights=None,
                                edgeon_cn_sq=None,
                                lat_weight_func=None,
+                               cn_sq_func=None,
                                uniform_dt=None,
                                band_lag_table=None):
     """
@@ -309,6 +318,7 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                    quad_weights=quad_weights,
                                    edgeon_cn_sq=edgeon_cn_sq,
                                    lat_weight_func=lat_weight_func,
+                                   cn_sq_func=cn_sq_func,
                                    uniform_dt=uniform_dt,
                                    band_lag_table=band_lag_table)
 
@@ -1035,6 +1045,9 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         r_gamma_fn = self.spot_model.get_r_gamma_func()
         # Latitude weight function (JAX-traceable, or None for static weights)
         lat_wt_fn = self.spot_model.get_lat_weight_func()
+        # Visibility coefficient function (JAX-traceable, or None for the
+        # closed-form analytic c_n used by the default visibility function)
+        cn_sq_fn = self.spot_model.get_cn_sq_func(self.n_harmonics)
         # Number of kernel params (excludes sigma_n)
         n_kernel = len(self.spot_model.param_keys)
 
@@ -1058,6 +1071,7 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
                     lat_weight_func=lat_wt_fn,
+                    cn_sq_func=cn_sq_fn,
                     uniform_dt=u_dt,
                     band_lag_table=band_tab)
         else:
@@ -1069,6 +1083,7 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
                     lat_weight_func=lat_wt_fn,
+                    cn_sq_func=cn_sq_fn,
                     uniform_dt=u_dt,
                     lag_table=full_tab)
 

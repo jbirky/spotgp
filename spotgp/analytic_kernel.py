@@ -74,7 +74,8 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
                   quad_nodes=None, quad_weights=None,
                   r_gamma_func=None,
                   edgeon_cn_sq=None,
-                  lat_weight_func=None):
+                  lat_weight_func=None,
+                  cn_sq_func=None):
     """
     Pure-functional kernel evaluation: theta_arr -> kernel values.
 
@@ -108,6 +109,12 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
     lat_weight_func : callable or None
         JAX-traceable function ``f(theta_arr, phi_grid) -> weights`` that
         computes per-node latitude weights from the theta vector.
+    cn_sq_func : callable or None
+        JAX-traceable function ``f(theta_arr, phi_grid) -> |c_n|^2`` of
+        shape ``(n_phi, n_harmonics + 1)``.  When None (the default), the
+        closed-form ``_cn_general_jax`` coefficients are used.  Supplied by
+        visibility subclasses (e.g. limb darkening) that compute their own
+        Fourier coefficients.
 
     Returns
     -------
@@ -146,10 +153,13 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
 
     norm = jnp.sum(weights)
 
-    ns = jnp.arange(n_harmonics + 1)
-    cn_sq_all = jax.vmap(
-        lambda phi: jax.vmap(lambda n: _cn_general_jax(n, inc, phi))(ns) ** 2
-    )(phi_grid)
+    if cn_sq_func is not None:
+        cn_sq_all = cn_sq_func(theta_arr, phi_grid)
+    else:
+        ns = jnp.arange(n_harmonics + 1)
+        cn_sq_all = jax.vmap(
+            lambda phi: jax.vmap(lambda n: _cn_general_jax(n, inc, phi))(ns) ** 2
+        )(phi_grid)
 
     harm_ns = jnp.arange(1, n_harmonics + 1)
 
@@ -310,6 +320,7 @@ class AnalyticKernel:
         theta_arr = jnp.asarray(theta0)
 
         r_gamma_func = self.spot_model.get_r_gamma_func()
+        cn_sq_func = self.spot_model.get_cn_sq_func(self.n_harmonics)
 
         if isinstance(self.visibility, EdgeOnVisibilityFunction):
             edgeon_cn_sq = jnp.array(self.visibility.cn_squared(
@@ -338,6 +349,7 @@ class AnalyticKernel:
             r_gamma_func=r_gamma_func,
             edgeon_cn_sq=edgeon_cn_sq,
             lat_weight_func=None,
+            cn_sq_func=cn_sq_func,
         )
 
         return K.reshape(orig_shape)

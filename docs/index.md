@@ -65,8 +65,10 @@ tutorials/data_preprocessing
 :maxdepth: 2
 :caption: Advanced 
 
+tutorials/parameter_registry
 tutorials/custom_envelope_gaussian
 tutorials/custom_visibility_function
+tutorials/limb_darkening
 tutorials/custom_latitude_distribution
 tutorials/custom_spot_distributions
 tutorials/blackjax_sampling

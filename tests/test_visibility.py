@@ -1,12 +1,14 @@
-"""Tests for spotgp.visibility — FullGeometryVisibilityFunction."""
+"""Tests for spotgp.visibility — FullGeometry and LimbDarkened variants."""
 
 import numpy as np
 import pytest
+import jax
 import jax.numpy as jnp
 
 from spotgp.visibility import (
     VisibilityFunction,
     FullGeometryVisibilityFunction,
+    LimbDarkenedVisibilityFunction,
     _cn_general_jax,
 )
 
@@ -126,3 +128,261 @@ class TestFullGeometryCnSquared:
         vis = FullGeometryVisibilityFunction(peq=10.0, kappa=0.3, inc=np.pi / 3)
         omega = float(vis.omega0(0.0))
         np.testing.assert_allclose(omega, 2 * np.pi / 10.0, rtol=1e-10)
+
+
+# ── _cn_general_jax pole handling ──────────────────────────────────────────
+
+class TestCnGeneralPoles:
+    """A spot at a rotational pole sits at constant beta from the observer."""
+
+    def test_visible_pole(self):
+        """phi=+pi/2: spot always visible at beta=inc, so c_0 = cos(inc)."""
+        inc = np.pi / 3
+        c0 = float(_cn_general_jax(0, inc, np.pi / 2))
+        np.testing.assert_allclose(c0, np.cos(inc), atol=1e-10)
+
+    def test_hidden_pole_is_zero(self):
+        """phi=-pi/2: spot is never visible, so c_0 must be 0 (not -cos inc)."""
+        for inc in [np.pi / 3, np.pi / 4, np.pi / 6]:
+            c0 = float(_cn_general_jax(0, inc, -np.pi / 2))
+            assert c0 == pytest.approx(0.0, abs=1e-10), f"inc={inc}"
+
+    def test_pole_harmonics_vanish(self):
+        """At a pole the spot never moves, so there are no rotation harmonics."""
+        for n in [1, 2, 3]:
+            for phi in [np.pi / 2, -np.pi / 2]:
+                cn = float(_cn_general_jax(n, np.pi / 3, phi))
+                assert cn == pytest.approx(0.0, abs=1e-10)
+
+    def test_pole_on_view_unchanged(self):
+        """inc=0: c_0 = sin(phi) for a visible (northern) spot."""
+        c0 = float(_cn_general_jax(0, 0.0, np.pi / 4))
+        np.testing.assert_allclose(c0, np.sin(np.pi / 4), atol=1e-10)
+
+    def test_pole_on_hidden_hemisphere_is_zero(self):
+        """inc=0, phi<0: southern spot is hidden from a north-pole view."""
+        c0 = float(_cn_general_jax(0, 0.0, -np.pi / 4))
+        assert c0 == pytest.approx(0.0, abs=1e-10)
+
+    def test_matches_numerical_dft_at_poles(self):
+        """Analytic c_n agrees with a direct DFT of max(cos beta, 0)."""
+        inc = np.pi / 3
+        for phi in [np.pi / 2, -np.pi / 2]:
+            lon = jnp.linspace(0, 2 * jnp.pi, 4096, endpoint=False)
+            mu = (jnp.cos(inc) * jnp.sin(phi)
+                  + jnp.sin(inc) * jnp.cos(phi) * jnp.cos(lon))
+            V = jnp.clip(mu, 0.0, None)
+            num = np.abs(np.asarray(jnp.fft.rfft(V) / V.shape[0]))[:4]
+            ana = np.abs(np.array(
+                [float(_cn_general_jax(n, inc, phi)) for n in range(4)]))
+            np.testing.assert_allclose(ana, num, atol=1e-8)
+
+
+# ── LimbDarkenedVisibilityFunction ─────────────────────────────────────────
+
+class TestLimbDarkenedVisibility:
+    def test_zero_coefficients_match_base_quadratic(self):
+        """u=(0,0) reduces exactly to the uniform-disk analytic c_n."""
+        for inc in [np.pi / 2, np.pi / 3, np.pi / 6]:
+            for phi in [0.0, 0.3, -0.7, 1.2]:
+                vis = LimbDarkenedVisibilityFunction(
+                    10.0, 0.0, inc, u=(0.0, 0.0), n_lon=4096)
+                got = np.array(vis.cn_squared(phi, 3))
+                ref = np.array([float(_cn_general_jax(n, inc, phi)) ** 2
+                                for n in range(4)])
+                np.testing.assert_allclose(got, ref, atol=1e-6)
+
+    def test_zero_coefficients_match_base_claret(self):
+        vis = LimbDarkenedVisibilityFunction(
+            10.0, 0.0, np.pi / 3, u=(0.0,) * 4, law="claret", n_lon=4096)
+        got = np.array(vis.cn_squared(0.3, 3))
+        ref = np.array([float(_cn_general_jax(n, np.pi / 3, 0.3)) ** 2
+                        for n in range(4)])
+        np.testing.assert_allclose(got, ref, atol=1e-6)
+
+    def test_flux_norm_quadratic(self):
+        """F = 1 - u1/3 - u2/6 for the quadratic law."""
+        vis = LimbDarkenedVisibilityFunction(10.0, 0.0, 1.0, u=(0.4, 0.2))
+        assert vis.flux_norm == pytest.approx(1.0 - 0.4 / 3 - 0.2 / 6)
+
+    def test_flux_norm_matches_quadrature(self):
+        """F should equal the numerical integral int_0^1 2 mu I(mu) dmu."""
+        for law, u in [("quadratic", (0.4, 0.2)),
+                       ("claret", (0.3999, 0.4269, -0.0227, -0.0839))]:
+            vis = LimbDarkenedVisibilityFunction(
+                10.0, 0.0, 1.0, u=u, law=law)
+            mu = np.linspace(1e-9, 1.0, 200001)
+            num = np.trapezoid(2 * mu * np.array(vis.intensity(mu)), mu)
+            assert vis.flux_norm == pytest.approx(num, rel=1e-5), law
+
+    def test_intensity_normalized_at_disk_center(self):
+        """I(mu=1) = 1 by construction for both laws."""
+        for law, u in [("quadratic", (0.4, 0.2)),
+                       ("claret", (0.3999, 0.4269, -0.0227, -0.0839))]:
+            vis = LimbDarkenedVisibilityFunction(10.0, 0.0, 1.0, u=u, law=law)
+            assert float(vis.intensity(1.0)) == pytest.approx(1.0)
+
+    def test_limb_darkening_adds_higher_harmonics(self):
+        """LD sharpens V(theta), moving power into harmonics that were zero."""
+        phi, inc = 0.2, np.pi / 2
+        c3_off = float(LimbDarkenedVisibilityFunction(
+            10.0, 0.0, inc, u=(0.0, 0.0), n_lon=4096).cn_squared(phi, 3)[3])
+        c3_on = float(LimbDarkenedVisibilityFunction(
+            10.0, 0.0, inc, u=(0.6, 0.1), n_lon=4096).cn_squared(phi, 3)[3])
+        assert c3_off == pytest.approx(0.0, abs=1e-12)
+        assert c3_on > 1e-4
+
+    def test_hidden_pole_is_zero(self):
+        """A never-visible spot contributes nothing, as for the base class."""
+        vis = LimbDarkenedVisibilityFunction(10.0, 0.0, np.pi / 3, u=(0.4, 0.2))
+        cn = np.array(vis.cn_squared(-np.pi / 2, 3))
+        np.testing.assert_allclose(cn, 0.0, atol=1e-12)
+
+    def test_non_negative(self):
+        vis = LimbDarkenedVisibilityFunction(10.0, 0.0, np.pi / 3, u=(0.4, 0.2))
+        assert np.all(np.array(vis.cn_squared(0.3, 3)) >= 0)
+
+    def test_profile_non_negative(self):
+        vis = LimbDarkenedVisibilityFunction(10.0, 0.0, np.pi / 3, u=(0.4, 0.2))
+        _, V = vis.visibility_profile(0.3)
+        assert np.all(np.array(V) >= -1e-12)
+
+    def test_n_lon_convergence(self):
+        """Default n_lon=512 is converged to ~1e-6 against a fine grid."""
+        kw = dict(u=(0.3, 0.2))
+        ref = np.array(LimbDarkenedVisibilityFunction(
+            10.0, 0.0, np.pi / 3, n_lon=16384, **kw).cn_squared(0.2, 3))
+        got = np.array(LimbDarkenedVisibilityFunction(
+            10.0, 0.0, np.pi / 3, n_lon=512, **kw).cn_squared(0.2, 3))
+        np.testing.assert_allclose(got, ref, atol=1e-6)
+
+    @pytest.mark.parametrize("law,u", [
+        ("quadratic", (0.3, 0.2)),
+        ("claret", (0.3999, 0.4269, -0.0227, -0.0839)),
+    ])
+    def test_grad_wrt_inc_finite(self, law, u):
+        """Autodiff through the DFT matches finite differences.
+
+        The Claret law's mu**(k/2) terms have infinite slope at mu=0, so this
+        guards the positive clip floor in visibility_profile.
+        """
+        vis = LimbDarkenedVisibilityFunction(
+            10.0, 0.0, np.pi / 3, u=u, law=law, n_lon=256)
+
+        def f(inc):
+            return jnp.sum(vis.cn_sq_jax(jnp.array([10.0, 0.0, inc]), 0.2, 3))
+
+        g = float(jax.grad(f)(np.pi / 3))
+        fd = float((f(np.pi / 3 + 1e-6) - f(np.pi / 3 - 1e-6)) / 2e-6)
+        assert np.isfinite(g)
+        assert g == pytest.approx(fd, abs=1e-6)
+
+    def test_rejects_bad_law(self):
+        with pytest.raises(ValueError, match="Unknown limb-darkening law"):
+            LimbDarkenedVisibilityFunction(10.0, 0.0, 1.0, law="linear")
+
+    def test_rejects_wrong_coefficient_count(self):
+        with pytest.raises(ValueError, match="2 coefficients"):
+            LimbDarkenedVisibilityFunction(10.0, 0.0, 1.0, u=(0.1, 0.2, 0.3))
+        with pytest.raises(ValueError, match="4 coefficients"):
+            LimbDarkenedVisibilityFunction(
+                10.0, 0.0, 1.0, u=(0.1, 0.2), law="claret")
+
+    def test_get_sympy_raises(self):
+        vis = LimbDarkenedVisibilityFunction(10.0, 0.0, 1.0)
+        with pytest.raises(NotImplementedError, match="numerically by DFT"):
+            vis.get_sympy()
+
+
+# ── cn_sq_func hook: custom coefficients must reach the kernel ─────────────
+
+class TestCustomCnSqReachesKernel:
+    """A custom visibility must affect kernel()/logL, not just the PSD.
+
+    Before the cn_sq_func hook existed, _kernel_eval hardcoded the analytic
+    _cn_general_jax coefficients, so overriding cn_squared() silently had no
+    effect on the latitude-averaged kernel or the GP log-likelihood.
+    """
+
+    INC = np.pi / 3
+    PEQ = 4.0
+
+    def _kernel(self, vis, n_harmonics=4, n_lat=32):
+        from spotgp import SpotEvolutionModel, AnalyticKernel
+        from spotgp.envelope import TrapezoidSymmetricEnvelope
+        model = SpotEvolutionModel(
+            envelope=TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=2.0),
+            visibility=vis, sigma_k=0.01)
+        return AnalyticKernel(model, n_harmonics=n_harmonics, n_lat=n_lat)
+
+    def test_get_cn_sq_func_none_for_default_visibility(self):
+        """The built-in visibility keeps using the inline analytic path."""
+        from spotgp import SpotEvolutionModel
+        from spotgp.envelope import TrapezoidSymmetricEnvelope
+        model = SpotEvolutionModel(
+            envelope=TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=2.0),
+            visibility=VisibilityFunction(self.PEQ, 0.0, self.INC),
+            sigma_k=0.01)
+        assert model.get_cn_sq_func(3) is None
+
+    def test_get_cn_sq_func_shape(self):
+        from spotgp import SpotEvolutionModel
+        from spotgp.envelope import TrapezoidSymmetricEnvelope
+        model = SpotEvolutionModel(
+            envelope=TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=2.0),
+            visibility=LimbDarkenedVisibilityFunction(
+                self.PEQ, 0.0, self.INC, u=(0.4, 0.2), n_lon=128),
+            sigma_k=0.01)
+        fn = model.get_cn_sq_func(3)
+        assert fn is not None
+        phi_grid = jnp.linspace(-np.pi / 2, np.pi / 2, 8)
+        out = fn(jnp.asarray(model.theta0), phi_grid)
+        assert out.shape == (8, 4)
+
+    def test_limb_darkening_changes_kernel(self):
+        plain = self._kernel(VisibilityFunction(self.PEQ, 0.0, self.INC))
+        ld = self._kernel(LimbDarkenedVisibilityFunction(
+            self.PEQ, 0.0, self.INC, u=(0.6, 0.1)))
+        lag = np.linspace(0.0, 8.0, 7)
+        assert not np.allclose(plain.kernel(lag), ld.kernel(lag))
+
+    def test_zero_limb_darkening_reproduces_analytic_kernel(self):
+        plain = self._kernel(VisibilityFunction(self.PEQ, 0.0, self.INC))
+        ld_off = self._kernel(LimbDarkenedVisibilityFunction(
+            self.PEQ, 0.0, self.INC, u=(0.0, 0.0), n_lon=4096))
+        lag = np.linspace(0.0, 8.0, 7)
+        np.testing.assert_allclose(
+            ld_off.kernel(lag), plain.kernel(lag), rtol=1e-5, atol=1e-12)
+
+    @pytest.mark.parametrize("solver", ["cholesky_full", "cholesky_banded"])
+    def test_limb_darkening_reaches_log_posterior(self, solver):
+        from spotgp import (SpotEvolutionModel, GPSolver, TimeSeriesData)
+        from spotgp.envelope import TrapezoidSymmetricEnvelope
+
+        rng = np.random.default_rng(0)
+        t = np.sort(rng.uniform(0, 40, 50))
+        y = 0.01 * np.sin(2 * np.pi * t / 4.0) + 0.002 * rng.standard_normal(50)
+        data = TimeSeriesData(t, y, np.full_like(t, 0.002))
+        bounds = {"peq": (2, 8), "kappa": (0, 0.4), "inc": (0.3, 1.5),
+                  "lspot": (1, 10), "tau_spot": (1, 6),
+                  "log_sigma_k": (-4, -1)}
+
+        def build(vis):
+            model = SpotEvolutionModel(
+                envelope=TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=2.0),
+                visibility=vis, sigma_k=0.01)
+            return GPSolver(data, model, bounds=bounds,
+                            matrix_solver=solver).build_jax()
+
+        gp_plain = build(VisibilityFunction(self.PEQ, 0.1, self.INC))
+        gp_ld = build(LimbDarkenedVisibilityFunction(
+            self.PEQ, 0.1, self.INC, u=(0.6, 0.1)))
+
+        logL_plain = float(gp_plain.log_posterior(gp_plain.theta0))
+        logL_ld = float(gp_ld.log_posterior(gp_ld.theta0))
+        assert abs(logL_plain - logL_ld) > 1e-6
+
+        grad = np.asarray(gp_ld.grad_log_posterior(gp_ld.theta0))
+        assert np.all(np.isfinite(grad))
+        inc_idx = list(gp_ld.param_keys).index("inc")
+        assert abs(grad[inc_idx]) > 1e-9
