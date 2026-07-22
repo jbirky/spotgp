@@ -1,5 +1,7 @@
 """spotgp — Gaussian Process kernels for stellar variability from starspot models."""
 
+__version__ = "1.0.0"
+
 from .distributions import (
     ParameterDistribution, DeltaDistribution, UniformDistribution,
     GaussianDistribution, LogNormalDistribution,
