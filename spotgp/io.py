@@ -3,21 +3,12 @@
 import logging
 import warnings
 
+import h5py
 import numpy as np
 
 logger = logging.getLogger("spotgp")
 
 __all__ = ["save_gp", "load_gp", "save_sampler", "load_sampler"]
-
-
-def _require_h5py():
-    try:
-        import h5py
-        return h5py
-    except ImportError:
-        raise ImportError(
-            "h5py is required for HDF5 I/O. Install with: "
-            "pip install h5py  (or: pip install spotgp[hdf5])")
 
 
 def _is_hdf5(path):
@@ -72,7 +63,6 @@ def _replace_group(f, name):
 
 
 def _write_string_dataset(grp, name, strings):
-    import h5py
     dt = h5py.string_dtype()
     grp.create_dataset(name, data=np.array(strings, dtype=object), dtype=dt)
 
@@ -523,7 +513,6 @@ def save_gp(path, gp):
     gp : GPSolver
         The solver to save.
     """
-    h5py = _require_h5py()
     with h5py.File(path, "a") as f:
         _write_data(f, gp.data)
         _write_model(f, gp.spot_model)
@@ -550,7 +539,6 @@ def load_gp(path):
     -------
     GPSolver
     """
-    h5py = _require_h5py()
     from .gp_solver import GPSolver
 
     with h5py.File(path, "r") as f:
@@ -585,7 +573,6 @@ def save_sampler(path, sampler, append_samples=True):
         If True, append in-memory samples to any existing samples
         in the file, then clear ``sampler.samples`` from memory.
     """
-    h5py = _require_h5py()
     samples_to_save = (np.asarray(sampler.samples)
                        if sampler.samples is not None else None)
 
@@ -624,7 +611,6 @@ def load_sampler(path, sampler):
     sampler : MCMCSampler
         The sampler to restore state into.
     """
-    h5py = _require_h5py()
     with h5py.File(path, "r") as f:
         _read_sampler_state(f, sampler)
 
@@ -643,6 +629,5 @@ def load_samples(path, flatten_chains=True):
     -------
     samples : ndarray or None
     """
-    h5py = _require_h5py()
     with h5py.File(path, "r") as f:
         return _read_samples(f, flatten_chains=flatten_chains)

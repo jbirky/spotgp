@@ -14,18 +14,12 @@
 pip install spotgp
 ```
 
-With JAX acceleration (recommended):
-
-```bash
-pip install "spotgp[jax]"
-```
-
 ### From source
 
 ```bash
 git clone https://github.com/jbirky/spotgp.git
 cd spotgp
-pip install -e ".[jax]"
+pip install -e .
 ```
 
 Alternatively, clone the repo and add it to your Python path:

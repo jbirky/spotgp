@@ -5,16 +5,6 @@ MCMC chains, and sampler restart state — to a single HDF5 file. This lets you
 checkpoint long-running fits and resume them later without re-running optimization
 or warm-up.
 
-## Installation
-
-HDF5 support requires `h5py`, available as an optional dependency:
-
-```bash
-pip install "spotgp[hdf5]"
-```
-
----
-
 ## Saving a GPSolver
 
 After setting up and fitting a `GPSolver`, save the full state with:
