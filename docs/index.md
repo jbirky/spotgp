@@ -48,7 +48,7 @@ This project is build and maintained by [Jess Birky](https://github.com/jbirky)-
 
 ```{toctree}
 :maxdepth: 2
-:caption: Basics
+:caption: Fundamentals
 
 self
 tutorials/quickstart
@@ -61,24 +61,36 @@ tutorials/analytic_vs_numerical_kernel
 tutorials/jax_jit
 tutorials/gp_optimization
 tutorials/data_preprocessing
+tutorials/save_load
 ```
 
 ```{toctree}
 :maxdepth: 2
-:caption: Advanced 
+:caption: Custom Functions
 
 tutorials/parameter_registry
 tutorials/custom_envelope_gaussian
 tutorials/custom_visibility_function
-tutorials/limb_darkening
 tutorials/custom_latitude_distribution
 tutorials/custom_spot_distributions
-tutorials/multiband_gp
+tutorials/limb_darkening
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Probabilistic Inference
+
 tutorials/pgm_visualization
 tutorials/blackjax_sampling
 tutorials/dynesty_sampling
-tutorials/save_load
 tutorials/cramer_rao_bound
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Multiband Photometry
+
+tutorials/multiband_gp
 ```
 
 ```{toctree}
