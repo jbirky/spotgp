@@ -31,10 +31,20 @@ pip install -e .
 
 ### Optional extras
 
-Rendering probabilistic graphical models requires `daft`:
+Install all optional features (PGM rendering, `jaxopt`, and the spectral
+contrast model with `pyphot` + `Korg.jl`) in one shot:
 
 ```bash
-pip install "spotgp[pgm]"
+pip install "spotgp[extras]"
+```
+
+Or pick individual extras:
+
+```bash
+pip install "spotgp[pgm]"        # daft PGM rendering
+pip install "spotgp[jaxopt]"     # jaxopt optimizers
+pip install "spotgp[spectral]"   # pyphot bandpasses
+pip install "spotgp[korg]"       # pyphot + Korg.jl model atmospheres
 ```
 
 Alternatively, clone the repo and add it to your Python path:

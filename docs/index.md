@@ -24,10 +24,26 @@ pip install -e .
 
 ### Optional extras
 
-Rendering probabilistic graphical models requires `daft`:
+Install all optional features (PGM rendering, `jaxopt`, and the spectral
+contrast model with `pyphot` + `Korg.jl`) in one shot:
 
 ```bash
-pip install "spotgp[pgm]"
+pip install "spotgp[extras]"
+```
+
+Or pick individual extras:
+
+```bash
+pip install "spotgp[pgm]"        # daft PGM rendering
+pip install "spotgp[jaxopt]"     # jaxopt optimizers
+pip install "spotgp[spectral]"   # pyphot bandpasses
+pip install "spotgp[korg]"       # pyphot + Korg.jl model atmospheres
+```
+
+`Korg.jl` itself is installed from Python after the extras:
+
+```bash
+python -c "import juliapkg; juliapkg.add('Korg', 'acafc109-a718-429c-b0e5-afd7f8c7ae46'); juliapkg.resolve()"
 ```
 
 Alternatively, clone the repo and add it to your Python path:
@@ -48,16 +64,21 @@ This project is build and maintained by [Jess Birky](https://github.com/jbirky)-
 
 ```{toctree}
 :maxdepth: 2
-:caption: Fundamentals
+:caption: Getting Started
 
 self
 tutorials/quickstart
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Fundamentals
+
+overview
 tutorials/time_domain
 tutorials/fourier_domain
-overview
 tutorials/lightcurve_demo
 tutorials/sympy_tools
-tutorials/analytic_vs_numerical_kernel
 tutorials/jax_jit
 tutorials/gp_optimization
 tutorials/data_preprocessing
@@ -91,6 +112,15 @@ tutorials/cramer_rao_bound
 :caption: Multiband Photometry
 
 tutorials/multiband_gp
+tutorials/spectral_contrast
+tutorials/spots_and_faculae
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Performance Tests
+
+tutorials/analytic_vs_numerical_kernel
 ```
 
 ```{toctree}

@@ -66,6 +66,29 @@ Spot Contrast
 
 .. autofunction:: spotgp.contrast.contrast_matrix
 
+Spectral Contrast
+-----------------
+
+.. autoclass:: spotgp.spectral.SpectralContrastModel
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.spectral.BlackbodyProvider
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.spectral.KorgProvider
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.spectral.BandpassSet
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Probabilistic Graphical Model
 -----------------------------
 

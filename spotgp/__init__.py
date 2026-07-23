@@ -1,6 +1,6 @@
 """spotgp — Gaussian Process kernels for stellar variability from starspot models."""
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 from .distributions import (
     ParameterDistribution, DeltaDistribution, UniformDistribution,
@@ -25,6 +25,9 @@ from .psd import compute_psd
 from .contrast import spot_contrast, contrast_factor, contrast_matrix
 from .gp_solver import GPSolver
 from .multiband import MultiBandData, MultiBandGPSolver, SpotFaculaeGPSolver
+from .spectral import (
+    KorgProvider, BlackbodyProvider, BandpassSet, SpectralContrastModel,
+)
 from .pgm import PGModelVis
 from .mcmc import MCMCSampler, BlackJAXSampler, DynestySampler
 from .observations import TimeSeriesData
@@ -67,6 +70,8 @@ __all__ = [
     "GPSolver",
     # multiband
     "MultiBandData", "MultiBandGPSolver", "SpotFaculaeGPSolver",
+    # spectral contrast
+    "KorgProvider", "BlackbodyProvider", "BandpassSet", "SpectralContrastModel",
     # pgm
     "PGModelVis",
     # mcmc
