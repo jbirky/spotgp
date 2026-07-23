@@ -1,6 +1,6 @@
 """spotgp — Gaussian Process kernels for stellar variability from starspot models."""
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 from .distributions import (
     ParameterDistribution, DeltaDistribution, UniformDistribution,
@@ -22,7 +22,10 @@ from .lightcurve import LightcurveModel, compute_sigmak
 from .analytic_kernel import AnalyticKernel, NonstationaryAnalyticKernel
 from .numerical_kernel import NumericalKernel, generate_sims, avg_covariance_tlag
 from .psd import compute_psd
+from .contrast import spot_contrast, contrast_factor, contrast_matrix
 from .gp_solver import GPSolver
+from .multiband import MultiBandData, MultiBandGPSolver, SpotFaculaeGPSolver
+from .pgm import PGModelVis
 from .mcmc import MCMCSampler, BlackJAXSampler, DynestySampler
 from .observations import TimeSeriesData
 from .results import MAPResult, is_complete, mark_complete
@@ -58,8 +61,14 @@ __all__ = [
     "NumericalKernel", "generate_sims", "avg_covariance_tlag",
     # psd
     "compute_psd",
+    # contrast
+    "spot_contrast", "contrast_factor", "contrast_matrix",
     # solver
     "GPSolver",
+    # multiband
+    "MultiBandData", "MultiBandGPSolver", "SpotFaculaeGPSolver",
+    # pgm
+    "PGModelVis",
     # mcmc
     "MCMCSampler", "BlackJAXSampler", "DynestySampler",
     # observations

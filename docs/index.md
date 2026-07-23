@@ -22,6 +22,14 @@ cd spotgp
 pip install -e .
 ```
 
+### Optional extras
+
+Rendering probabilistic graphical models requires `daft`:
+
+```bash
+pip install "spotgp[pgm]"
+```
+
 Alternatively, clone the repo and add it to your Python path:
 
 ```bash
@@ -65,6 +73,8 @@ tutorials/custom_visibility_function
 tutorials/limb_darkening
 tutorials/custom_latitude_distribution
 tutorials/custom_spot_distributions
+tutorials/multiband_gp
+tutorials/pgm_visualization
 tutorials/blackjax_sampling
 tutorials/dynesty_sampling
 tutorials/save_load
