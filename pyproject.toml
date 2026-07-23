@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spotgp"
-version = "1.0.0"
+version = "1.1.0"
 description = "Gaussian Process kernels for stellar variability from starspot models"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,6 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 jaxopt = ["jaxopt"]
+pgm = ["daft-pgm"]
 docs = [
     "sphinx>=7.0",
     "sphinx-book-theme>=1.0",

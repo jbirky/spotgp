@@ -39,6 +39,41 @@ GP Solver
    :undoc-members:
    :show-inheritance:
 
+Multi-Band GP
+-------------
+
+.. autoclass:: spotgp.multiband.MultiBandData
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.multiband.MultiBandGPSolver
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.multiband.SpotFaculaeGPSolver
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Spot Contrast
+-------------
+
+.. autofunction:: spotgp.contrast.spot_contrast
+
+.. autofunction:: spotgp.contrast.contrast_factor
+
+.. autofunction:: spotgp.contrast.contrast_matrix
+
+Probabilistic Graphical Model
+-----------------------------
+
+.. autoclass:: spotgp.pgm.PGModelVis
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Power Spectral Density
 ----------------------
 
