@@ -1238,6 +1238,23 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
             return np.asarray(mu_pred), np.asarray(var_pred)
 
 
+    def plot_pgm(self, **kwargs):
+        """Plot the probabilistic graphical model for this GP.
+
+        Parameters
+        ----------
+        **kwargs
+            Forwarded to :meth:`PGModelVis.render` (``dpi``, ``node_scale``,
+            ``font_size``, ``show_legend``).
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+        """
+        from .pgm import PGModelVis
+        return PGModelVis(self).render(**kwargs)
+
+
     def sample_prior(self, xpred, n_samples=1, rng=None):
         """Draw samples from the GP prior."""
         xpred = jnp.asarray(xpred, dtype=float)
