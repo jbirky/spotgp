@@ -21,15 +21,13 @@ import numpy as np
 from .params import (
     resolve_hparam, KERNEL_HPARAM_KEYS, HPARAM_KEYS_WITH_NOISE,
 )
-from .spot_model import (
-    SpotEvolutionModel, VisibilityFunction, EdgeOnVisibilityFunction,
-    _gauss_legendre_grid,
-)
+from .spot_model import SpotEvolutionModel
 from .analytic_kernel import (
     AnalyticKernel, _kernel_eval, _kernel_eval_edgeon,
 )
 from .banded_cholesky import (banded_cholesky, banded_solve,
                                banded_cholesky_compact, banded_solve_compact)
+from .terms import KernelSum, SpotTerm, DEFAULT_TERM_BOUNDS
 from .fitting import FittingMixin
 from .gp_plots import GPPlotsMixin
 from .mass_matrix import MassMatrixMixin
@@ -60,7 +58,8 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
                        lat_weight_func=None,
                        cn_sq_func=None,
                        uniform_dt=None,
-                       lag_table=None):
+                       lag_table=None,
+                       k_of_lag=None):
     """
     Pure-functional GP marginal log-likelihood.
 
@@ -100,6 +99,11 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
         is an (N, N) integer map with ``|x_i - x_j| =
         unique_lags[inv_idx[i, j]]``.  Ignored when ``uniform_dt`` is
         given.
+    k_of_lag : callable or None
+        JAX-traceable stationary kernel ``f(theta_kernel, lags) -> K``
+        (e.g. ``KernelSum.k_of_lag``).  When given, it supersedes the
+        ``_kernel_eval`` closure kwargs above; when None, the legacy
+        closure-kwarg path is used (backward compat).
 
     Returns
     -------
@@ -114,41 +118,35 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
         theta_kernel = theta_full
         sigma_n = 0.0
 
+    if k_of_lag is None:
+        # Legacy path: assemble the kernel closure from the kwarg bundle.
+        def k_of_lag(theta_k, lags):
+            return _kernel_eval(theta_k, lags,
+                                n_harmonics, n_lat, lat_range,
+                                quad_nodes=quad_nodes,
+                                quad_weights=quad_weights,
+                                r_gamma_func=r_gamma_func,
+                                edgeon_cn_sq=edgeon_cn_sq,
+                                lat_weight_func=lat_weight_func,
+                                cn_sq_func=cn_sq_func)
+
     if uniform_dt is not None:
         # Toeplitz fast path: N distinct lags instead of N*(N+1)/2.
         lag_unique = jnp.arange(N) * uniform_dt
-        K1d = _kernel_eval(theta_kernel, lag_unique,
-                           n_harmonics, n_lat, lat_range,
-                           quad_nodes=quad_nodes, quad_weights=quad_weights,
-                           r_gamma_func=r_gamma_func,
-                           edgeon_cn_sq=edgeon_cn_sq,
-                           lat_weight_func=lat_weight_func,
-                           cn_sq_func=cn_sq_func)
+        K1d = k_of_lag(theta_kernel, lag_unique)
         idx = jnp.abs(jnp.arange(N)[:, None] - jnp.arange(N)[None, :])
         K = K1d[idx]
     elif lag_table is not None:
         # Gappy-uniform fast path: distinct lags gathered by index table.
         lags_unique, inv_idx = lag_table
-        K1d = _kernel_eval(theta_kernel, lags_unique,
-                           n_harmonics, n_lat, lat_range,
-                           quad_nodes=quad_nodes, quad_weights=quad_weights,
-                           r_gamma_func=r_gamma_func,
-                           edgeon_cn_sq=edgeon_cn_sq,
-                           lat_weight_func=lat_weight_func,
-                           cn_sq_func=cn_sq_func)
+        K1d = k_of_lag(theta_kernel, lags_unique)
         K = K1d[inv_idx]
     else:
         # Upper-triangular indices (includes diagonal)
         row_idx, col_idx = jnp.triu_indices(N)
         lag_upper = jnp.abs(x[row_idx] - x[col_idx])
 
-        K_upper = _kernel_eval(theta_kernel, lag_upper,
-                               n_harmonics, n_lat, lat_range,
-                               quad_nodes=quad_nodes, quad_weights=quad_weights,
-                               r_gamma_func=r_gamma_func,
-                               edgeon_cn_sq=edgeon_cn_sq,
-                               lat_weight_func=lat_weight_func,
-                               cn_sq_func=cn_sq_func)
+        K_upper = k_of_lag(theta_kernel, lag_upper)
 
         # Reconstruct symmetric matrix from upper triangle
         K = jnp.zeros((N, N))
@@ -176,7 +174,8 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
                               lat_weight_func=None,
                               cn_sq_func=None,
                               uniform_dt=None,
-                              band_lag_table=None):
+                              band_lag_table=None,
+                              k_of_lag=None):
     """
     Build the kernel covariance directly in compact (b+1, N) banded storage.
 
@@ -210,6 +209,11 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
         ``inv_idx`` is a (b+1, N) integer map with ``x[i+d] - x[i] =
         unique_lags[inv_idx[d, i]]``.  Ignored when ``uniform_dt`` is
         given.
+    k_of_lag : callable or None
+        JAX-traceable stationary kernel ``f(theta_kernel, lags) -> K``
+        (e.g. ``KernelSum.k_of_lag``).  When given, it supersedes the
+        ``_kernel_eval`` closure kwargs above; when None, the legacy
+        closure-kwarg path is used (backward compat).
 
     Returns
     -------
@@ -219,6 +223,18 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
     N = x.shape[0]
     b = bandwidth
 
+    if k_of_lag is None:
+        # Legacy path: assemble the kernel closure from the kwarg bundle.
+        def k_of_lag(theta_k, lags):
+            return _kernel_eval(theta_k, lags,
+                                n_harmonics, n_lat, lat_range,
+                                quad_nodes=quad_nodes,
+                                quad_weights=quad_weights,
+                                r_gamma_func=r_gamma_func,
+                                edgeon_cn_sq=edgeon_cn_sq,
+                                lat_weight_func=lat_weight_func,
+                                cn_sq_func=cn_sq_func)
+
     d_idx = jnp.arange(b + 1)[:, None]
     i_idx = jnp.arange(N)[None, :]
     j_idx = i_idx + d_idx
@@ -227,39 +243,19 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
     if uniform_dt is not None:
         # Toeplitz fast path: b+1 distinct lags instead of (b+1)*N.
         lag_unique = jnp.arange(b + 1) * uniform_dt
-        K_unique = _kernel_eval(theta_kernel, lag_unique,
-                                n_harmonics, n_lat, lat_range,
-                                quad_nodes=quad_nodes,
-                                quad_weights=quad_weights,
-                                r_gamma_func=r_gamma_func,
-                                edgeon_cn_sq=edgeon_cn_sq,
-                                lat_weight_func=lat_weight_func,
-                                cn_sq_func=cn_sq_func)
+        K_unique = k_of_lag(theta_kernel, lag_unique)
         return jnp.where(valid, K_unique[:, None], 0.0)
 
     if band_lag_table is not None:
         # Gappy-uniform fast path: distinct within-band lags, gathered
         # through the precomputed index table.
         lags_unique, inv_idx = band_lag_table
-        K_unique = _kernel_eval(theta_kernel, lags_unique,
-                                n_harmonics, n_lat, lat_range,
-                                quad_nodes=quad_nodes,
-                                quad_weights=quad_weights,
-                                r_gamma_func=r_gamma_func,
-                                edgeon_cn_sq=edgeon_cn_sq,
-                                lat_weight_func=lat_weight_func,
-                                cn_sq_func=cn_sq_func)
+        K_unique = k_of_lag(theta_kernel, lags_unique)
         return jnp.where(valid, K_unique[inv_idx], 0.0)
 
     j_safe = jnp.minimum(j_idx, N - 1)
     lags_flat = jnp.abs(x[j_safe] - x[i_idx]).ravel()
-    K_flat = _kernel_eval(theta_kernel, lags_flat,
-                          n_harmonics, n_lat, lat_range,
-                          quad_nodes=quad_nodes, quad_weights=quad_weights,
-                          r_gamma_func=r_gamma_func,
-                          edgeon_cn_sq=edgeon_cn_sq,
-                          lat_weight_func=lat_weight_func,
-                          cn_sq_func=cn_sq_func)
+    K_flat = k_of_lag(theta_kernel, lags_flat)
     cb = K_flat.reshape(b + 1, N)
     cb = jnp.where(valid, cb, 0.0)
     return cb
@@ -275,7 +271,8 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                lat_weight_func=None,
                                cn_sq_func=None,
                                uniform_dt=None,
-                               band_lag_table=None):
+                               band_lag_table=None,
+                               k_of_lag=None):
     """
     Pure-functional GP marginal log-likelihood using banded Cholesky.
 
@@ -299,6 +296,9 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
     uniform_dt : float or None
         Sample spacing when ``x`` is a uniform grid (compile-time
         constant). Enables the Toeplitz fast path; None disables it.
+    k_of_lag : callable or None
+        JAX-traceable stationary kernel ``f(theta_kernel, lags) -> K``,
+        forwarded to ``_build_banded_kernel_jax``.
     All other parameters are the same as ``_gp_log_likelihood``.
     """
     N = x.shape[0]
@@ -320,7 +320,8 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                    lat_weight_func=lat_weight_func,
                                    cn_sq_func=cn_sq_func,
                                    uniform_dt=uniform_dt,
-                                   band_lag_table=band_lag_table)
+                                   band_lag_table=band_lag_table,
+                                   k_of_lag=k_of_lag)
 
     # Add noise to diagonal (row 0 of compact storage)
     noise_var = yerr ** 2 + sigma_n ** 2
@@ -530,21 +531,9 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         Extra kwargs forwarded to the kernel constructor.
     """
 
-    DEFAULT_BOUNDS = {
-        "peq":       (0.5, 50.0),
-        "kappa":     (0.001, 0.999),
-        "inc":       (0.01, np.pi - 0.01),
-        "lspot":     (0.1, 20.0),
-        "tau_spot":  (0.05, 10.0),
-        "tau_em":    (0.05, 10.0),
-        "tau_dec":   (0.05, 10.0),
-        "sigma_sn":  (0.05, 10.0),
-        "n_sn":      (-10.0, 10.0),
-        "lat_min":   (0.0, np.pi / 2),
-        "lat_max":   (0.0, np.pi / 2),
-        "sigma_k":   (1e-6, 1.0),
-        "sigma_n":   (1e-6, 0.1),
-    }
+    # Single source of truth lives in terms.py (DEFAULT_TERM_BOUNDS);
+    # kept as a class attribute for backward compatibility.
+    DEFAULT_BOUNDS = dict(DEFAULT_TERM_BOUNDS)
 
     def __init__(self, data_or_x, y=None, yerr=None, model_or_hparam=None,
                  kernel_type="analytic",
@@ -640,9 +629,12 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         # to replace with their log-space counterparts.
         self.fit_sigma_n = fit_sigma_n
 
-        # Use envelope-aware param_keys from the SpotEvolutionModel.
-        # This replaces the old hardcoded KERNEL_HPARAM_KEYS approach.
-        _model_keys = self.spot_model.param_keys  # e.g. (peq, kappa, inc, lspot, tau_spot, sigma_k)
+        # The Term seam (self.kernel_sum, built in _build_kernel): the
+        # solver reads its parameter layout, bounds, bandwidth, and kernel
+        # evaluations from a KernelSum rather than from the spot model
+        # directly.  With a single SpotTerm this is a transparent wrapper
+        # (identical keys, theta0, and kernel values).
+        _model_keys = self.kernel_sum.param_keys  # e.g. (peq, kappa, inc, lspot, tau_spot, sigma_k)
         _base_keys = _model_keys + ("sigma_n",) if fit_sigma_n else _model_keys
 
         # Detect log-space parameters: keys prefixed with "log_" in the
@@ -664,14 +656,18 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         # Parse bounds — must precede _compute_bandwidth so that the upper
         # bounds of lspot and tau_spot are available for the bandwidth calculation.
         # For log-space keys the supplied bounds are already in log10 units;
-        # for physical keys without explicit bounds, fall back to DEFAULT_BOUNDS.
+        # for physical keys without explicit bounds, fall back to the
+        # per-term defaults (concatenated and aligned by kernel_sum),
+        # then to DEFAULT_BOUNDS (e.g. sigma_n).
+        _default_bounds = {**self.DEFAULT_BOUNDS,
+                           **self.kernel_sum.default_bounds}
         if bounds is None:
             self.bounds = jnp.array(
-                [self.DEFAULT_BOUNDS[k] for k in _base_keys],
+                [_default_bounds[k] for k in _base_keys],
                 dtype=jnp.float64)
         elif isinstance(bounds, dict):
             self.bounds = jnp.array(
-                [bounds.get(_pk, self.DEFAULT_BOUNDS[_bk])
+                [bounds.get(_pk, _default_bounds[_bk])
                  for _pk, _bk in zip(self.param_keys, _base_keys)],
                 dtype=jnp.float64)
         else:
@@ -701,10 +697,10 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         # Build covariance and factorize
         self._build_covariance()
 
-        # Initial theta: physical values from spot_model, converted to log10
-        # for any log-parameterized keys.
-        _phys_theta0 = dict(zip(self.spot_model.param_keys,
-                                self.spot_model.theta0))
+        # Initial theta: concat of per-term physical values, converted to
+        # log10 for any log-parameterized keys.
+        _phys_theta0 = dict(zip(self.kernel_sum.param_keys,
+                                self.kernel_sum.theta0))
         if fit_sigma_n:
             _phys_theta0["sigma_n"] = float(
                 self.hparam.get("sigma_n", self.DEFAULT_BOUNDS["sigma_n"][0]))
@@ -715,45 +711,16 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
             for k in self.param_keys
         ], dtype=jnp.float64)
 
-        # Kernel config (extract from kernel object)
-        self.n_harmonics = self.kernel.n_harmonics
-        self.n_lat = self.kernel.n_lat
-        # When latitude params are free, the quadrature grid must cover
-        # the full hemisphere so the dynamic weights can select any sub-range.
-        if self.spot_model.latitude_distribution.param_dict:
-            self.lat_range = (-np.pi / 2, np.pi / 2)
-        else:
-            self.lat_range = self.kernel.lat_range
-
-        # Quadrature nodes — precomputed at init so they are captured as
-        # array constants in JIT closures rather than recomputed per trace.
-        #
-        # GL weights are pre-normalized (sum = 1.0) so the /norm division
-        # inside _kernel_eval reduces to /1.0, which XLA eliminates.
-        #
-        # Trapezoid weights are left as None: lat_range and n_lat are Python
-        # scalars captured in the JIT closure, so XLA constant-folds the
-        # linspace and weight construction at compile time anyway.  Pre-
-        # normalizing trapezoid weights is non-trivial because jnp.sum(dphi*
-        # ones) = n_lat*dphi != phi_max-phi_min = (n_lat-1)*dphi, which
-        # would silently change the kernel normalization by n_lat/(n_lat-1).
-        if self.kernel.quadrature == "gauss-legendre":
-            if self.spot_model.latitude_distribution.param_dict:
-                # Latitude params are free: recompute GL nodes/weights
-                # over the full hemisphere without baked-in lat_dist weights.
-                gl_nodes, gl_weights = _gauss_legendre_grid(
-                    self.n_lat, -np.pi / 2, np.pi / 2)
-                _norm = float(jnp.sum(gl_weights))
-                self._quad_nodes = gl_nodes
-                self._quad_weights = gl_weights / _norm
-            else:
-                raw_w = self.kernel._quad_weights
-                _norm = float(jnp.sum(raw_w))
-                self._quad_nodes = self.kernel._quad_nodes
-                self._quad_weights = raw_w / _norm   # sum = 1.0
-        else:  # trapezoid: keep None, XLA constant-folds the else branch
-            self._quad_nodes = None
-            self._quad_weights = None
+        # Kernel config — computed by the SpotTerm at construction (see
+        # SpotTerm._configure for the full quadrature/normalization notes)
+        # and mirrored here for backward compatibility: gp_plots and
+        # mass_matrix read these attributes to rebuild kernel closures.
+        _spot0 = self.kernel_sum.terms[0]
+        self.n_harmonics = _spot0.n_harmonics
+        self.n_lat = _spot0.n_lat
+        self.lat_range = _spot0.lat_range
+        self._quad_nodes = _spot0._quad_nodes
+        self._quad_weights = _spot0._quad_weights
 
         # Prior
         self._custom_log_prior = log_prior
@@ -792,13 +759,19 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         logger.debug("Saved %s → %s", filename, path)
 
     def _build_kernel(self):
-        """Instantiate the kernel object from the SpotEvolutionModel."""
+        """Instantiate the kernel object from the SpotEvolutionModel.
+
+        Also (re)builds ``self.kernel_sum``, the Term-seam wrapper the
+        solver evaluates kernels through, so that ``update_hparam`` keeps
+        the wrapped closures in sync with the current spot model.
+        """
         if self.kernel_type == "analytic":
             self.kernel = AnalyticKernel(self.spot_model, **self.kernel_kwargs)
         else:
             raise ValueError(
                 f"GPSolver only supports 'analytic' kernel, "
                 f"got '{self.kernel_type}'")
+        self.kernel_sum = KernelSum(SpotTerm(analytic_kernel=self.kernel))
 
     def _build_transform(self):
         """Build _to_physical: sampling theta → physical theta.
@@ -850,7 +823,8 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
             dt = self.uniform_dt
         else:
             dt = float(np.median(np.diff(np.asarray(self.x))))
-        support = self.spot_model.bandwidth_support(self.param_keys, self.bounds)
+        support = self.kernel_sum.bandwidth_support(self.param_keys,
+                                                    self.bounds)
         b = int(np.ceil(support / dt))
         return min(b, self.N - 1)
 
@@ -1031,7 +1005,6 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
         custom_prior = self._custom_log_prior
         fit_sn = self.fit_sigma_n
-        qn, qw = self._quad_nodes, self._quad_weights
         to_phys = self._to_physical  # sampling theta → physical theta
         u_dt = self.uniform_dt       # Toeplitz fast path (None = disabled)
         # Gappy-uniform lag tables (None on strictly-uniform or irregular
@@ -1041,22 +1014,12 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         full_tab = (self._full_lag_table()
                     if self.matrix_solver != "cholesky_banded" else None)
 
-        # Envelope-specific R_Gamma function (JAX-traceable, captured in closure)
-        r_gamma_fn = self.spot_model.get_r_gamma_func()
-        # Latitude weight function (JAX-traceable, or None for static weights)
-        lat_wt_fn = self.spot_model.get_lat_weight_func()
-        # Visibility coefficient function (JAX-traceable, or None for the
-        # closed-form analytic c_n used by the default visibility function)
-        cn_sq_fn = self.spot_model.get_cn_sq_func(self.n_harmonics)
+        # The stationary kernel seam: all per-term closures (envelope
+        # R_Gamma, latitude weights, visibility coefficients, edge-on fast
+        # path) live inside the terms; the solver only sees k_of_lag.
+        k_of_lag_fn = self.kernel_sum.k_of_lag
         # Number of kernel params (excludes sigma_n)
-        n_kernel = len(self.spot_model.param_keys)
-
-        # Edge-on fast path: pre-compute fixed |c_n|^2 as a JAX array
-        if isinstance(self.spot_model.visibility, EdgeOnVisibilityFunction):
-            eo_cn = jnp.array(self.spot_model.visibility.cn_squared(
-                0.0, self.n_harmonics))
-        else:
-            eo_cn = None
+        n_kernel = len(self.kernel_sum.param_keys)
 
         if self.matrix_solver == "cholesky_banded":
             # Capture bandwidth as a Python int in the closure so that
@@ -1067,25 +1030,19 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                 return _gp_log_likelihood_banded(
                     to_phys(theta_arr), x, y, yerr, mean_val,
                     n_h, n_l, lr, fit_sn, b,
-                    n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
-                    quad_nodes=qn, quad_weights=qw,
-                    edgeon_cn_sq=eo_cn,
-                    lat_weight_func=lat_wt_fn,
-                    cn_sq_func=cn_sq_fn,
+                    n_kernel=n_kernel,
                     uniform_dt=u_dt,
-                    band_lag_table=band_tab)
+                    band_lag_table=band_tab,
+                    k_of_lag=k_of_lag_fn)
         else:
             def _log_likelihood_raw(theta_arr):
                 return _gp_log_likelihood(
                     to_phys(theta_arr), x, y, yerr, mean_val,
                     n_h, n_l, lr, fit_sn,
-                    n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
-                    quad_nodes=qn, quad_weights=qw,
-                    edgeon_cn_sq=eo_cn,
-                    lat_weight_func=lat_wt_fn,
-                    cn_sq_func=cn_sq_fn,
+                    n_kernel=n_kernel,
                     uniform_dt=u_dt,
-                    lag_table=full_tab)
+                    lag_table=full_tab,
+                    k_of_lag=k_of_lag_fn)
 
         def _log_prior_raw(theta_arr):
             return (custom_prior(theta_arr) if custom_prior is not None
@@ -1534,8 +1491,8 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                 self._build_covariance()
         else:
             self._build_covariance()
-        _phys_theta0 = dict(zip(self.spot_model.param_keys,
-                                self.spot_model.theta0))
+        _phys_theta0 = dict(zip(self.kernel_sum.param_keys,
+                                self.kernel_sum.theta0))
         self.theta0 = jnp.array([
             np.log10(float(_phys_theta0.get(self._log_param_map[k], 0.0)))
             if k in self._log_param_map
