@@ -305,3 +305,159 @@ class TestKernelSumValidation:
     def test_rejects_non_terms(self):
         with pytest.raises(TypeError, match="Term instances"):
             KernelSum(AnalyticKernel(dict(HPARAM)))
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Phase 01: additive composition of stationary terms
+# ─────────────────────────────────────────────────────────────────────
+
+HPARAM_SHORT = dict(peq=10.0, kappa=0.2, inc=np.pi / 4, lspot=2.0,
+                    tau_spot=0.5, sigma_k=0.01)
+HPARAM_LONG = dict(peq=10.0, kappa=0.2, inc=np.pi / 4, lspot=8.0,
+                   tau_spot=2.0, sigma_k=0.005)
+
+
+def _small_data(N=80):
+    rng = np.random.default_rng(7)
+    x = np.linspace(0.0, 25.0, N)
+    y = (1.0 + 0.01 * np.sin(2 * np.pi * x / 10.0)
+         + 0.002 * rng.standard_normal(N))
+    return x, y, 0.002 * np.ones(N)
+
+
+def _two_spot_sum():
+    return KernelSum(SpotTerm(dict(HPARAM_SHORT)),
+                     SpotTerm(dict(HPARAM_LONG)))
+
+
+class TestAdditiveComposition:
+    """Phase 01: KernelSum genuinely sums more than one term."""
+
+    def test_auto_prefixing(self):
+        ks = _two_spot_sum()
+        assert ks.param_keys == tuple(
+            [f"spot0.{k}" for k in EXPECTED_KEYS]
+            + [f"spot1.{k}" for k in EXPECTED_KEYS])
+
+    def test_explicit_prefix(self):
+        ks = KernelSum(SpotTerm(dict(HPARAM_SHORT), prefix="short"),
+                       SpotTerm(dict(HPARAM_LONG), prefix="long"))
+        assert ks.param_keys[0] == "short.peq"
+        assert ks.param_keys[6] == "long.peq"
+
+    def test_duplicate_prefix_raises(self):
+        with pytest.raises(ValueError, match="Duplicate parameter keys"):
+            KernelSum(SpotTerm(dict(HPARAM_SHORT), prefix="a"),
+                      SpotTerm(dict(HPARAM_LONG), prefix="a"))
+
+    def test_theta0_concat(self):
+        ks = _two_spot_sum()
+        np.testing.assert_array_equal(
+            ks.theta0,
+            np.concatenate([ks.terms[0].theta0, ks.terms[1].theta0]))
+
+    def test_k_of_lag_is_sum_of_terms(self):
+        ks = _two_spot_sum()
+        lag = jnp.linspace(0.0, 15.0, 50)
+        theta = jnp.asarray(ks.theta0)
+        total = np.asarray(ks.k_of_lag(theta, lag))
+        parts = sum(
+            np.asarray(t.k_of_lag(jnp.asarray(t.theta0), lag))
+            for t in ks.terms)
+        np.testing.assert_array_equal(total, parts)
+
+    def test_bandwidth_is_max_over_terms(self):
+        ks = _two_spot_sum()
+        keys = ks.param_keys
+        bounds = np.array([DEFAULT_TERM_BOUNDS[k.split(".")[1]]
+                           for k in keys])
+        # Tighten spot0's envelope so spot1 dominates the support
+        bounds[keys.index("spot0.lspot"), 1] = 1.0
+        bounds[keys.index("spot0.tau_spot"), 1] = 0.2
+        total = ks.bandwidth_support(keys, bounds)
+        t1_keys, t1_rows = ks.terms[1]._own_bounds_rows(keys, bounds)
+        want = ks.terms[1].bandwidth_support(t1_keys, t1_rows)
+        assert total == want
+
+    def test_gram_is_sum_of_grams(self):
+        x, y, yerr = _small_data()
+        gp_ab = GPSolver(x, y, yerr, _two_spot_sum(),
+                         matrix_solver="cholesky_full")
+        gp_a = GPSolver(x, y, yerr, dict(HPARAM_SHORT),
+                        matrix_solver="cholesky_full")
+        gp_b = GPSolver(x, y, yerr, dict(HPARAM_LONG),
+                        matrix_solver="cholesky_full")
+        # self.K is the pure kernel Gram (noise lives in K_noise), so
+        # the composite Gram must equal the sum of the per-term Grams.
+        np.testing.assert_allclose(np.asarray(gp_ab.K),
+                                   np.asarray(gp_a.K) + np.asarray(gp_b.K),
+                                   rtol=1e-15, atol=1e-20)
+
+    @pytest.mark.parametrize("solver", ["cholesky_banded", "cholesky_full"])
+    def test_finite_logL_and_gradient(self, solver):
+        x, y, yerr = _small_data()
+        gp = GPSolver(x, y, yerr, _two_spot_sum(), matrix_solver=solver,
+                      bandwidth=30 if solver == "cholesky_banded" else None)
+        assert gp.n_params == 12
+        logL = float(gp.log_likelihood_fn(gp.theta0))
+        assert np.isfinite(logL)
+        val, grad = gp.value_and_grad_log_posterior(gp.theta0)
+        assert np.isfinite(float(val))
+        assert np.all(np.isfinite(np.asarray(grad)))
+
+    def test_toeplitz_gram_matches_direct_eval(self):
+        x, y, yerr = _small_data()
+        ks = _two_spot_sum()
+        gp = GPSolver(x, y, yerr, ks, matrix_solver="cholesky_full")
+        lag = jnp.abs(gp.x[:, None] - gp.x[None, :])
+        K_direct = np.asarray(
+            ks.k_of_lag(jnp.asarray(ks.theta0), lag.ravel())
+        ).reshape(gp.N, gp.N)
+        np.testing.assert_allclose(np.asarray(gp.K), K_direct,
+                                   rtol=1e-12, atol=1e-16)
+
+    def test_predict_finite(self):
+        x, y, yerr = _small_data()
+        gp = GPSolver(x, y, yerr, _two_spot_sum(),
+                      matrix_solver="cholesky_full")
+        xp = np.linspace(0.0, 25.0, 40)
+        mu, var = gp.predict(xp)
+        assert np.all(np.isfinite(np.asarray(mu)))
+        assert np.all(np.isfinite(np.asarray(var)))
+
+    def test_single_term_input_matches_wrapped_dict(self):
+        x, y, yerr = _small_data()
+        gp_term = GPSolver(x, y, yerr, SpotTerm(dict(HPARAM_SHORT)),
+                           matrix_solver="cholesky_full")
+        gp_dict = GPSolver(x, y, yerr, dict(HPARAM_SHORT),
+                           matrix_solver="cholesky_full")
+        assert gp_term.param_keys == gp_dict.param_keys
+        np.testing.assert_allclose(
+            float(gp_term.log_likelihood_fn(gp_term.theta0)),
+            float(gp_dict.log_likelihood_fn(gp_dict.theta0)),
+            rtol=1e-14)
+
+    def test_nonstationary_term_rejected(self):
+        class FakeNonstationary(SpotTerm):
+            stationary = False
+
+        x, y, yerr = _small_data()
+        with pytest.raises(NotImplementedError, match="stationary"):
+            GPSolver(x, y, yerr,
+                     KernelSum(FakeNonstationary(dict(HPARAM_SHORT))),
+                     matrix_solver="cholesky_full")
+
+    def test_update_hparam_composite_raises(self):
+        x, y, yerr = _small_data()
+        gp = GPSolver(x, y, yerr, _two_spot_sum(),
+                      matrix_solver="cholesky_full")
+        with pytest.raises(NotImplementedError, match="composite"):
+            gp.update_hparam(dict(HPARAM_SHORT))
+
+    def test_default_bounds_align_with_prefixed_keys(self):
+        x, y, yerr = _small_data()
+        gp = GPSolver(x, y, yerr, _two_spot_sum(),
+                      matrix_solver="cholesky_full")
+        i = gp.param_keys.index("spot1.lspot")
+        np.testing.assert_array_equal(np.asarray(gp.bounds[i]),
+                                      DEFAULT_TERM_BOUNDS["lspot"])

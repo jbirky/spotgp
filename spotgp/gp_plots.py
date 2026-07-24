@@ -219,13 +219,8 @@ class GPPlotsMixin:
         if theta is not None:
             theta_arr = self._theta_dict_to_phys_array(theta)
             lag_fine = np.linspace(0.0, float(tlags[-1]), 300)
-            K_model = np.asarray(_kernel_eval(
-                theta_arr, jnp.asarray(lag_fine),
-                self.n_harmonics, self.n_lat, self.lat_range,
-                quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
-                r_gamma_func=self.spot_model.get_r_gamma_func(),
-                lat_weight_func=self.spot_model.get_lat_weight_func(),
-                cn_sq_func=self.spot_model.get_cn_sq_func(self.n_harmonics)))
+            K_model = np.asarray(self.kernel_sum.k_of_lag(
+                theta_arr, jnp.asarray(lag_fine)))
             if normalize:
                 y_full = getattr(self.data, '_y_full', self.data.y)
                 var = np.var(y_full)
@@ -316,13 +311,8 @@ class GPPlotsMixin:
             if dt_kernel is None:
                 dt_kernel = dt_med / 5.0
             tau_grid = np.arange(0.0, baseline, dt_kernel)
-            K = np.asarray(_kernel_eval(
-                theta_arr, jnp.asarray(tau_grid),
-                self.n_harmonics, self.n_lat, self.lat_range,
-                quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
-                r_gamma_func=self.spot_model.get_r_gamma_func(),
-                lat_weight_func=self.spot_model.get_lat_weight_func(),
-                cn_sq_func=self.spot_model.get_cn_sq_func(self.n_harmonics)))
+            K = np.asarray(self.kernel_sum.k_of_lag(
+                theta_arr, jnp.asarray(tau_grid)))
             # Extend to two-sided symmetric sequence, then rfft → one-sided PSD
             K_twosided = np.concatenate([K[::-1], K[1:]])
             psd_model = np.abs(np.fft.rfft(K_twosided)) * dt_kernel
@@ -408,13 +398,7 @@ class GPPlotsMixin:
             i_idx = np.arange(N - d)
             j_idx = i_idx + d
             lags = jnp.abs(self.x[i_idx] - self.x[j_idx])
-            K_diag = np.asarray(_kernel_eval(
-                theta_arr, lags,
-                self.n_harmonics, self.n_lat, self.lat_range,
-                quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
-                r_gamma_func=self.spot_model.get_r_gamma_func(),
-                lat_weight_func=self.spot_model.get_lat_weight_func(),
-                cn_sq_func=self.spot_model.get_cn_sq_func(self.n_harmonics)))
+            K_diag = np.asarray(self.kernel_sum.k_of_lag(theta_arr, lags))
             K[i_idx, j_idx] = K_diag
             if d > 0:
                 K[j_idx, i_idx] = K_diag

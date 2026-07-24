@@ -27,7 +27,7 @@ from .analytic_kernel import (
 )
 from .banded_cholesky import (banded_cholesky, banded_solve,
                                banded_cholesky_compact, banded_solve_compact)
-from .terms import KernelSum, SpotTerm, DEFAULT_TERM_BOUNDS
+from .terms import Term, KernelSum, SpotTerm, DEFAULT_TERM_BOUNDS
 from .fitting import FittingMixin
 from .gp_plots import GPPlotsMixin
 from .mass_matrix import MassMatrixMixin
@@ -588,11 +588,28 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         self._band_lag_table_cache = None
         self._full_lag_table_cache = None
 
-        # Accept SpotEvolutionModel or legacy hparam dict
-        if isinstance(model_or_hparam, SpotEvolutionModel):
+        # Accept a composite kernel (Term/KernelSum), a SpotEvolutionModel,
+        # or a legacy hparam dict.  A bare model/dict routes through
+        # KernelSum(SpotTerm(...)) internally (built in _build_kernel), so
+        # existing call sites never see the composition layer.
+        if isinstance(model_or_hparam, Term):
+            self._user_kernel = (model_or_hparam
+                                 if isinstance(model_or_hparam, KernelSum)
+                                 else KernelSum(model_or_hparam))
+            _spot_terms = [t for t in self._user_kernel.terms
+                           if isinstance(t, SpotTerm)]
+            # Mirror legacy attributes from the first spot term (plots,
+            # io, and mass_matrix read these); None for spot-free sums.
+            self.spot_model = (_spot_terms[0].spot_model if _spot_terms
+                               else None)
+            self.hparam = (self.spot_model.to_hparam()
+                           if self.spot_model is not None else {})
+        elif isinstance(model_or_hparam, SpotEvolutionModel):
+            self._user_kernel = None
             self.spot_model = model_or_hparam
             self.hparam = model_or_hparam.to_hparam()
         else:
+            self._user_kernel = None
             _validate_hparam(model_or_hparam)
             self.hparam = dict(model_or_hparam)
             self.spot_model = SpotEvolutionModel.from_hparam(self.hparam)
@@ -622,7 +639,17 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         self._build_kernel()
 
         # Update hparam with computed sigma_k (if nspot/fspot were given)
-        self.hparam = dict(self.kernel.hparam)
+        if self.kernel is not None:
+            self.hparam = dict(self.kernel.hparam)
+
+        # The Toeplitz/banded fast paths and the k_of_lag seam itself are
+        # only valid for stationary kernels; refuse rather than silently
+        # building a wrong matrix.
+        if not self.kernel_sum.stationary:
+            raise NotImplementedError(
+                "GPSolver requires all kernel terms to be stationary. "
+                "For a time-dependent sigma_k use "
+                "NonstationaryAnalyticKernel directly.")
 
         # Optimization/sampling config — must be set before bounds parsing
         # so that the log-param remapping can identify which physical keys
@@ -714,13 +741,23 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         # Kernel config — computed by the SpotTerm at construction (see
         # SpotTerm._configure for the full quadrature/normalization notes)
         # and mirrored here for backward compatibility: gp_plots and
-        # mass_matrix read these attributes to rebuild kernel closures.
-        _spot0 = self.kernel_sum.terms[0]
-        self.n_harmonics = _spot0.n_harmonics
-        self.n_lat = _spot0.n_lat
-        self.lat_range = _spot0.lat_range
-        self._quad_nodes = _spot0._quad_nodes
-        self._quad_weights = _spot0._quad_weights
+        # mass_matrix read these attributes.  For composite kernels the
+        # first spot term is mirrored; spot-free sums leave them None.
+        _spot_terms = [t for t in self.kernel_sum.terms
+                       if isinstance(t, SpotTerm)]
+        if _spot_terms:
+            _spot0 = _spot_terms[0]
+            self.n_harmonics = _spot0.n_harmonics
+            self.n_lat = _spot0.n_lat
+            self.lat_range = _spot0.lat_range
+            self._quad_nodes = _spot0._quad_nodes
+            self._quad_weights = _spot0._quad_weights
+        else:
+            self.n_harmonics = None
+            self.n_lat = None
+            self.lat_range = None
+            self._quad_nodes = None
+            self._quad_weights = None
 
         # Prior
         self._custom_log_prior = log_prior
@@ -764,7 +801,18 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         Also (re)builds ``self.kernel_sum``, the Term-seam wrapper the
         solver evaluates kernels through, so that ``update_hparam`` keeps
         the wrapped closures in sync with the current spot model.
+
+        When a composite kernel was passed in (``self._user_kernel``),
+        it is used as-is; ``self.kernel`` mirrors the first spot term's
+        AnalyticKernel (or None for spot-free sums).
         """
+        if self._user_kernel is not None:
+            self.kernel_sum = self._user_kernel
+            _spot_terms = [t for t in self.kernel_sum.terms
+                           if isinstance(t, SpotTerm)]
+            self.kernel = (_spot_terms[0].analytic_kernel if _spot_terms
+                           else None)
+            return
         if self.kernel_type == "analytic":
             self.kernel = AnalyticKernel(self.spot_model, **self.kernel_kwargs)
         else:
@@ -799,9 +847,17 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         self._to_physical = to_physical
 
     def _eval_kernel(self, tau):
-        """Evaluate the kernel at time lags tau."""
+        """Evaluate the (summed) kernel at time lags tau.
+
+        Routed through the KernelSum seam at the terms' current physical
+        parameters, so prediction and the initial covariance use exactly
+        the same kernel evaluation as the JIT-compiled likelihood.
+        """
         tau = jnp.asarray(tau, dtype=float)
-        return jnp.asarray(self.kernel.kernel(jnp.abs(tau)))
+        theta_kernel = jnp.asarray(self.kernel_sum.theta0,
+                                   dtype=jnp.float64)
+        K = self.kernel_sum.k_of_lag(theta_kernel, jnp.abs(tau).ravel())
+        return K.reshape(tau.shape)
 
     def _compute_bandwidth(self):
         """
@@ -1466,6 +1522,11 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         ``lspot``), or a theta-style dict whose keys match
         ``self.spot_model.param_keys`` (e.g. ``tau_em``, ``lat_min``).
         """
+        if self._user_kernel is not None:
+            raise NotImplementedError(
+                "update_hparam is not supported for a solver built from "
+                "a composite kernel; update the term models and "
+                "construct a new GPSolver instead.")
         if isinstance(hparam, SpotEvolutionModel):
             self.spot_model = hparam
             self.hparam = hparam.to_hparam()
