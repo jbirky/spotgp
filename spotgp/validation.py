@@ -118,7 +118,10 @@ def validate_data_vs_model(x, bounds, param_keys):
 
     baseline = float(x[-1] - x[0])
     median_dt = float(np.median(np.diff(x)))
-    param_keys = list(param_keys)
+    # Strip term prefixes ("spot0.peq" → "peq") so the checks below see
+    # composite-kernel keys; .index() then reports on the first term
+    # carrying the parameter, which is enough for these heuristics.
+    param_keys = [k.rpartition(".")[2] for k in param_keys]
 
     # Period bounds vs baseline
     if "peq" in param_keys:

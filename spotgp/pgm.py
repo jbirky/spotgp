@@ -72,7 +72,13 @@ PARAM_DESCRIPTIONS = {
 
 
 def _strip_log_prefix(key: str) -> str:
-    """Remove ``log_`` prefix so categorization works for log-space keys."""
+    """Reduce a solver key to its bare physical name.
+
+    Strips a term namespace ("spot0.peq" → "peq") and the ``log_``
+    marker ("log_sigma_k" → "sigma_k") so categorization and LaTeX
+    labels work for composite-kernel and log-space keys alike.
+    """
+    key = key.rpartition(".")[2]
     return key[4:] if key.startswith("log_") else key
 
 
@@ -107,7 +113,10 @@ class PGModelVis:
     # ----- parameter grouping ------------------------------------------------
 
     def _categorize(self):
-        keys = self._physical_keys
+        # Deduplicate while preserving order: a composite kernel with two
+        # spot populations carries e.g. spot0.peq and spot1.peq, which
+        # collapse onto a single structural node in the diagram.
+        keys = list(dict.fromkeys(self._physical_keys))
         self.rotation_params = [k for k in keys if k in ROTATION_KEYS]
         self.envelope_params = [k for k in keys if k in ENVELOPE_KEYS]
         self.latitude_params = [k for k in keys if k in LATITUDE_KEYS]
