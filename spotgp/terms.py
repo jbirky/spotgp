@@ -23,8 +23,8 @@ from .spot_model import (
     SpotEvolutionModel, EdgeOnVisibilityFunction, _gauss_legendre_grid,
 )
 
-__all__ = ["Term", "KernelSum", "SpotTerm", "SHOTerm", "Matern32Term",
-           "JitterTerm", "DEFAULT_TERM_BOUNDS"]
+__all__ = ["Term", "KernelSum", "SpotTerm", "SharedVisibilitySpotSum",
+           "SHOTerm", "Matern32Term", "JitterTerm", "DEFAULT_TERM_BOUNDS"]
 
 logger = logging.getLogger("spotgp")
 
@@ -182,7 +182,10 @@ class Term:
                 if not k.startswith(self.prefix + "."):
                     continue
                 bare = k[len(self.prefix) + 1:]
-            if _strip_log(bare) in own:
+            # The log_ marker sits on the last component, which may be
+            # nested ("pop0.log_lspot" -> membership under "pop0.lspot").
+            _pre, _sep, _name = bare.rpartition(".")
+            if _pre + _sep + _strip_log(_name) in own:
                 keys_out.append(bare)
                 rows.append(bounds_arr[i])
         return keys_out, (np.asarray(rows) if rows
@@ -318,6 +321,221 @@ class SpotTerm(Term):
         ignored for now.
         """
         return self.analytic_kernel.compute_psd(omega)
+
+
+class SharedVisibilitySpotSum(Term):
+    """
+    N spot populations sharing one star's geometry — the composite
+    fast path:
+
+        K(tau) = V(tau) * sum_i sigma_k_i^2 * R_Gamma_i(tau)
+
+    The latitude quadrature behind ``V(tau)`` — the expensive part of
+    the spot kernel — is evaluated once per kernel call instead of once
+    per population; each component contributes only its envelope
+    autocorrelation and amplitude.  Numerically this matches
+    ``KernelSum(SpotTerm(m0), SpotTerm(m1), ...)`` with equal geometry
+    values to machine precision, but the geometry (peq, kappa, inc,
+    latitude band) appears *once* in the flat vector — which is usually
+    what "several spot populations on the same star" should mean in a
+    fit.  Use separate ``SpotTerm``s instead when populations may have
+    independent geometry (e.g. different latitude bands).
+
+    Parameter layout: ``[<vis keys>, <lat keys>, pop0.<env keys>,
+    pop0.sigma_k, pop1.<env keys>, pop1.sigma_k, ...]``.
+
+    Parameters
+    ----------
+    models : sequence of SpotEvolutionModel
+        One per population (>= 2).  All must share identical visibility
+        (class and parameters) and latitude-distribution configuration;
+        each carries its own envelope and sigma_k.
+    labels : sequence of str, optional
+        Component names namespacing the per-population keys
+        (default ``pop0``, ``pop1``, ...).
+    prefix : str or None
+        Optional namespace for the whole term.
+    **kernel_kwargs
+        Shared kernel configuration forwarded to :class:`AnalyticKernel`
+        (n_harmonics, n_lat, lat_range, quadrature).
+    """
+
+    _prefix_tag = "spots"
+
+    def __init__(self, models, labels=None, prefix=None, **kernel_kwargs):
+        models = list(models)
+        if len(models) < 2:
+            raise ValueError(
+                "SharedVisibilitySpotSum requires at least 2 component "
+                "models; use SpotTerm for a single population")
+        ref = models[0]
+        if ref.visibility is None or ref.envelope is None:
+            raise ValueError(
+                "component models must have a visibility function and "
+                "an envelope")
+        for i, m in enumerate(models[1:], 1):
+            if (m.visibility is None
+                    or type(m.visibility) is not type(ref.visibility)
+                    or m.visibility.param_dict != ref.visibility.param_dict):
+                raise ValueError(
+                    f"component {i} visibility differs from component 0; "
+                    "all populations must share one star's geometry "
+                    "(use separate SpotTerms for independent geometry)")
+            if (type(m.latitude_distribution)
+                    is not type(ref.latitude_distribution)
+                    or m.latitude_distribution.param_dict
+                    != ref.latitude_distribution.param_dict):
+                raise ValueError(
+                    f"component {i} latitude distribution differs from "
+                    "component 0")
+            if m.envelope is None:
+                raise ValueError(f"component {i} has no envelope")
+        self.components = models
+        self.labels = (list(labels) if labels is not None
+                       else [f"pop{i}" for i in range(len(models))])
+        if len(self.labels) != len(models):
+            raise ValueError(
+                f"expected {len(models)} labels, got {len(self.labels)}")
+        if len(set(self.labels)) != len(self.labels):
+            raise ValueError("component labels must be unique")
+        self.prefix = prefix
+
+        # Shared quadrature config and closures, borrowed from a
+        # SpotTerm over component 0 (its per-model theta closures are
+        # not used — only the static configuration).
+        self._ref_term = SpotTerm(ref, **kernel_kwargs)
+        self.n_harmonics = self._ref_term.n_harmonics
+        self.n_lat = self._ref_term.n_lat
+        self.lat_range = self._ref_term.lat_range
+        self._quad_nodes = self._ref_term._quad_nodes
+        self._quad_weights = self._ref_term._quad_weights
+        self._edgeon_cn_sq = self._ref_term._edgeon_cn_sq
+        self._cn_sq_func = ref.get_cn_sq_func(self.n_harmonics)
+
+        # Static offsets into this term's theta slice.
+        self._n_vis = len(ref.visibility.param_keys)
+        self._n_lat_params = len(ref.latitude_distribution.param_keys)
+        offset = self._n_vis + self._n_lat_params
+        self._comp_slices = []   # (env_start, n_env, sigma_k_idx)
+        for m in models:
+            n_env = len(m.envelope.param_dict)
+            self._comp_slices.append((offset, n_env, offset + n_env))
+            offset += n_env + 1
+
+        self._lat_weight_func = self._build_lat_weight_func(ref)
+
+    def _build_lat_weight_func(self, ref):
+        """Latitude weights at the composite offset (lat follows vis)."""
+        from .latitude import UniformDoubleHemisphereBand
+
+        lat_dist = ref.latitude_distribution
+        if not lat_dist.param_dict:
+            return None
+        lat_offset = self._n_vis
+        if isinstance(lat_dist, UniformDoubleHemisphereBand):
+            def lat_weight_fn(theta_arr, phi_grid):
+                lat_min = theta_arr[lat_offset]
+                lat_max = theta_arr[lat_offset + 1]
+                abs_phi = jnp.abs(phi_grid)
+                return jnp.where((abs_phi > lat_min) & (abs_phi < lat_max),
+                                 1.0, 0.0)
+            return lat_weight_fn
+        import warnings
+        warnings.warn(
+            f"{type(lat_dist).__name__} has free parameters but no "
+            "JAX-traceable weight function; latitude parameters will "
+            "have zero gradient.", stacklevel=3)
+        return None
+
+    # ── Parameter layout ────────────────────────────────────────────────
+
+    @property
+    def base_keys(self):
+        ref = self.components[0]
+        keys = (tuple(ref.visibility.param_keys)
+                + tuple(ref.latitude_distribution.param_keys))
+        for m, lab in zip(self.components, self.labels):
+            keys += tuple(f"{lab}.{k}" for k in m.envelope.param_dict)
+            keys += (f"{lab}.sigma_k",)
+        return keys
+
+    @property
+    def theta0(self):
+        ref = self.components[0]
+        vis_d = ref.visibility.param_dict
+        lat_d = ref.latitude_distribution.param_dict
+        vals = [float(vis_d[k]) for k in ref.visibility.param_keys]
+        vals += [float(lat_d[k])
+                 for k in ref.latitude_distribution.param_keys]
+        for m in self.components:
+            vals += [float(v) for v in m.envelope.param_dict.values()]
+            vals.append(float(m.sigma_k))
+        return np.array(vals, dtype=np.float64)
+
+    @property
+    def default_bounds(self):
+        out = {}
+        for k in self.base_keys:
+            bare = k.rpartition(".")[2]
+            if bare in DEFAULT_TERM_BOUNDS:
+                out[k] = DEFAULT_TERM_BOUNDS[bare]
+        return out
+
+    # ── Kernel evaluation ───────────────────────────────────────────────
+
+    def k_of_lag(self, theta_slice, lag_flat):
+        from .analytic_kernel import _kernel_eval
+
+        envs = [m.envelope for m in self.components]
+        slices = self._comp_slices
+
+        def composite_r_gamma(theta_arr, lag):
+            # sigma_k^2-weighted sum of the component envelopes; the
+            # trailing 1.0 appended below neutralizes _kernel_eval's own
+            # sigma_k^2 factor, so V(tau) multiplies this sum directly.
+            total = 0.0
+            for env, (start, n_env, sk) in zip(envs, slices):
+                R = env.r_gamma_jax(theta_arr[start:start + n_env], lag)
+                total = total + theta_arr[sk] ** 2 * R
+            return total
+
+        theta_eval = jnp.append(jnp.asarray(theta_slice), 1.0)
+        return _kernel_eval(
+            theta_eval, lag_flat,
+            self.n_harmonics, self.n_lat, self.lat_range,
+            quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
+            r_gamma_func=composite_r_gamma,
+            edgeon_cn_sq=self._edgeon_cn_sq,
+            lat_weight_func=self._lat_weight_func,
+            cn_sq_func=self._cn_sq_func)
+
+    def bandwidth_support(self, param_keys, bounds_arr):
+        """Max envelope support across components [days]."""
+        keys = list(param_keys)
+        rows = np.asarray(bounds_arr)
+        supports = []
+        for m, lab in zip(self.components, self.labels):
+            sub_keys, sub_rows = [], []
+            for i, k in enumerate(keys):
+                pre, _sep, name = k.rpartition(".")
+                if pre == lab:
+                    sub_keys.append(name)
+                    sub_rows.append(rows[i])
+            supports.append(float(m.bandwidth_support(
+                sub_keys,
+                np.asarray(sub_rows) if sub_rows
+                else np.zeros((0, 2), dtype=float))))
+        return max(supports)
+
+    def psd(self, omega, theta_slice=None):
+        """Sum of per-component PSDs (current model parameters)."""
+        from .analytic_kernel import AnalyticKernel
+
+        freq, total = None, 0.0
+        for m in self.components:
+            freq, power = AnalyticKernel(m).compute_psd(omega)
+            total = total + power
+        return freq, total
 
 
 class SHOTerm(Term):

@@ -163,6 +163,17 @@ def _write_kernel_terms(f, gp):
             tg.attrs["n_lat"] = int(ak.n_lat)
             tg.attrs["quadrature"] = ak.quadrature
             tg.create_dataset("term_lat_range", data=np.array(ak.lat_range))
+        elif cls_name == "SharedVisibilitySpotSum":
+            tg = grp.create_group(name)
+            tg.attrs["n_components"] = len(t.components)
+            _write_string_dataset(tg, "labels", list(t.labels))
+            for j, comp in enumerate(t.components):
+                _write_model(tg, comp, name=f"comp{j}")
+            ak = t._ref_term.analytic_kernel
+            tg.attrs["n_harmonics"] = int(ak.n_harmonics)
+            tg.attrs["n_lat"] = int(ak.n_lat)
+            tg.attrs["quadrature"] = ak.quadrature
+            tg.create_dataset("term_lat_range", data=np.array(ak.lat_range))
         else:
             # Analytic terms (SHO, Matern, ...) serialize their bare
             # parameter values; theta0 order follows base_keys.
@@ -320,7 +331,7 @@ def _read_config(f):
 
 def _read_kernel_terms(f):
     """Rebuild a KernelSum from the /kernel group (None if absent)."""
-    from .terms import KernelSum, SpotTerm
+    from .terms import KernelSum, SharedVisibilitySpotSum, SpotTerm
 
     if "kernel" not in f:
         return None
@@ -334,6 +345,16 @@ def _read_kernel_terms(f):
             model = _read_model(grp, name=f"term{i}")
             terms.append(SpotTerm(
                 model, prefix=prefix,
+                n_harmonics=int(tg.attrs["n_harmonics"]),
+                n_lat=int(tg.attrs["n_lat"]),
+                quadrature=str(tg.attrs["quadrature"]),
+                lat_range=tuple(tg["term_lat_range"][:])))
+        elif cls_name == "SharedVisibilitySpotSum":
+            labels = list(tg["labels"].asstr()[:])
+            models = [_read_model(tg, name=f"comp{j}")
+                      for j in range(int(tg.attrs["n_components"]))]
+            terms.append(SharedVisibilitySpotSum(
+                models, labels=labels, prefix=prefix,
                 n_harmonics=int(tg.attrs["n_harmonics"]),
                 n_lat=int(tg.attrs["n_lat"]),
                 quadrature=str(tg.attrs["quadrature"]),
