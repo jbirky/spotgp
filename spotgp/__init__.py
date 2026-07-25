@@ -1,6 +1,6 @@
 """spotgp — Gaussian Process kernels for stellar variability from starspot models."""
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 from .distributions import (
     ParameterDistribution, DeltaDistribution, UniformDistribution,
@@ -20,6 +20,10 @@ from .visibility import (
 from .spot_model import SpotEvolutionModel
 from .lightcurve import LightcurveModel, compute_sigmak
 from .analytic_kernel import AnalyticKernel, NonstationaryAnalyticKernel
+from .terms import (
+    Term, KernelSum, SpotTerm, SharedVisibilitySpotSum,
+    SHOTerm, Matern32Term, JitterTerm,
+)
 from .numerical_kernel import NumericalKernel, generate_sims, avg_covariance_tlag
 from .psd import compute_psd
 from .contrast import spot_contrast, contrast_factor, contrast_matrix
@@ -62,6 +66,9 @@ __all__ = [
     # kernel
     "AnalyticKernel", "NonstationaryAnalyticKernel",
     "NumericalKernel", "generate_sims", "avg_covariance_tlag",
+    # composable kernel terms
+    "Term", "KernelSum", "SpotTerm", "SharedVisibilitySpotSum",
+    "SHOTerm", "Matern32Term", "JitterTerm",
     # psd
     "compute_psd",
     # contrast

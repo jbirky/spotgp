@@ -19,6 +19,43 @@ Analytic Kernel
    :undoc-members:
    :show-inheritance:
 
+Composable Kernel Terms
+-----------------------
+
+.. autoclass:: spotgp.terms.Term
+   :members:
+   :undoc-members:
+
+.. autoclass:: spotgp.terms.KernelSum
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.terms.SpotTerm
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.terms.SharedVisibilitySpotSum
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.terms.SHOTerm
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.terms.Matern32Term
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.terms.JitterTerm
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Numerical Kernel
 ----------------
 

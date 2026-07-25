@@ -53,6 +53,13 @@ tutorials/limb_darkening
 
 ```{toctree}
 :maxdepth: 2
+:caption: Kernels
+
+tutorials/composite_kernels
+```
+
+```{toctree}
+:maxdepth: 2
 :caption: Probabilistic Inference
 
 tutorials/pgm_visualization
