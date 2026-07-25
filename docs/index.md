@@ -6,53 +6,6 @@
 
 ![Lightcurve animation](tutorials/lightcurve_animation.gif)
 
-## Installation
-
-### From PyPI
-
-```bash
-pip install spotgp
-```
-
-### From source
-
-```bash
-git clone https://github.com/jbirky/spotgp.git
-cd spotgp
-pip install -e .
-```
-
-### Optional extras
-
-Install all optional features (PGM rendering, `jaxopt`, and the spectral
-contrast model with `pyphot` + `Korg.jl`) in one shot:
-
-```bash
-pip install "spotgp[extras]"
-```
-
-Or pick individual extras:
-
-```bash
-pip install "spotgp[pgm]"        # daft PGM rendering
-pip install "spotgp[jaxopt]"     # jaxopt optimizers
-pip install "spotgp[spectral]"   # pyphot bandpasses
-pip install "spotgp[korg]"       # pyphot + Korg.jl model atmospheres
-```
-
-`Korg.jl` itself is installed from Python after the extras:
-
-```bash
-python -c "import juliapkg; juliapkg.add('Korg', 'acafc109-a718-429c-b0e5-afd7f8c7ae46'); juliapkg.resolve()"
-```
-
-Alternatively, clone the repo and add it to your Python path:
-
-```bash
-git clone https://github.com/jbirky/spotgp.git
-echo 'export PYTHONPATH="$PYTHONPATH:/path/to/spotgp"' >> ~/.bashrc
-source ~/.bashrc
-```
 
 ## Development 
 
@@ -68,6 +21,7 @@ This project is build and maintained by [Jess Birky](https://github.com/jbirky)-
 
 self
 tutorials/quickstart
+tutorials/installation
 ```
 
 ```{toctree}

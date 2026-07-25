@@ -23,7 +23,8 @@ from .spot_model import (
     SpotEvolutionModel, EdgeOnVisibilityFunction, _gauss_legendre_grid,
 )
 
-__all__ = ["Term", "KernelSum", "SpotTerm", "DEFAULT_TERM_BOUNDS"]
+__all__ = ["Term", "KernelSum", "SpotTerm", "SHOTerm", "Matern32Term",
+           "JitterTerm", "DEFAULT_TERM_BOUNDS"]
 
 logger = logging.getLogger("spotgp")
 
@@ -51,6 +52,23 @@ DEFAULT_TERM_BOUNDS = {
 def _strip_log(key):
     """'log_lspot' -> 'lspot'; other keys unchanged."""
     return key[4:] if key.startswith("log_") else key
+
+
+def _bound_from_rows(keys, rows, name, which, fallback):
+    """Look up a bound for ``name`` in a (keys, rows) pair.
+
+    Accepts the physical key or its ``log_``-prefixed variant (bounds
+    for log keys are in log10 units and are exponentiated).  ``which``
+    is 0 for the lower bound, 1 for the upper.
+    """
+    keys = list(keys)
+    rows = np.asarray(rows)
+    if name in keys:
+        return float(rows[keys.index(name), which])
+    log_name = f"log_{name}"
+    if log_name in keys:
+        return 10.0 ** float(rows[keys.index(log_name), which])
+    return float(fallback)
 
 
 class Term:
@@ -300,6 +318,243 @@ class SpotTerm(Term):
         ignored for now.
         """
         return self.analytic_kernel.compute_psd(omega)
+
+
+class SHOTerm(Term):
+    """
+    Stochastically-driven damped harmonic oscillator (celerite;
+    Foreman-Mackey et al. 2017), useful as a granulation / quasi-periodic
+    noise floor alongside spot terms.
+
+    PSD (with the celerite normalization):
+
+        S(omega) = sqrt(2/pi) * S0 * w0^4 /
+                   ((omega^2 - w0^2)^2 + w0^2 omega^2 / Q^2)
+
+    The closed-form autocovariance covers all three damping regimes
+    (under-, critically-, and over-damped), selected with ``jnp.where``
+    and guarded square roots so gradients stay finite near Q = 1/2.
+    ``k(0) = S0 * w0 * Q``.
+
+    Parameters
+    ----------
+    S0 : float
+        Power normalization.
+    Q : float
+        Quality factor (Q = 1/sqrt(2) gives the standard granulation
+        background shape).
+    w0 : float
+        Undamped angular frequency [rad/day].
+    prefix : str or None
+        Optional namespace for parameter keys (e.g. ``"gran"``).
+    """
+
+    _prefix_tag = "sho"
+
+    #: half-width of the |4Q^2 - 1| window that falls back to the
+    #: critically-damped closed form (its exact limit).
+    _CRIT_TOL = 1e-6
+
+    DEFAULT_BOUNDS = {
+        "S0": (1e-12, 1.0),
+        "Q":  (0.01, 100.0),
+        "w0": (0.01, 100.0),
+    }
+
+    def __init__(self, S0=1e-4, Q=1.0 / np.sqrt(2.0), w0=2.0 * np.pi,
+                 prefix=None):
+        self.S0 = float(S0)
+        self.Q = float(Q)
+        self.w0 = float(w0)
+        self.prefix = prefix
+
+    @property
+    def base_keys(self):
+        return ("S0", "Q", "w0")
+
+    @property
+    def theta0(self):
+        return np.array([self.S0, self.Q, self.w0], dtype=np.float64)
+
+    @property
+    def default_bounds(self):
+        return dict(self.DEFAULT_BOUNDS)
+
+    def k_of_lag(self, theta_slice, lag_flat):
+        S0, Q, w0 = theta_slice[0], theta_slice[1], theta_slice[2]
+        t = jnp.abs(lag_flat)
+        diff = 4.0 * Q ** 2 - 1.0   # > 0 under-damped, < 0 over-damped
+
+        # Guarded eta keeps sqrt/1/eta finite in the branch that is not
+        # selected; jnp.where then picks the valid expression.
+        eta_u = jnp.sqrt(jnp.maximum(diff, self._CRIT_TOL)) / (2.0 * Q)
+        arg_u = eta_u * w0 * t
+        k_under = (S0 * w0 * Q * jnp.exp(-w0 * t / (2.0 * Q))
+                   * (jnp.cos(arg_u) + jnp.sin(arg_u) / (2.0 * eta_u * Q)))
+
+        # Over-damped: written as a sum of two decaying exponentials so
+        # cosh/sinh never overflow (eta_o < 1/(2Q) makes both exponents
+        # non-positive).
+        eta_o = jnp.sqrt(jnp.maximum(-diff, self._CRIT_TOL)) / (2.0 * Q)
+        c = 1.0 / (2.0 * eta_o * Q)
+        k_over = (S0 * w0 * Q / 2.0
+                  * ((1.0 + c) * jnp.exp((eta_o - 1.0 / (2.0 * Q)) * w0 * t)
+                     + (1.0 - c) * jnp.exp(-(eta_o + 1.0 / (2.0 * Q))
+                                           * w0 * t)))
+
+        # Critically damped: the exact eta -> 0 limit of both branches,
+        # k = S0 w0 Q e^{-w0 t/2Q} (1 + w0 t) at Q = 1/2, keeping
+        # k(0) = S0 w0 Q continuous across the regimes.
+        k_crit = 0.5 * S0 * w0 * jnp.exp(-w0 * t) * (1.0 + w0 * t)
+
+        return jnp.where(
+            jnp.abs(diff) < self._CRIT_TOL, k_crit,
+            jnp.where(diff > 0.0, k_under, k_over))
+
+    def bandwidth_support(self, param_keys, bounds_arr):
+        """~5 e-folds of the slowest covariance decay within the prior.
+
+        The decay rate is ``w0 * (1/(2Q) - sqrt(max(1/(4Q^2) - 1, 0)))``
+        — ``w0/(2Q)`` when under-damped, slower when over-damped — so
+        the longest timescale sits at the lowest w0 with Q at either
+        bound.
+        """
+        q_lo = _bound_from_rows(param_keys, bounds_arr, "Q", 0,
+                                self.DEFAULT_BOUNDS["Q"][0])
+        q_hi = _bound_from_rows(param_keys, bounds_arr, "Q", 1,
+                                self.DEFAULT_BOUNDS["Q"][1])
+        w_lo = _bound_from_rows(param_keys, bounds_arr, "w0", 0,
+                                self.DEFAULT_BOUNDS["w0"][0])
+
+        def decay_time(q):
+            rate = (1.0 / (2.0 * q)
+                    - np.sqrt(max(1.0 / (4.0 * q ** 2) - 1.0, 0.0))) * w_lo
+            return 1.0 / rate
+
+        return 5.0 * max(decay_time(q_lo), decay_time(q_hi))
+
+    def psd(self, omega, theta_slice=None):
+        """Analytic PSD; returns ``(freq [cycles/day], power)``."""
+        omega = jnp.asarray(omega, dtype=float)
+        if theta_slice is None:
+            S0, Q, w0 = self.S0, self.Q, self.w0
+        else:
+            S0, Q, w0 = theta_slice[0], theta_slice[1], theta_slice[2]
+        power = (np.sqrt(2.0 / np.pi) * S0 * w0 ** 4
+                 / ((omega ** 2 - w0 ** 2) ** 2
+                    + (w0 * omega / Q) ** 2))
+        return np.asarray(omega / (2 * np.pi)), np.asarray(power)
+
+
+class Matern32Term(Term):
+    """
+    Matern-3/2 kernel: ``k(tau) = sigma^2 (1 + sqrt(3) tau / rho)
+    exp(-sqrt(3) tau / rho)``.
+
+    Parameters
+    ----------
+    sigma : float
+        Amplitude (standard deviation).
+    rho : float
+        Length scale [days].
+    prefix : str or None
+        Optional namespace for parameter keys.
+    """
+
+    _prefix_tag = "m32"
+
+    DEFAULT_BOUNDS = {
+        "sigma": (1e-6, 1.0),
+        "rho":   (0.05, 50.0),
+    }
+
+    def __init__(self, sigma=1e-2, rho=1.0, prefix=None):
+        self.sigma = float(sigma)
+        self.rho = float(rho)
+        self.prefix = prefix
+
+    @property
+    def base_keys(self):
+        return ("sigma", "rho")
+
+    @property
+    def theta0(self):
+        return np.array([self.sigma, self.rho], dtype=np.float64)
+
+    @property
+    def default_bounds(self):
+        return dict(self.DEFAULT_BOUNDS)
+
+    def k_of_lag(self, theta_slice, lag_flat):
+        sigma, rho = theta_slice[0], theta_slice[1]
+        arg = np.sqrt(3.0) * jnp.abs(lag_flat) / rho
+        return sigma ** 2 * (1.0 + arg) * jnp.exp(-arg)
+
+    def bandwidth_support(self, param_keys, bounds_arr):
+        """~5 e-folds of the exponential decay at the prior's upper rho."""
+        rho_hi = _bound_from_rows(param_keys, bounds_arr, "rho", 1,
+                                  self.DEFAULT_BOUNDS["rho"][1])
+        return 5.0 * rho_hi / np.sqrt(3.0)
+
+    def psd(self, omega, theta_slice=None):
+        """Analytic PSD (``lambda = sqrt(3)/rho``); ``(freq, power)``."""
+        omega = jnp.asarray(omega, dtype=float)
+        if theta_slice is None:
+            sigma, rho = self.sigma, self.rho
+        else:
+            sigma, rho = theta_slice[0], theta_slice[1]
+        lam = np.sqrt(3.0) / rho
+        power = 4.0 * sigma ** 2 * lam ** 3 / (lam ** 2 + omega ** 2) ** 2
+        return np.asarray(omega / (2 * np.pi)), np.asarray(power)
+
+
+class JitterTerm(Term):
+    """
+    White-noise sugar: ``k(tau) = sigma_j^2 * [tau == 0]``.
+
+    Pure white noise is normally handled by the solver's ``sigma_n``
+    diagonal (set ``fit_sigma_n=True``); this term exists for symmetry
+    when composing kernels, e.g. an extra jitter tied to one component.
+    Prefer ``sigma_n`` when you just need a noise floor.
+    """
+
+    _prefix_tag = "jit"
+
+    DEFAULT_BOUNDS = {
+        "sigma_j": (1e-6, 0.1),
+    }
+
+    def __init__(self, sigma_j=1e-3, prefix=None):
+        self.sigma_j = float(sigma_j)
+        self.prefix = prefix
+
+    @property
+    def base_keys(self):
+        return ("sigma_j",)
+
+    @property
+    def theta0(self):
+        return np.array([self.sigma_j], dtype=np.float64)
+
+    @property
+    def default_bounds(self):
+        return dict(self.DEFAULT_BOUNDS)
+
+    def k_of_lag(self, theta_slice, lag_flat):
+        # Lags are computed as |x_i - x_j|, so the diagonal is exactly
+        # 0.0 and float equality is safe.
+        return jnp.where(jnp.asarray(lag_flat) == 0.0,
+                         theta_slice[0] ** 2, 0.0)
+
+    def bandwidth_support(self, param_keys, bounds_arr):
+        return 0.0
+
+    def psd(self, omega, theta_slice=None):
+        """Flat PSD of discrete white noise; ``(freq, power)``."""
+        omega = jnp.asarray(omega, dtype=float)
+        sj = self.sigma_j if theta_slice is None else theta_slice[0]
+        power = np.full(omega.shape, float(sj) ** 2)
+        return np.asarray(omega / (2 * np.pi)), power
 
 
 class KernelSum(Term):
