@@ -667,11 +667,14 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         # Detect log-space parameters: keys prefixed with "log_" in the
         # bounds dict indicate sampling in log10 space.  The physical key
         # is the suffix (e.g. "log_sigma_k" → physical key "sigma_k").
+        # For term-namespaced keys the marker sits on the bare name after
+        # the term prefix (e.g. "spot0.log_sigma_k" → "spot0.sigma_k").
         self._log_param_map = {}  # {log_key: phys_key}
         if isinstance(bounds, dict):
             for k in bounds:
-                if k.startswith("log_"):
-                    self._log_param_map[k] = k[4:]
+                _pre, _sep, _name = k.rpartition(".")
+                if _name.startswith("log_"):
+                    self._log_param_map[k] = _pre + _sep + _name[4:]
 
         # Remap param_keys: replace physical keys with their log-space names
         # where applicable.  All other code uses self.param_keys, so this

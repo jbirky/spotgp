@@ -461,3 +461,113 @@ class TestAdditiveComposition:
         i = gp.param_keys.index("spot1.lspot")
         np.testing.assert_array_equal(np.asarray(gp.bounds[i]),
                                       DEFAULT_TERM_BOUNDS["lspot"])
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Phase 02: parameter namespacing & plumbing
+# ─────────────────────────────────────────────────────────────────────
+
+class TestParameterPlumbing:
+    """Prefixed log-space remap, PGM, save/load, and sampling layout."""
+
+    def test_prefixed_log_space_remap(self):
+        x, y, yerr = _small_data()
+        bounds = {"spot0.log_sigma_k": (-6.0, 0.0),
+                  "spot1.log_sigma_k": (-6.0, 0.0)}
+        gp = GPSolver(x, y, yerr, _two_spot_sum(),
+                      matrix_solver="cholesky_full", bounds=bounds)
+        assert "spot0.log_sigma_k" in gp.param_keys
+        assert "spot1.log_sigma_k" in gp.param_keys
+        i0 = gp.param_keys.index("spot0.log_sigma_k")
+        i1 = gp.param_keys.index("spot1.log_sigma_k")
+        np.testing.assert_allclose(float(gp.theta0[i0]), np.log10(0.01))
+        np.testing.assert_allclose(float(gp.theta0[i1]), np.log10(0.005))
+        # _to_physical undoes the log10
+        phys = np.asarray(gp._to_physical(gp.theta0))
+        np.testing.assert_allclose(phys[i0], 0.01)
+        np.testing.assert_allclose(phys[i1], 0.005)
+        assert np.isfinite(float(gp.log_likelihood_fn(gp.theta0)))
+
+    def test_pgm_reads_composite_keys(self):
+        from spotgp import PGModelVis
+
+        x, y, yerr = _small_data()
+        gp = GPSolver(x, y, yerr, _two_spot_sum(),
+                      matrix_solver="cholesky_full")
+        vis = PGModelVis(gp)
+        # Duplicated per-term keys collapse onto single structural nodes
+        assert vis.rotation_params.count("peq") == 1
+        assert "lspot" in vis.envelope_params
+        assert "sigma_k" in vis.amplitude_params
+
+    def test_validation_sees_prefixed_peq(self):
+        # A composite kernel with an absurd peq upper bound must still
+        # trigger the baseline warning (prefix-stripped lookup).
+        x, y, yerr = _small_data()
+        bounds = {"spot0.peq": (0.5, 500.0)}
+        with pytest.warns(UserWarning, match="baseline"):
+            GPSolver(x, y, yerr, _two_spot_sum(),
+                     matrix_solver="cholesky_full", bounds=bounds)
+
+    def test_save_load_roundtrip_composite(self, tmp_path):
+        from spotgp import load_gp, save_gp
+
+        x, y, yerr = _small_data()
+        ks = KernelSum(SpotTerm(dict(HPARAM_SHORT), prefix="short"),
+                       SpotTerm(dict(HPARAM_LONG), prefix="long"))
+        gp = GPSolver(x, y, yerr, ks, matrix_solver="cholesky_full")
+        path = str(tmp_path / "composite.h5")
+        save_gp(path, gp)
+        gp2 = load_gp(path)
+        assert gp2.param_keys == gp.param_keys
+        np.testing.assert_allclose(np.asarray(gp2.theta0),
+                                   np.asarray(gp.theta0))
+        np.testing.assert_array_equal(np.asarray(gp2.bounds),
+                                      np.asarray(gp.bounds))
+        assert [t.prefix for t in gp2.kernel_sum.terms] == ["short", "long"]
+        np.testing.assert_allclose(
+            float(gp2.log_likelihood_fn(gp2.theta0)),
+            float(gp.log_likelihood_fn(gp.theta0)), rtol=1e-12)
+
+    def test_save_load_roundtrip_single_spot_unchanged(self, tmp_path):
+        from spotgp import load_gp, save_gp
+
+        x, y, yerr = _small_data()
+        gp = GPSolver(x, y, yerr, dict(HPARAM_SHORT),
+                      matrix_solver="cholesky_full")
+        path = str(tmp_path / "single.h5")
+        save_gp(path, gp)
+        gp2 = load_gp(path)
+        assert gp2.param_keys == gp.param_keys
+        np.testing.assert_allclose(np.asarray(gp2.theta0),
+                                   np.asarray(gp.theta0))
+
+    def test_sampler_summary_uses_prefixed_keys(self, tmp_path):
+        from spotgp.mcmc import MCMCSampler
+
+        x, y, yerr = _small_data()
+        gp = GPSolver(x, y, yerr, _two_spot_sum(),
+                      matrix_solver="cholesky_full")
+        sampler = MCMCSampler(gp)
+        assert sampler.n_params == 12
+        assert sampler.param_keys == gp.param_keys
+        rng = np.random.default_rng(0)
+        sampler.samples = (np.asarray(gp.theta0)[None, :]
+                           * (1.0 + 0.01 * rng.standard_normal((50, 12))))
+        result = sampler.summary()
+        assert set(result.keys()) >= set(gp.param_keys)
+
+    def test_blackjax_short_chain_two_terms(self, tmp_path):
+        pytest.importorskip("blackjax")
+        from spotgp.mcmc import BlackJAXSampler
+
+        x, y, yerr = _small_data(N=50)
+        gp = GPSolver(x, y, yerr, _two_spot_sum(),
+                      matrix_solver="cholesky_full")
+        gp.build_jax()
+        sampler = BlackJAXSampler(gp, save_dir=str(tmp_path))
+        sampler.run_warmup(n_warmup=10)
+        sampler.run_sampling(n_samples=10)
+        samples = np.asarray(sampler.samples)
+        assert samples.shape[-1] == 12
+        assert np.all(np.isfinite(samples))

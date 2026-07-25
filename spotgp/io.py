@@ -76,8 +76,8 @@ def _write_data(f, data):
     grp.create_dataset("yerr", data=np.asarray(data.yerr))
 
 
-def _write_model(f, model):
-    grp = _replace_group(f, "model")
+def _write_model(f, model, name="model"):
+    grp = _replace_group(f, name)
     grp.attrs["sigma_k"] = model.sigma_k
     grp.attrs["fspot"] = model.fspot
     grp.attrs["alpha_max"] = model.alpha_max if model.alpha_max is not None else np.nan
@@ -124,15 +124,53 @@ def _write_config(f, gp):
     grp.attrs["fit_sigma_n"] = bool(gp.fit_sigma_n)
     grp.attrs["matrix_solver"] = gp.matrix_solver
     grp.attrs["bandwidth"] = int(gp.bandwidth) if hasattr(gp, "bandwidth") else -1
-    grp.attrs["n_harmonics"] = int(gp.n_harmonics)
-    grp.attrs["n_lat"] = int(gp.n_lat)
-    grp.attrs["quadrature"] = gp.kernel.quadrature
+    # n_harmonics/n_lat/quadrature are None for spot-free composite
+    # kernels (per-term values live under /kernel); -1 marks absent.
+    grp.attrs["n_harmonics"] = (int(gp.n_harmonics)
+                                if gp.n_harmonics is not None else -1)
+    grp.attrs["n_lat"] = int(gp.n_lat) if gp.n_lat is not None else -1
+    if gp.kernel is not None:
+        grp.attrs["quadrature"] = gp.kernel.quadrature
 
     _write_string_dataset(grp, "param_keys", list(gp.param_keys))
     grp.create_dataset("bounds", data=np.asarray(gp.bounds))
 
     if gp.lat_range is not None:
         grp.create_dataset("lat_range", data=np.array(gp.lat_range))
+
+
+def _write_kernel_terms(f, gp):
+    """Serialize a user-supplied composite kernel under /kernel.
+
+    Solvers built from a bare model/hparam dict don't need this — their
+    single SpotTerm is reconstructed from /model + /config on load.
+    """
+    if getattr(gp, "_user_kernel", None) is None:
+        if "kernel" in f:
+            del f["kernel"]  # stale group from an earlier composite save
+        return
+    grp = _replace_group(f, "kernel")
+    terms = gp.kernel_sum.terms
+    grp.attrs["n_terms"] = len(terms)
+    for i, t in enumerate(terms):
+        name = f"term{i}"
+        cls_name = type(t).__name__
+        if cls_name == "SpotTerm":
+            _write_model(grp, t.spot_model, name=name)
+            tg = grp[name]
+            ak = t.analytic_kernel
+            tg.attrs["n_harmonics"] = int(ak.n_harmonics)
+            tg.attrs["n_lat"] = int(ak.n_lat)
+            tg.attrs["quadrature"] = ak.quadrature
+            tg.create_dataset("term_lat_range", data=np.array(ak.lat_range))
+        else:
+            # Analytic terms (SHO, Matern, ...) serialize their bare
+            # parameter values; theta0 order follows base_keys.
+            tg = grp.create_group(name)
+            for k, v in zip(t.base_keys, np.asarray(t.theta0)):
+                tg.attrs[k] = float(v)
+        tg.attrs["term_class"] = cls_name
+        tg.attrs["term_prefix"] = t.prefix if t.prefix is not None else ""
 
 
 def _write_fit_map(f, gp):
@@ -188,10 +226,10 @@ def _read_data(f):
         grp["x"][:], grp["y"][:], grp["yerr"][:], normalize=False)
 
 
-def _read_model(f):
+def _read_model(f, name="model"):
     from .spot_model import SpotEvolutionModel
     registry = _get_class_registry()
-    grp = f["model"]
+    grp = f[name]
 
     # Envelope
     env_name = grp["envelope"].attrs["class_name"]
@@ -258,18 +296,59 @@ def _read_config(f):
     bw = int(grp.attrs["bandwidth"])
     lat_range = tuple(grp["lat_range"][:]) if "lat_range" in grp else None
 
-    return dict(
+    config = dict(
         kernel_type=str(grp.attrs["kernel_type"]),
         mean=float(grp.attrs["mean_val"]),
         fit_sigma_n=bool(grp.attrs["fit_sigma_n"]),
         matrix_solver=str(grp.attrs["matrix_solver"]),
         bandwidth=bw if bw >= 0 else None,
         bounds=bounds_dict,
-        n_harmonics=int(grp.attrs["n_harmonics"]),
-        n_lat=int(grp.attrs["n_lat"]),
-        quadrature=str(grp.attrs["quadrature"]),
         lat_range=lat_range,
     )
+    # -1 marks "absent" (spot-free composite kernel); quadrature may be
+    # missing entirely in that case.
+    n_h = int(grp.attrs["n_harmonics"])
+    n_l = int(grp.attrs["n_lat"])
+    if n_h >= 0:
+        config["n_harmonics"] = n_h
+    if n_l >= 0:
+        config["n_lat"] = n_l
+    if "quadrature" in grp.attrs:
+        config["quadrature"] = str(grp.attrs["quadrature"])
+    return config
+
+
+def _read_kernel_terms(f):
+    """Rebuild a KernelSum from the /kernel group (None if absent)."""
+    from .terms import KernelSum, SpotTerm
+
+    if "kernel" not in f:
+        return None
+    grp = f["kernel"]
+    terms = []
+    for i in range(int(grp.attrs["n_terms"])):
+        tg = grp[f"term{i}"]
+        cls_name = str(tg.attrs["term_class"])
+        prefix = str(tg.attrs["term_prefix"]) or None
+        if cls_name == "SpotTerm":
+            model = _read_model(grp, name=f"term{i}")
+            terms.append(SpotTerm(
+                model, prefix=prefix,
+                n_harmonics=int(tg.attrs["n_harmonics"]),
+                n_lat=int(tg.attrs["n_lat"]),
+                quadrature=str(tg.attrs["quadrature"]),
+                lat_range=tuple(tg["term_lat_range"][:])))
+        else:
+            from . import terms as _terms_mod
+            cls = getattr(_terms_mod, cls_name, None)
+            if cls is None:
+                raise ValueError(
+                    f"Unknown kernel term class in file: {cls_name!r}")
+            params = {k: float(tg.attrs[k])
+                      for k in tg.attrs
+                      if k not in ("term_class", "term_prefix")}
+            terms.append(cls(prefix=prefix, **params))
+    return KernelSum(*terms)
 
 
 def _read_fit_results(f, gp):
@@ -515,8 +594,10 @@ def save_gp(path, gp):
     """
     with h5py.File(path, "a") as f:
         _write_data(f, gp.data)
-        _write_model(f, gp.spot_model)
+        if gp.spot_model is not None:
+            _write_model(f, gp.spot_model)
         _write_config(f, gp)
+        _write_kernel_terms(f, gp)
         _write_fit_map(f, gp)
         _write_fit_acf(f, gp)
         _write_mass_matrix(f, gp)
@@ -543,17 +624,24 @@ def load_gp(path):
 
     with h5py.File(path, "r") as f:
         data = _read_data(f)
-        model = _read_model(f)
         config = _read_config(f)
+        kernel_sum = _read_kernel_terms(f)
 
-        kernel_kwargs = {}
-        for k in ("n_harmonics", "n_lat", "quadrature", "lat_range"):
-            if k in config:
-                val = config.pop(k)
-                if val is not None:
-                    kernel_kwargs[k] = val
-
-        gp = GPSolver(data, model, **config, **kernel_kwargs)
+        if kernel_sum is not None:
+            # Composite kernel: per-term config lives under /kernel, so
+            # the solver-level kernel kwargs are not re-applied.
+            for k in ("n_harmonics", "n_lat", "quadrature", "lat_range"):
+                config.pop(k, None)
+            gp = GPSolver(data, kernel_sum, **config)
+        else:
+            model = _read_model(f)
+            kernel_kwargs = {}
+            for k in ("n_harmonics", "n_lat", "quadrature", "lat_range"):
+                if k in config:
+                    val = config.pop(k)
+                    if val is not None:
+                        kernel_kwargs[k] = val
+            gp = GPSolver(data, model, **config, **kernel_kwargs)
         _read_fit_results(f, gp)
 
     logger.info("GPSolver loaded from %s", path)
