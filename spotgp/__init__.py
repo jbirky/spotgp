@@ -22,7 +22,12 @@ from .lightcurve import LightcurveModel, compute_sigmak
 from .analytic_kernel import AnalyticKernel, NonstationaryAnalyticKernel
 from .terms import (
     Term, KernelSum, SpotTerm, SharedVisibilitySpotSum,
-    SHOTerm, Matern32Term, JitterTerm,
+    PopulationSpotTerm, SHOTerm, Matern32Term, JitterTerm,
+)
+from .random_variables import (
+    Hyper, Latent, LogNormalLatent, NormalLatent, UniformLatent,
+    Derived, UniformEmergence, UniformLongitude, SpotRandomVariables,
+    gnevyshev_waldmeier,
 )
 from .numerical_kernel import NumericalKernel, generate_sims, avg_covariance_tlag
 from .psd import compute_psd
@@ -68,7 +73,11 @@ __all__ = [
     "NumericalKernel", "generate_sims", "avg_covariance_tlag",
     # composable kernel terms
     "Term", "KernelSum", "SpotTerm", "SharedVisibilitySpotSum",
-    "SHOTerm", "Matern32Term", "JitterTerm",
+    "PopulationSpotTerm", "SHOTerm", "Matern32Term", "JitterTerm",
+    # random-variable declarations
+    "Hyper", "Latent", "LogNormalLatent", "NormalLatent", "UniformLatent",
+    "Derived", "UniformEmergence", "UniformLongitude",
+    "SpotRandomVariables", "gnevyshev_waldmeier",
     # psd
     "compute_psd",
     # contrast

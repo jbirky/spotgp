@@ -25,6 +25,7 @@ Composable Kernel Terms
 .. autoclass:: spotgp.terms.Term
    :members:
    :undoc-members:
+   :exclude-members: stationary, prefix
 
 .. autoclass:: spotgp.terms.KernelSum
    :members:
@@ -37,6 +38,11 @@ Composable Kernel Terms
    :show-inheritance:
 
 .. autoclass:: spotgp.terms.SharedVisibilitySpotSum
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.terms.PopulationSpotTerm
    :members:
    :undoc-members:
    :show-inheritance:
@@ -55,6 +61,42 @@ Composable Kernel Terms
    :members:
    :undoc-members:
    :show-inheritance:
+
+Random-Variable Declarations
+----------------------------
+
+.. autoclass:: spotgp.random_variables.SpotRandomVariables
+   :members:
+   :undoc-members:
+
+.. autoclass:: spotgp.random_variables.Hyper
+   :members:
+
+.. autoclass:: spotgp.random_variables.Latent
+   :members:
+
+.. autoclass:: spotgp.random_variables.LogNormalLatent
+   :members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.random_variables.NormalLatent
+   :members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.random_variables.UniformLatent
+   :members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.random_variables.Derived
+   :members:
+
+.. autoclass:: spotgp.random_variables.UniformEmergence
+   :members:
+
+.. autoclass:: spotgp.random_variables.UniformLongitude
+   :members:
+
+.. autofunction:: spotgp.random_variables.gnevyshev_waldmeier
 
 Numerical Kernel
 ----------------
