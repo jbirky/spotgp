@@ -355,6 +355,15 @@ class SpotTerm(Term):
         """
         return self.analytic_kernel.compute_psd(omega)
 
+    def get_sympy(self, display=True, compute_symbolic=False):
+        """Sympy equations for the wrapped spot model.
+
+        Delegates to ``SpotEvolutionModel.get_sympy`` (envelope,
+        visibility, and latitude-distribution expressions).
+        """
+        return self.spot_model.get_sympy(
+            display=display, compute_symbolic=compute_symbolic)
+
 
 class SharedVisibilitySpotSum(Term):
     """
