@@ -81,7 +81,7 @@
 \draw[arrow=modelborder] (visbase.south) -- (spotmodel.north);
 
 % ── Inference layer (placed first to define horizontal center) ─
-\node[box=infborder, below=4.5cm of spotmodel, xshift=-1.2cm] (gp) {\textbf{GPSolver}\\[-1pt]{\scriptsize gp\_solver.py}};
+\node[box=infborder, below=5.9cm of spotmodel, xshift=-1.2cm] (gp) {\textbf{GPSolver}\\[-1pt]{\scriptsize gp\_solver.py}};
 \node[box=infborder, right=0.6cm of gp] (mcmc) {MCMCSampler\\[-1pt]{\scriptsize mcmc.py}};
 
 \begin{scope}[on background layer]
@@ -94,17 +94,21 @@
 \node[box=datalayerborder, left=1.2cm of gp] (obs) {TimeSeriesData\\[-1pt]{\scriptsize observations.py}};
 
 % ── Kernel layer (centered above inference) ──────────────────
-\node[box=kernelborder, above=1.8cm of gp] (ak) {AnalyticKernel\\[-1pt]{\scriptsize analytic\_kernel.py}};
+\node[box=kernelborder, above=3.2cm of gp] (ak) {AnalyticKernel\\[-1pt]{\scriptsize analytic\_kernel.py}};
 \node[box=kernelborder, right=0.6cm of ak] (nk) {NumericalKernel\\[-1pt]{\scriptsize numerical\_kernel.py}};
+\node[box=kernelborder, below=0.55cm of ak] (ksum) {KernelSum\\[-1pt]{\scriptsize terms.py}};
+\node[box=kernelborder, right=0.6cm of ksum] (extraterms) {SHOTerm, Mat\'ern-3/2, \dots\\[-1pt]{\scriptsize terms.py}};
 
 \begin{scope}[on background layer]
 \node[layer={kernelborder}{kernelfill},
-      fit=(ak)(nk),
+      fit=(ak)(nk)(ksum)(extraterms),
       label={[layerlabel=kernelborder]above:Kernel layer}] (kbox) {};
 \end{scope}
 
 % ── Simulation (same gap right of kernel as data is left of inference) ─
-\node[box=simborder, right=1.2cm of nk] (lc) {LightcurveModel\\[-1pt]{\scriptsize lightcurve.py}};
+% Anchored off extraterms (the widest kernel-layer box) at nk's height so
+% the layer boxes keep a clear gap.
+\node[box=simborder, anchor=west, xshift=1.2cm] (lc) at (extraterms.east |- nk) {LightcurveModel\\[-1pt]{\scriptsize lightcurve.py}};
 
 \begin{scope}[on background layer]
 \node[layer={simborder}{simfill},
@@ -122,7 +126,9 @@
 \draw[arrow=datalayerborder] (obs.east) -- (gp.west);
 \draw[arrow=modelborder] (spotmodel) -- (ak);
 \draw[arrow=modelborder] (spotmodel.east) -| (lc.north);
-\draw[arrow=kernelborder] (ak) -- (gp);
+\draw[arrow=kernelborder] (ak) -- node[midway, right=1pt, font=\tiny\sffamily, text=kernelborder]{SpotTerm} (ksum);
+\draw[arrow=kernelborder] (extraterms.west) -- (ksum.east);
+\draw[arrow=kernelborder] (ksum) -- (gp);
 \draw[arrow=simborder] (lc.west) -- (nk.east);
 \draw[darrow=gray] (nk.west) -- node[midway, font=\tiny\sffamily, gray, rotate=90, anchor=south, xshift=0pt, yshift=-5pt]{benchmark} (ak.east);
 \draw[arrow=infborder] (gp) -- (mcmc);

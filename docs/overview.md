@@ -144,6 +144,58 @@ Estimates the kernel empirically by simulating many lightcurves with
 `LightcurveModel` and averaging their autocovariance. Used for benchmarking
 and validating the analytic kernel against Monte Carlo simulations.
 
+#### `terms.py` — Composable kernel terms
+
+A **`Term`** is an additive kernel component: it owns a contiguous slice of
+the flat parameter vector and produces a stationary contribution K(τ) from it.
+**`KernelSum`** composes terms by summing their per-lag contributions:
+
+$$K_{\rm total}(\tau) = \sum_m K_m(\tau;\,\theta_m)$$
+
+A sum of stationary kernels is itself stationary, so a composite plugs into
+`GPSolver` exactly like a single spot model — the Toeplitz/banded fast paths,
+noise diagonal, and JIT closures are preserved. When more than one term is
+present, each term's parameters are namespaced with a prefix, either chosen
+(`prefix="short"` → `short.peq`) or assigned automatically (`spot0`, `spot1`,
+`sho0`, ...).
+
+Built-in terms:
+
+| Term | Kernel | Parameters |
+|---|---|---|
+| `SpotTerm` | One spot population; wraps `AnalyticKernel`. A solver built from a bare model is exactly `KernelSum(SpotTerm(model))`. | `peq`, `kappa`, `inc`, ⟨envelope⟩, `sigma_k` |
+| `SharedVisibilitySpotSum` | N spot populations sharing one star's geometry: K(τ) = V(τ) Σᵢ σ²ₖ,ᵢ R_Γ,ᵢ(τ). The latitude quadrature V(τ) is evaluated once per kernel call instead of once per population. | shared `peq`, `kappa`, `inc`, ⟨latitude⟩ + per-population `pop<i>.`⟨envelope⟩, `pop<i>.sigma_k` |
+| `SHOTerm` | Stochastically-driven damped harmonic oscillator (celerite); granulation / quasi-periodic noise floor. Closed-form covariance across all damping regimes. | `S0`, `Q`, `w0` |
+| `Matern32Term` | Matérn-3/2: σ²(1 + √3τ/ρ) exp(−√3τ/ρ) | `sigma`, `rho` |
+| `JitterTerm` | White noise k(τ) = σ_j² δ(τ). Exists for symmetry when composing; prefer the solver's `sigma_n` diagonal for a plain noise floor. | `sigma_j` |
+
+```python
+kernel = KernelSum(
+    SpotTerm(short_model, prefix="short"),
+    SpotTerm(long_model, prefix="long"),
+    SHOTerm(S0=1e-4, Q=1 / np.sqrt(2), w0=2 * np.pi, prefix="gran"),
+)
+gp = GPSolver(data, kernel, bounds=bounds).build_jax()
+```
+
+Prefer `SharedVisibilitySpotSum` over multiple `SpotTerm`s when the
+populations live on the *same* star: the geometry parameters appear once in
+the parameter vector (instead of `short.peq` **and** `long.peq`), and skipping
+the repeated latitude quadrature is ≈1.9× faster for three populations. Use
+separate `SpotTerm`s when geometry is genuinely independent (e.g. different
+latitude bands).
+
+Beyond `k_of_lag`, each term reports its parameter layout (`param_keys`,
+`theta0`, `default_bounds`), its `bandwidth_support` (longest correlation
+length anywhere in the prior — the banded solver sizes the band by the
+*widest* term), and an optional analytic `psd`; the PSD of the sum is the sum
+of the component PSDs. Composite solvers round-trip through the same HDF5
+files as single-spot solvers via `save_gp` / `load_gp` (per-term class,
+prefix, and model are stored under a `/kernel` group).
+
+See the [Composite kernels](tutorials/composite_kernels.ipynb) tutorial for a
+worked two-population + SHO example.
+
 ---
 
 ### Simulation
@@ -169,8 +221,12 @@ Includes `plot_lightcurve()` and `animate_lightcurve()` for visualization.
 
 #### `gp_solver.py` — `GPSolver`
 
-Builds the GP covariance matrix from `AnalyticKernel`, factorises it via
-Cholesky (full or banded), and evaluates the marginal log-posterior. Two
+Builds the GP covariance matrix, factorises it via Cholesky (full or banded),
+and evaluates the marginal log-posterior. The model argument accepts a
+`SpotEvolutionModel` (or legacy hparam dict) as well as any `Term` or
+`KernelSum`; a bare model is wrapped as `KernelSum(SpotTerm(model))`
+internally, so single-spot code is unchanged and composite kernels drop in
+without touching anything downstream. Two
 functions are JIT-compiled: `log_posterior` (the log-density handed to
 samplers) and `value_and_grad_log_posterior` (used by `fit_map` and the
 gradient accessors); `neg_log_posterior`, `grad_log_posterior`, and
@@ -186,11 +242,13 @@ gets the same treatment via integer cadence offsets: distinct lags are
 evaluated once and gathered through a precomputed index table. Genuinely
 irregular sampling falls back to the general per-entry evaluation.
 
-The bandwidth is derived from the prior *upper bounds* of the envelope
-parameters divided by the cadence, so wide priors on `lspot`/`tau_spot` at
-fine cadence can push b toward N — a warning is emitted when b ≥ N/2, since
-the banded solver then has no advantage over dense Cholesky; tighten the
-bounds, downsample, or pass `matrix_solver="cholesky_full"`.
+The bandwidth is derived from the prior *upper bounds* via each term's
+`bandwidth_support`, divided by the cadence; with a composite kernel the
+*widest* term sets the band. Wide priors on `lspot`/`tau_spot` at fine
+cadence — or a high-`Q` `SHOTerm`, which rings for many periods — can push b
+toward N; a warning is emitted when b ≥ N/2, since the banded solver then has
+no advantage over dense Cholesky. Tighten the bounds, downsample, or pass
+`matrix_solver="cholesky_full"`.
 
 Multi-start fits (`fit_map(nopt=N)`, `fit_map_parallel`, `fit_acf_parallel`)
 with `method="L-BFGS-B"` and `batch=True` run all restarts as a single
@@ -242,10 +300,14 @@ Observed flux (t, y, yerr)
                                 ← LatitudeDistributionFunction (latitude.py)
          │
          ▼
-   AnalyticKernel.kernel(lag)
+   SpotTerm(model)              ← wraps AnalyticKernel.kernel(lag)
          │
          ▼
-   GPSolver(data, model)
+   KernelSum                    ← + SHOTerm, Matern32Term, ... (terms.py)
+   K(τ) = Σₘ Kₘ(τ)              (a bare model passed to GPSolver is
+         │                       wrapped as KernelSum(SpotTerm(model)))
+         ▼
+   GPSolver(data, model_or_kernel)
          │
          ├─ fit_map()           → theta_MAP (point estimate)
          │
@@ -256,7 +318,7 @@ Observed flux (t, y, yerr)
 
 ## Extending the library
 
-Four extension points allow custom physics without modifying core code:
+Five extension points allow custom physics without modifying core code:
 
 | Extension point | Base class | Minimum required |
 |---|---|---|
@@ -264,6 +326,7 @@ Four extension points allow custom physics without modifying core code:
 | Custom visibility geometry | `VisibilityFunction` | `cn_squared(phi, n_harmonics)` |
 | Custom latitude distribution | `LatitudeDistributionFunction` | `__call__(phi)` |
 | Custom amplitude parameterization | pass `sigma_k` directly | — |
+| Custom additive kernel component | `Term` | `base_keys`, `theta0`, `k_of_lag(theta, lag)`, `bandwidth_support` |
 
 See the tutorials for worked examples:
 
@@ -271,3 +334,4 @@ See the tutorials for worked examples:
 - [Custom Gaussian envelope](tutorials/custom_envelope_gaussian.ipynb)
 - [Custom visibility function](tutorials/custom_visibility_function.ipynb)
 - [Custom latitude distribution](tutorials/custom_latitude_distribution.ipynb)
+- [Composite kernels](tutorials/composite_kernels.ipynb)

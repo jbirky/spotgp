@@ -20,8 +20,8 @@ This project is build and maintained by [Jess Birky](https://github.com/jbirky)-
 :caption: Getting Started
 
 self
-tutorials/quickstart
 tutorials/installation
+tutorials/quickstart
 ```
 
 ```{toctree}
@@ -56,6 +56,7 @@ tutorials/limb_darkening
 :caption: Kernels
 
 tutorials/composite_kernels
+tutorials/random_variable_declarations
 ```
 
 ```{toctree}

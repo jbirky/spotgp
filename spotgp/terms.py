@@ -14,8 +14,10 @@ all preserved unchanged.
 ``_kernel_eval`` machinery, so the current single-spot GP is exactly
 ``KernelSum(SpotTerm(model))``.
 """
+import itertools
 import logging
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -24,7 +26,8 @@ from .spot_model import (
 )
 
 __all__ = ["Term", "KernelSum", "SpotTerm", "SharedVisibilitySpotSum",
-           "SHOTerm", "Matern32Term", "JitterTerm", "DEFAULT_TERM_BOUNDS"]
+           "PopulationSpotTerm", "SHOTerm", "Matern32Term", "JitterTerm",
+           "DEFAULT_TERM_BOUNDS"]
 
 logger = logging.getLogger("spotgp")
 
@@ -52,6 +55,35 @@ DEFAULT_TERM_BOUNDS = {
 def _strip_log(key):
     """'log_lspot' -> 'lspot'; other keys unchanged."""
     return key[4:] if key.startswith("log_") else key
+
+
+def _lat_weight_func_at_offset(lat_dist, lat_offset):
+    """
+    JAX latitude-weight closure reading lat params at ``lat_offset``.
+
+    Returns None when the distribution has no free parameters (the
+    static quadrature weights already apply) or when no JAX-traceable
+    weight function exists for it (with a warning in that case, since
+    the latitude parameters would then have zero gradient).
+    """
+    from .latitude import UniformDoubleHemisphereBand
+
+    if not lat_dist.param_dict:
+        return None
+    if isinstance(lat_dist, UniformDoubleHemisphereBand):
+        def lat_weight_fn(theta_arr, phi_grid):
+            lat_min = theta_arr[lat_offset]
+            lat_max = theta_arr[lat_offset + 1]
+            abs_phi = jnp.abs(phi_grid)
+            return jnp.where((abs_phi > lat_min) & (abs_phi < lat_max),
+                             1.0, 0.0)
+        return lat_weight_fn
+    import warnings
+    warnings.warn(
+        f"{type(lat_dist).__name__} has free parameters but no "
+        "JAX-traceable weight function; latitude parameters will "
+        "have zero gradient.", stacklevel=3)
+    return None
 
 
 def _bound_from_rows(keys, rows, name, which, fallback):
@@ -115,6 +147,7 @@ class Term:
 
     @property
     def n_params(self):
+        """Number of parameters in this term's theta slice."""
         return len(self.base_keys)
 
     @property
@@ -338,8 +371,8 @@ class SharedVisibilitySpotSum(Term):
     values to machine precision, but the geometry (peq, kappa, inc,
     latitude band) appears *once* in the flat vector — which is usually
     what "several spot populations on the same star" should mean in a
-    fit.  Use separate ``SpotTerm``s instead when populations may have
-    independent geometry (e.g. different latitude bands).
+    fit.  Use separate ``SpotTerm`` instances instead when populations
+    may have independent geometry (e.g. different latitude bands).
 
     Parameter layout: ``[<vis keys>, <lat keys>, pop0.<env keys>,
     pop0.sigma_k, pop1.<env keys>, pop1.sigma_k, ...]``.
@@ -422,30 +455,8 @@ class SharedVisibilitySpotSum(Term):
             self._comp_slices.append((offset, n_env, offset + n_env))
             offset += n_env + 1
 
-        self._lat_weight_func = self._build_lat_weight_func(ref)
-
-    def _build_lat_weight_func(self, ref):
-        """Latitude weights at the composite offset (lat follows vis)."""
-        from .latitude import UniformDoubleHemisphereBand
-
-        lat_dist = ref.latitude_distribution
-        if not lat_dist.param_dict:
-            return None
-        lat_offset = self._n_vis
-        if isinstance(lat_dist, UniformDoubleHemisphereBand):
-            def lat_weight_fn(theta_arr, phi_grid):
-                lat_min = theta_arr[lat_offset]
-                lat_max = theta_arr[lat_offset + 1]
-                abs_phi = jnp.abs(phi_grid)
-                return jnp.where((abs_phi > lat_min) & (abs_phi < lat_max),
-                                 1.0, 0.0)
-            return lat_weight_fn
-        import warnings
-        warnings.warn(
-            f"{type(lat_dist).__name__} has free parameters but no "
-            "JAX-traceable weight function; latitude parameters will "
-            "have zero gradient.", stacklevel=3)
-        return None
+        self._lat_weight_func = _lat_weight_func_at_offset(
+            ref.latitude_distribution, self._n_vis)
 
     # ── Parameter layout ────────────────────────────────────────────────
 
@@ -534,6 +545,243 @@ class SharedVisibilitySpotSum(Term):
         freq, total = None, 0.0
         for m in self.components:
             freq, power = AnalyticKernel(m).compute_psd(omega)
+            total = total + power
+        return freq, total
+
+
+class PopulationSpotTerm(Term):
+    """
+    A spot population whose morphology parameters are jointly
+    distributed — the marginalized kernel
+
+        K(tau) = V(tau) * sum_m w_m sigma_k(theta_m)^2 R_Gamma(tau; theta_m)
+
+    where ``{theta_m, w_m}`` are the quadrature nodes of a
+    :class:`~spotgp.random_variables.SpotRandomVariables` declaration.
+    Geometry (visibility, latitude band) is shared across the
+    population exactly as in :class:`SharedVisibilitySpotSum` — the
+    expensive latitude quadrature is evaluated once — while each node
+    contributes a closed-form envelope autocorrelation weighted by its
+    amplitude.  Correlations between morphology parameters (e.g. the
+    Gnevyshev–Waldmeier size–lifetime relation) live in the
+    declaration's couplings; the fitted parameters are the
+    distribution's *hyperparameters*, not per-spot values.
+
+    The quadrature is reparameterized (fixed base nodes, hypers enter
+    only through transforms), so the kernel is differentiable in every
+    hyperparameter and JIT caches are never invalidated by a fit step.
+
+    Parameter layout: ``[<vis keys>, <lat keys>, <hyper keys>]``.
+
+    Parameters
+    ----------
+    model : SpotEvolutionModel
+        Provides the star's geometry (visibility and latitude
+        distribution) and the envelope *family* whose parameters the
+        declaration distributes.  The envelope's own parameter values
+        are placeholders — the declaration replaces them node by node.
+    random_variables : SpotRandomVariables
+        Declaration of the per-spot random variables.  Must resolve
+        every envelope parameter (e.g. ``lspot``, ``tau_spot``) and
+        ``sigma_k``.
+    prefix : str or None
+        Optional namespace for parameter keys (e.g. ``"pop"``).
+    **kernel_kwargs
+        Shared kernel configuration forwarded to
+        :class:`AnalyticKernel` (n_harmonics, n_lat, lat_range,
+        quadrature).
+    """
+
+    _prefix_tag = "popspot"
+
+    def __init__(self, model, random_variables, prefix=None,
+                 **kernel_kwargs):
+        from .random_variables import SpotRandomVariables
+
+        if not isinstance(random_variables, SpotRandomVariables):
+            raise TypeError(
+                "random_variables must be a SpotRandomVariables "
+                f"declaration, got {type(random_variables).__name__}")
+        if model.visibility is None or model.envelope is None:
+            raise ValueError(
+                "PopulationSpotTerm requires a model with a visibility "
+                "function and an envelope")
+
+        rv = random_variables
+        self.spot_model = model
+        self.random_variables = rv
+        self.prefix = prefix
+        self._env_keys = tuple(model.envelope.param_dict.keys())
+
+        declared = set(rv.param_names) | set(rv.hyper_keys)
+        missing = [k for k in self._env_keys + ("sigma_k",)
+                   if k not in declared]
+        if missing:
+            raise ValueError(
+                f"declaration must resolve {missing} (required by "
+                f"{type(model.envelope).__name__} and the kernel "
+                "amplitude)")
+        clash = (set(model.visibility.param_keys)
+                 | set(model.latitude_distribution.param_keys)) & declared
+        if clash:
+            raise ValueError(
+                f"declaration names {sorted(clash)} collide with the "
+                "model's geometry keys; geometry-coupled joint "
+                "distributions are not supported")
+
+        # Shared quadrature config and closures (per-model theta
+        # closures of the ref term are not used — only the static
+        # configuration), mirroring SharedVisibilitySpotSum.
+        self._ref_term = SpotTerm(model, **kernel_kwargs)
+        self.n_harmonics = self._ref_term.n_harmonics
+        self.n_lat = self._ref_term.n_lat
+        self.lat_range = self._ref_term.lat_range
+        self._quad_nodes = self._ref_term._quad_nodes
+        self._quad_weights = self._ref_term._quad_weights
+        self._edgeon_cn_sq = self._ref_term._edgeon_cn_sq
+        self._cn_sq_func = model.get_cn_sq_func(self.n_harmonics)
+
+        self._n_vis = len(model.visibility.param_keys)
+        self._n_lat_params = len(model.latitude_distribution.param_keys)
+        self._hyper_offset = self._n_vis + self._n_lat_params
+        self._lat_weight_func = _lat_weight_func_at_offset(
+            model.latitude_distribution, self._n_vis)
+
+    # ── Parameter layout ────────────────────────────────────────────────
+
+    @property
+    def base_keys(self):
+        m = self.spot_model
+        return (tuple(m.visibility.param_keys)
+                + tuple(m.latitude_distribution.param_keys)
+                + self.random_variables.hyper_keys)
+
+    @property
+    def theta0(self):
+        m = self.spot_model
+        vis_d = m.visibility.param_dict
+        lat_d = m.latitude_distribution.param_dict
+        vals = [float(vis_d[k]) for k in m.visibility.param_keys]
+        vals += [float(lat_d[k])
+                 for k in m.latitude_distribution.param_keys]
+        vals += list(self.random_variables.hyper0)
+        return np.array(vals, dtype=np.float64)
+
+    @property
+    def default_bounds(self):
+        out = {}
+        for k in self.base_keys:
+            if k in DEFAULT_TERM_BOUNDS:
+                out[k] = DEFAULT_TERM_BOUNDS[k]
+        out.update(self.random_variables.hyper_bounds)
+        return out
+
+    # ── Kernel evaluation ───────────────────────────────────────────────
+
+    def k_of_lag(self, theta_slice, lag_flat):
+        from .analytic_kernel import _kernel_eval
+
+        rv = self.random_variables
+        envelope = self.spot_model.envelope
+        env_keys = self._env_keys
+        off = self._hyper_offset
+        n_hyper = len(rv.hyper_keys)
+
+        def marginalized_r_gamma(theta_arr, lag):
+            # Quadrature-weighted, amplitude-weighted envelope mixture;
+            # the trailing 1.0 appended below neutralizes _kernel_eval's
+            # own sigma_k^2 factor, so V(tau) multiplies this directly.
+            ns, w = rv.resolve(theta_arr[off:off + n_hyper])
+            sigma_k = rv.column(ns, "sigma_k")
+            env_nodes = jnp.stack([rv.column(ns, k) for k in env_keys],
+                                  axis=1)
+
+            def one_node(env_row, sk, wm):
+                return wm * sk ** 2 * envelope.r_gamma_jax(env_row, lag)
+
+            return jnp.sum(jax.vmap(one_node)(env_nodes, sigma_k, w),
+                           axis=0)
+
+        theta_eval = jnp.append(jnp.asarray(theta_slice), 1.0)
+        return _kernel_eval(
+            theta_eval, lag_flat,
+            self.n_harmonics, self.n_lat, self.lat_range,
+            quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
+            r_gamma_func=marginalized_r_gamma,
+            edgeon_cn_sq=self._edgeon_cn_sq,
+            lat_weight_func=self._lat_weight_func,
+            cn_sq_func=self._cn_sq_func)
+
+    def bandwidth_support(self, param_keys, bounds_arr):
+        """
+        Conservative envelope support [days] over the hyper prior box.
+
+        The declaration is resolved at every corner of the
+        hyperparameter bounds box; a worst-case envelope is then built
+        from the elementwise max of the node values (envelope support
+        is monotone increasing in each timescale parameter for the
+        built-in envelope families).
+        """
+        rv = self.random_variables
+        los, his = [], []
+        for i, name in enumerate(rv.hyper_keys):
+            declared = rv.hyper_bounds.get(name)
+            v0 = float(rv.hyper0[i])
+            lo_fb, hi_fb = declared if declared is not None else (v0, v0)
+            los.append(_bound_from_rows(param_keys, bounds_arr,
+                                        name, 0, lo_fb))
+            his.append(_bound_from_rows(param_keys, bounds_arr,
+                                        name, 1, hi_fb))
+
+        n_hyper = len(rv.hyper_keys)
+        if n_hyper > 12:  # 2^n corners would explode; use the box ends
+            corners = [tuple(los), tuple(his)]
+        else:
+            corners = itertools.product(*zip(los, his))
+
+        env_max = None
+        for corner in corners:
+            ns, _ = rv.resolve(np.asarray(corner, dtype=float))
+            vals = np.array([float(np.max(np.asarray(rv.column(ns, k))))
+                             for k in self._env_keys])
+            env_max = vals if env_max is None else np.maximum(env_max, vals)
+        worst = type(self.spot_model.envelope)(
+            **dict(zip(self._env_keys, env_max)))
+        return float(worst.kernel_support())
+
+    def psd(self, omega, theta_slice=None):
+        """
+        Marginalized PSD: the quadrature-weighted sum of per-node PSDs.
+
+        Geometry comes from the model; hyperparameters from
+        ``theta_slice`` when given, else the declaration's initial
+        values.
+        """
+        from .analytic_kernel import AnalyticKernel
+
+        rv = self.random_variables
+        if theta_slice is None:
+            phi = rv.hyper0
+        else:
+            off = self._hyper_offset
+            phi = np.asarray(theta_slice)[off:off + len(rv.hyper_keys)]
+        ns, w = rv.resolve(phi)
+        w = np.asarray(w)
+        sigma_k = np.asarray(rv.column(ns, "sigma_k"))
+        env_vals = {k: np.asarray(rv.column(ns, k))
+                    for k in self._env_keys}
+
+        freq, total = None, 0.0
+        for m in range(rv.n_nodes):
+            env = type(self.spot_model.envelope)(
+                **{k: float(env_vals[k][m]) for k in self._env_keys})
+            node_model = SpotEvolutionModel(
+                envelope=env,
+                visibility=self.spot_model.visibility,
+                sigma_k=float(np.sqrt(w[m]) * sigma_k[m]),
+                latitude_distribution=self.spot_model
+                                          .latitude_distribution)
+            freq, power = AnalyticKernel(node_model).compute_psd(omega)
             total = total + power
         return freq, total
 
