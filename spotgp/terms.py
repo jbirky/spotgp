@@ -103,6 +103,32 @@ def _bound_from_rows(keys, rows, name, which, fallback):
     return float(fallback)
 
 
+def _require_sympy():
+    try:
+        import sympy as sp
+    except ImportError:
+        raise ImportError(
+            "sympy is required for get_sympy(). "
+            "Install with: pip install sympy")
+    return sp
+
+
+def _display_term_sympy(header, exprs, lhs, display):
+    """Render (or print) a ``{key: sympy expr}`` dict as LaTeX equations."""
+    if not display:
+        return
+    sp = _require_sympy()
+    try:
+        from IPython.display import display as ipy_display, Math
+        ipy_display(Math(r"\textbf{" + header + r"}"))
+        for key, expr in exprs.items():
+            ipy_display(Math(lhs[key] + " = " + sp.latex(expr)))
+    except ImportError:
+        print(header)
+        for key, expr in exprs.items():
+            print(f"  ${lhs[key]} = {sp.latex(expr)}$")
+
+
 class Term:
     """
     Base class for additive kernel components.
@@ -194,6 +220,11 @@ class Term:
         """Optional analytic PSD contribution (see subclasses)."""
         raise NotImplementedError(
             f"{type(self).__name__} does not implement an analytic PSD")
+
+    def get_sympy(self, display=True, **kwargs):
+        """Optional sympy representation of this term (see subclasses)."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement get_sympy")
 
     # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -557,6 +588,28 @@ class SharedVisibilitySpotSum(Term):
             total = total + power
         return freq, total
 
+    def get_sympy(self, display=True, compute_symbolic=False):
+        """
+        Sympy equations for the shared geometry and each envelope.
+
+        Visibility and latitude are shared across all populations by
+        construction, so each is rendered once; every population's
+        envelope is rendered separately under its label.
+        """
+        ref = self.components[0]
+        return {
+            "visibility": ref.visibility.get_sympy(
+                display=display, status="shared"),
+            "latitude": ref.latitude_distribution.get_sympy(
+                display=display, status="shared"),
+            "envelopes": {
+                lab: m.envelope.get_sympy(
+                    display=display, status=lab,
+                    compute_symbolic=compute_symbolic)
+                for m, lab in zip(self.components, self.labels)
+            },
+        }
+
 
 class PopulationSpotTerm(Term):
     """
@@ -794,6 +847,19 @@ class PopulationSpotTerm(Term):
             total = total + power
         return freq, total
 
+    def get_sympy(self, display=True, compute_symbolic=False):
+        """
+        Sympy equations for the shared geometry and envelope family.
+
+        Delegates to the underlying ``SpotEvolutionModel``.  The
+        envelope's structural equations are purely symbolic (in the
+        envelope's own parameter symbols), so they hold regardless of
+        the placeholder values ``random_variables`` replaces node by
+        node.
+        """
+        return self.spot_model.get_sympy(
+            display=display, compute_symbolic=compute_symbolic)
+
 
 class SHOTerm(Term):
     """
@@ -920,6 +986,49 @@ class SHOTerm(Term):
                     + (w0 * omega / Q) ** 2))
         return np.asarray(omega / (2 * np.pi)), np.asarray(power)
 
+    def get_sympy(self, display=True, **kwargs):
+        """
+        Sympy equations for the SHO autocovariance and PSD.
+
+        ``K(tau)`` is the piecewise under-/critically-/over-damped
+        autocovariance; ``S(omega)`` is the celerite PSD.  Both are
+        purely symbolic in ``S0, Q, w0``, independent of this
+        instance's current parameter values.
+        """
+        sp = _require_sympy()
+        S0    = sp.Symbol('S_0', positive=True)
+        Q     = sp.Symbol('Q', positive=True)
+        w0    = sp.Symbol(r'\omega_0', positive=True)
+        tau   = sp.Symbol(r'\tau', real=True)
+        omega = sp.Symbol(r'\omega', real=True)
+
+        eta_u = sp.sqrt(4 * Q ** 2 - 1) / (2 * Q)
+        k_under = (S0 * w0 * Q * sp.exp(-w0 * tau / (2 * Q))
+                   * (sp.cos(eta_u * w0 * tau)
+                      + sp.sin(eta_u * w0 * tau) / (2 * eta_u * Q)))
+
+        eta_o = sp.sqrt(1 - 4 * Q ** 2) / (2 * Q)
+        c = 1 / (2 * eta_o * Q)
+        k_over = (S0 * w0 * Q / 2
+                  * ((1 + c) * sp.exp((eta_o - 1 / (2 * Q)) * w0 * tau)
+                     + (1 - c) * sp.exp(-(eta_o + 1 / (2 * Q)) * w0 * tau)))
+
+        k_crit = S0 * w0 / 2 * sp.exp(-w0 * tau) * (1 + w0 * tau)
+
+        k_tau = sp.Piecewise(
+            (k_crit, sp.Eq(Q, sp.Rational(1, 2))),
+            (k_under, 4 * Q ** 2 - 1 > 0),
+            (k_over, True),
+        )
+
+        psd = (sp.sqrt(2 / sp.pi) * S0 * w0 ** 4
+               / ((omega ** 2 - w0 ** 2) ** 2 + w0 ** 2 * omega ** 2 / Q ** 2))
+
+        exprs = {"k_tau": k_tau, "psd": psd}
+        lhs = {"k_tau": r"K(\tau)", "psd": r"S(\omega)"}
+        _display_term_sympy("SHOTerm", exprs, lhs, display)
+        return exprs
+
 
 class Matern32Term(Term):
     """
@@ -982,6 +1091,25 @@ class Matern32Term(Term):
         power = 4.0 * sigma ** 2 * lam ** 3 / (lam ** 2 + omega ** 2) ** 2
         return np.asarray(omega / (2 * np.pi)), np.asarray(power)
 
+    def get_sympy(self, display=True, **kwargs):
+        """Sympy equations for the Matern-3/2 kernel and its PSD."""
+        sp = _require_sympy()
+        sigma = sp.Symbol(r'\sigma', positive=True)
+        rho   = sp.Symbol(r'\rho', positive=True)
+        tau   = sp.Symbol(r'\tau', real=True)
+        omega = sp.Symbol(r'\omega', real=True)
+
+        arg = sp.sqrt(3) * sp.Abs(tau) / rho
+        k_tau = sigma ** 2 * (1 + arg) * sp.exp(-arg)
+
+        lam = sp.sqrt(3) / rho
+        psd = 4 * sigma ** 2 * lam ** 3 / (lam ** 2 + omega ** 2) ** 2
+
+        exprs = {"k_tau": k_tau, "psd": psd}
+        lhs = {"k_tau": r"K(\tau)", "psd": r"S(\omega)"}
+        _display_term_sympy("Matern32Term", exprs, lhs, display)
+        return exprs
+
 
 class JitterTerm(Term):
     """
@@ -1030,6 +1158,20 @@ class JitterTerm(Term):
         sj = self.sigma_j if theta_slice is None else theta_slice[0]
         power = np.full(omega.shape, float(sj) ** 2)
         return np.asarray(omega / (2 * np.pi)), power
+
+    def get_sympy(self, display=True, **kwargs):
+        """Sympy equations for the white-noise kernel and its (flat) PSD."""
+        sp = _require_sympy()
+        sigma_j = sp.Symbol(r'\sigma_j', positive=True)
+        tau     = sp.Symbol(r'\tau', real=True)
+
+        k_tau = sigma_j ** 2 * sp.KroneckerDelta(tau, 0)
+        psd = sigma_j ** 2
+
+        exprs = {"k_tau": k_tau, "psd": psd}
+        lhs = {"k_tau": r"K(\tau)", "psd": r"S(\omega)"}
+        _display_term_sympy("JitterTerm", exprs, lhs, display)
+        return exprs
 
 
 class KernelSum(Term):
@@ -1148,3 +1290,26 @@ class KernelSum(Term):
             freq, power = t.psd(omega, ts)
             total = total + power
         return freq, total
+
+    def get_sympy(self, display=True, compute_symbolic=False):
+        """
+        Sympy equations for every component term.
+
+        Calls ``get_sympy`` on each term in turn, keyed by its
+        parameter prefix (matching ``param_keys``' namespacing).  A
+        term with no symbolic representation prints a placeholder
+        instead of raising, so one unimplemented term does not block
+        the rest of the sum.
+        """
+        out = {}
+        for i, t in enumerate(self.terms):
+            label = t.prefix if t.prefix is not None else f"{t._prefix_tag}{i}"
+            try:
+                out[label] = t.get_sympy(
+                    display=display, compute_symbolic=compute_symbolic)
+            except NotImplementedError:
+                if display:
+                    print(f"{label} ({type(t).__name__}): "
+                          "get_sympy not implemented")
+                out[label] = None
+        return out
