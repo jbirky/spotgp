@@ -8,6 +8,16 @@ from .psd import compute_psd
 __all__ = ["TimeSeriesData"]
 
 
+def _freq_period(x):
+    """1/x, self-inverse for the frequency<->period secondary axis.
+
+    Silences the divide-by-zero RuntimeWarning matplotlib triggers
+    when it probes this transform near x=0 while laying out ticks.
+    """
+    with np.errstate(divide="ignore"):
+        return 1.0 / x
+
+
 class TimeSeriesData:
     """
     Container for observed time series data.
@@ -170,7 +180,8 @@ class TimeSeriesData:
         self.yerr = np.array(yerr_new)
 
     def compute_psd(self, normalization="psd", freq_min=None, freq_max=None,
-                    n_freq=None, samples_per_peak=5):
+                    n_freq=None, samples_per_peak=5, n_bins=None,
+                    log_bins=True, freq_grid=None):
         """
         Compute the Lomb-Scargle power spectral density.
 
@@ -179,11 +190,28 @@ class TimeSeriesData:
         normalization : str
             LombScargle normalization mode (default "psd").
         freq_min, freq_max : float, optional
-            Frequency bounds.
+            Frequency bounds.  Ignored when ``freq_grid`` is given.
         n_freq : int, optional
-            Number of frequency grid points.
+            Number of frequency grid points.  Ignored when
+            ``freq_grid`` is given.
         samples_per_peak : float, optional
-            Frequency grid density (default 5).
+            Frequency grid density (default 5).  Ignored when
+            ``freq_grid`` or ``n_freq`` is given.
+        freq_grid : array-like, optional
+            Evaluate the periodogram at exactly these frequencies
+            (e.g. a custom ``np.logspace`` grid) instead of building
+            one internally.  Takes priority over ``freq_min``/
+            ``freq_max``/``n_freq``/``samples_per_peak``.
+        n_bins : int, optional
+            If given, bin the raw periodogram into ``n_bins``
+            frequency bins and average the power within each bin.  A
+            raw periodogram has ~100% point-to-point scatter
+            regardless of how much data went into it; binning trades
+            frequency resolution for a smoother spectrum (e.g. to
+            compare against published granulation-background fits).
+        log_bins : bool
+            If True (default), bin edges are log-spaced; if False,
+            linear.  Ignored when ``n_bins`` is None.
 
         Returns
         -------
@@ -199,6 +227,7 @@ class TimeSeriesData:
             normalization=normalization,
             freq_min=freq_min, freq_max=freq_max,
             n_freq=n_freq, samples_per_peak=samples_per_peak,
+            n_bins=n_bins, log_bins=log_bins, freq_grid=freq_grid,
         )
         self.psd_freq = freq
         self.psd_power = power
@@ -261,6 +290,27 @@ class TimeSeriesData:
         self.acf_counts = acf_count.astype(int)
         return lag_centers, acf
 
+    @staticmethod
+    def _extract_lc_arrays(lc):
+        """
+        Extract (time, flux, flux_err) as plain float arrays from a
+        lightkurve LightCurve, converting Astropy Quantity objects if
+        needed.  When ``flux_err`` is absent or all-NaN, it is
+        estimated from the median absolute point-to-point flux
+        difference.
+        """
+        time = np.asarray(lc.time.value, dtype=float)
+        flux = np.asarray(lc.flux.value, dtype=float) if hasattr(lc.flux, 'value') else np.asarray(lc.flux, dtype=float)
+
+        if lc.flux_err is not None and np.any(np.isfinite(
+                np.asarray(lc.flux_err.value if hasattr(lc.flux_err, 'value') else lc.flux_err))):
+            flux_err = np.asarray(
+                lc.flux_err.value if hasattr(lc.flux_err, 'value') else lc.flux_err,
+                dtype=float)
+        else:
+            flux_err = np.full_like(flux, np.nanmedian(np.abs(np.diff(flux))))
+        return time, flux, flux_err
+
     @classmethod
     def from_lightkurve(cls, lc, normalize=True):
         """
@@ -280,20 +330,54 @@ class TimeSeriesData:
         -------
         TimeSeriesData
         """
-        # Extract arrays, handling Astropy Quantity objects
-        time = np.asarray(lc.time.value, dtype=float)
-        flux = np.asarray(lc.flux.value, dtype=float) if hasattr(lc.flux, 'value') else np.asarray(lc.flux, dtype=float)
-
-        if lc.flux_err is not None and np.any(np.isfinite(
-                np.asarray(lc.flux_err.value if hasattr(lc.flux_err, 'value') else lc.flux_err))):
-            flux_err = np.asarray(
-                lc.flux_err.value if hasattr(lc.flux_err, 'value') else lc.flux_err,
-                dtype=float)
-        else:
-            flux_err = np.full_like(flux, np.nanmedian(np.abs(np.diff(flux))))
-
+        time, flux, flux_err = cls._extract_lc_arrays(lc)
         # NaN/inf masking is handled by __init__
         return cls(time, flux, flux_err, normalize=normalize)
+
+    @classmethod
+    def from_lc_collection(cls, lc_collection, zero_mean=False, normalize=True):
+        """
+        Create a TimeSeriesData from a lightkurve LightCurveCollection.
+
+        Extracts time, flux, and flux_err from each LightCurve in the
+        collection (e.g. one per TESS sector or Kepler quarter) and
+        concatenates them into single arrays spanning all sectors.
+
+        Parameters
+        ----------
+        lc_collection : lightkurve.LightCurveCollection
+            A collection of LightCurve objects (e.g. from
+            ``lk.search_lightcurve(...).download_all()``).
+        zero_mean : bool
+            If True, subtract each sector's own mean flux before
+            concatenating, removing sector-to-sector flux offsets.
+            Default False.
+        normalize : bool
+            If True (default), normalize the combined flux to a
+            median of 1 (see ``normalize()``).  Combined with
+            ``zero_mean=True`` the flux is centered near 0, so its
+            median is not a meaningful scale; prefer
+            ``normalize=False`` in that case.
+
+        Returns
+        -------
+        TimeSeriesData
+        """
+        times, fluxes, flux_errs = [], [], []
+        for lc in lc_collection:
+            time, flux, flux_err = cls._extract_lc_arrays(lc)
+            if zero_mean:
+                flux = flux - np.nanmean(flux)
+            times.append(time)
+            fluxes.append(flux)
+            flux_errs.append(flux_err)
+
+        time_all = np.concatenate(times)
+        flux_all = np.concatenate(fluxes)
+        flux_err_all = np.concatenate(flux_errs)
+
+        # NaN/inf masking is handled by __init__
+        return cls(time_all, flux_all, flux_err_all, normalize=normalize)
 
     def plot(self, ax=None, color="k", alpha=0.6, marker=".", ms=2,
              xlabel="Time", ylabel="Flux", **kwargs):
@@ -324,21 +408,31 @@ class TimeSeriesData:
         return ax
 
     def plot_psd(self, ax=None, color="k", lw=1.0, loglog=True,
-                 xlabel="Frequency", ylabel="Power", **psd_kwargs):
+                 xlabel="Frequency [1/day]", ylabel="Power",
+                 fontsize=14, **psd_kwargs):
         """
         Plot the Lomb-Scargle PSD.
 
         Calls ``compute_psd()`` if it hasn't been run yet (or if
         ``psd_kwargs`` are provided to override previous settings).
 
+        Default style (``loglog=True``) is the standard log-log
+        presentation for granulation/oscillation power spectra: a
+        secondary axis on top shows the period [days] corresponding
+        to each frequency, and both axes are gridded.
+
         Parameters
         ----------
         ax : matplotlib Axes, optional
         color, lw : plot style options.
         loglog : bool
-            If True (default), use log-log axes.
+            If True (default), use log-log axes with a secondary
+            period axis on top and a grid.  If False, plot on linear
+            axes with neither.
         xlabel, ylabel : str
             Axis labels.
+        fontsize : float
+            Font size for axis labels (default 14).
         **psd_kwargs
             Passed to ``compute_psd()``.
 
@@ -350,13 +444,22 @@ class TimeSeriesData:
         if psd_kwargs or not hasattr(self, "psd_freq"):
             self.compute_psd(**psd_kwargs)
         if ax is None:
-            fig, ax = plt.subplots(figsize=(8, 4))
+            fig, ax = plt.subplots(figsize=(12, 6))
+
+        freq, power = self.psd_freq, self.psd_power
+        ax.plot(freq, power, color=color, lw=lw)
+        ax.set_xlabel(xlabel, fontsize=fontsize)
+        ax.set_ylabel(ylabel, fontsize=fontsize)
+
         if loglog:
-            ax.loglog(self.psd_freq, self.psd_power, color=color, lw=lw)
-        else:
-            ax.plot(self.psd_freq, self.psd_power, color=color, lw=lw)
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel(ylabel)
+            ax.set_xscale("log")
+            ax.set_yscale("log")
+            ax.set_xlim(freq.min(), freq.max())
+            ax.grid(True, which="both")
+            secax = ax.secondary_xaxis(
+                "top", functions=(_freq_period, _freq_period))
+            secax.set_xlabel("Period [days]", fontsize=fontsize)
+
         return ax
 
     def plot_acf(self, ax=None, color="k", lw=1.5,

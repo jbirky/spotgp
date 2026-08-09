@@ -51,3 +51,52 @@ class TestComputePSD:
         y = rng.standard_normal(50)
         freq, power = compute_psd(y)
         assert len(freq) > 0
+
+    def test_n_bins_reduces_point_count(self):
+        rng = np.random.default_rng(0)
+        t = np.linspace(0, 100, 5000)
+        y = rng.standard_normal(5000)
+        freq, power = compute_psd(y, t=t, n_bins=40)
+        assert len(freq) <= 40
+        assert len(freq) == len(power)
+
+    def test_n_bins_reduces_scatter(self):
+        """Binning should reduce the raw periodogram's point-to-point scatter."""
+        rng = np.random.default_rng(0)
+        t = np.linspace(0, 100, 5000)
+        y = rng.standard_normal(5000)
+        freq_raw, power_raw = compute_psd(y, t=t)
+        freq_bin, power_bin = compute_psd(y, t=t, n_bins=40)
+        rel_std_raw = np.std(power_raw) / np.mean(power_raw)
+        rel_std_bin = np.std(power_bin) / np.mean(power_bin)
+        assert rel_std_bin < rel_std_raw
+
+    def test_n_bins_linear_spacing(self):
+        rng = np.random.default_rng(0)
+        t = np.linspace(0, 50, 500)
+        y = rng.standard_normal(500)
+        freq, power = compute_psd(y, t=t, n_bins=20, log_bins=False)
+        assert len(freq) <= 20
+        diffs = np.diff(freq)
+        # linear bins should have roughly uniform spacing (unlike log bins)
+        assert np.std(diffs) / np.mean(diffs) < 0.5
+
+    def test_freq_grid_used_exactly(self):
+        rng = np.random.default_rng(0)
+        t = np.linspace(0, 100, 3000)
+        y = rng.standard_normal(3000)
+        freq_grid = np.logspace(-2, 1, 200)
+        freq, power = compute_psd(y, t=t, freq_grid=freq_grid)
+        np.testing.assert_array_equal(freq, freq_grid)
+        assert len(power) == len(freq_grid)
+
+    def test_freq_grid_overrides_other_grid_args(self):
+        """freq_grid takes priority over n_freq/freq_min/freq_max."""
+        rng = np.random.default_rng(0)
+        t = np.linspace(0, 100, 3000)
+        y = rng.standard_normal(3000)
+        freq_grid = np.logspace(-2, 1, 150)
+        freq, power = compute_psd(
+            y, t=t, freq_grid=freq_grid,
+            n_freq=999, freq_min=50.0, freq_max=60.0)
+        np.testing.assert_array_equal(freq, freq_grid)
