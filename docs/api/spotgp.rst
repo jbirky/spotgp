@@ -176,6 +176,14 @@ Probabilistic Graphical Model
    :undoc-members:
    :show-inheritance:
 
+Observations
+------------
+
+.. autoclass:: spotgp.observations.TimeSeriesData
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Power Spectral Density
 ----------------------
 
