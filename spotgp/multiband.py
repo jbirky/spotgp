@@ -112,7 +112,7 @@ class MultiBandData:
 def _multiband_log_likelihood_banded(
         theta_full, x, y, yerr, mean_val,
         band_indices, band_wavelengths, T_phot,
-        n_harmonics, n_lat, lat_range,
+        harmonics, n_lat, lat_range,
         fit_sigma_n, bandwidth, n_kernel,
         r_gamma_func=None,
         quad_nodes=None, quad_weights=None,
@@ -144,7 +144,7 @@ def _multiband_log_likelihood_banded(
     # Build geometric kernel in compact banded storage
     cb = _build_banded_kernel_jax(
         theta_kernel, x, bandwidth,
-        n_harmonics, n_lat, lat_range,
+        harmonics, n_lat, lat_range,
         r_gamma_func=r_gamma_func,
         quad_nodes=quad_nodes, quad_weights=quad_weights,
         edgeon_cn_sq=edgeon_cn_sq,
@@ -176,7 +176,7 @@ def _multiband_log_likelihood_banded(
 def _multiband_log_likelihood_full(
         theta_full, x, y, yerr, mean_val,
         band_indices, band_wavelengths, T_phot,
-        n_harmonics, n_lat, lat_range,
+        harmonics, n_lat, lat_range,
         fit_sigma_n, n_kernel,
         r_gamma_func=None,
         quad_nodes=None, quad_weights=None,
@@ -205,7 +205,7 @@ def _multiband_log_likelihood_full(
     lag_upper = jnp.abs(x[row_idx] - x[col_idx])
     K_upper = _kernel_eval(
         theta_kernel, lag_upper,
-        n_harmonics, n_lat, lat_range,
+        harmonics, n_lat, lat_range,
         quad_nodes=quad_nodes, quad_weights=quad_weights,
         r_gamma_func=r_gamma_func,
         edgeon_cn_sq=edgeon_cn_sq,
@@ -326,7 +326,7 @@ class MultiBandGPSolver:
         self.matrix_solver = matrix_solver
         self.fit_sigma_n = fit_sigma_n
 
-        # Build kernel (for config: n_harmonics, n_lat, lat_range, etc.)
+        # Build kernel (for config: harmonics, n_lat, lat_range, etc.)
         self.kernel = AnalyticKernel(self.spot_model, **kernel_kwargs)
 
         # Parameter keys: standard kernel + T_spot + optional sigma_n
@@ -362,7 +362,7 @@ class MultiBandGPSolver:
             self.bounds = jnp.asarray(bounds, dtype=jnp.float64)
 
         # Kernel config
-        self.n_harmonics = self.kernel.n_harmonics
+        self.harmonics = self.kernel.harmonics
         self.n_lat = self.kernel.n_lat
         if self.spot_model.latitude_distribution.param_dict:
             self.lat_range = (-np.pi / 2, np.pi / 2)
@@ -426,6 +426,11 @@ class MultiBandGPSolver:
         # Storage
         self.map_result = None
 
+    @property
+    def n_harmonics(self):
+        """Largest harmonic order — the int summary of :attr:`harmonics`."""
+        return max(self.harmonics)
+
     def _compute_bandwidth(self):
         if self.N < 2:
             return self.N
@@ -457,7 +462,7 @@ class MultiBandGPSolver:
         bounds = self.bounds
         x, y, yerr = self.x, self.y, self.yerr
         mean_val = self.mean_val
-        n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
+        n_h, n_l, lr = self.harmonics, self.n_lat, self.lat_range
         custom_prior = self._custom_log_prior
         fit_sn = self.fit_sigma_n
         qn, qw = self._quad_nodes, self._quad_weights
@@ -478,7 +483,7 @@ class MultiBandGPSolver:
 
         if isinstance(self.spot_model.visibility, EdgeOnVisibilityFunction):
             eo_cn = jnp.array(
-                self.spot_model.visibility.cn_squared(0.0, self.n_harmonics))
+                self.spot_model.visibility.cn_squared(0.0, self.harmonics))
         else:
             eo_cn = None
 
@@ -621,7 +626,7 @@ class MultiBandGPSolver:
         lag_train = jnp.abs(self.x[row_idx] - self.x[col_idx])
         K_upper = _kernel_eval(
             theta_kernel, lag_train,
-            self.n_harmonics, self.n_lat, self.lat_range,
+            self.harmonics, self.n_lat, self.lat_range,
             quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
             r_gamma_func=self.spot_model.get_r_gamma_func())
         K_upper = K_upper * c_obs[row_idx] * c_obs[col_idx]
@@ -644,7 +649,7 @@ class MultiBandGPSolver:
         lag_cross = jnp.abs(xpred[:, None] - self.x[None, :])
         Ks_geom = _kernel_eval(
             theta_kernel, lag_cross.ravel(),
-            self.n_harmonics, self.n_lat, self.lat_range,
+            self.harmonics, self.n_lat, self.lat_range,
             quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
             r_gamma_func=self.spot_model.get_r_gamma_func()
         ).reshape(lag_cross.shape)
@@ -655,7 +660,7 @@ class MultiBandGPSolver:
         V = jax.scipy.linalg.cho_solve((L, True), Ks.T)
         k0 = float(_kernel_eval(
             theta_kernel, jnp.zeros(1),
-            self.n_harmonics, self.n_lat, self.lat_range,
+            self.harmonics, self.n_lat, self.lat_range,
             quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
             r_gamma_func=self.spot_model.get_r_gamma_func())[0])
         var_pred = c_pred ** 2 * k0 - jnp.einsum('ij,ji->i', Ks, V)
@@ -712,7 +717,7 @@ class MultiBandGPSolver:
 def _spotfac_log_likelihood_banded(
         theta_full, x, y, yerr, mean_val,
         band_indices, band_wavelengths, T_phot,
-        n_harmonics, n_lat, lat_range,
+        harmonics, n_lat, lat_range,
         fit_sigma_n, bandwidth, n_kernel,
         r_gamma_func=None,
         quad_nodes=None, quad_weights=None,
@@ -748,7 +753,7 @@ def _spotfac_log_likelihood_banded(
 
     cb = _build_banded_kernel_jax(
         theta_kernel, x, bandwidth,
-        n_harmonics, n_lat, lat_range,
+        harmonics, n_lat, lat_range,
         r_gamma_func=r_gamma_func,
         quad_nodes=quad_nodes, quad_weights=quad_weights,
         edgeon_cn_sq=edgeon_cn_sq,
@@ -778,7 +783,7 @@ def _spotfac_log_likelihood_banded(
 def _spotfac_log_likelihood_full(
         theta_full, x, y, yerr, mean_val,
         band_indices, band_wavelengths, T_phot,
-        n_harmonics, n_lat, lat_range,
+        harmonics, n_lat, lat_range,
         fit_sigma_n, n_kernel,
         r_gamma_func=None,
         quad_nodes=None, quad_weights=None,
@@ -812,7 +817,7 @@ def _spotfac_log_likelihood_full(
     lag_upper = jnp.abs(x[row_idx] - x[col_idx])
     K_upper = _kernel_eval(
         theta_kernel, lag_upper,
-        n_harmonics, n_lat, lat_range,
+        harmonics, n_lat, lat_range,
         quad_nodes=quad_nodes, quad_weights=quad_weights,
         r_gamma_func=r_gamma_func,
         edgeon_cn_sq=edgeon_cn_sq,
@@ -976,7 +981,7 @@ class SpotFaculaeGPSolver:
         else:
             self.bounds = jnp.asarray(bounds, dtype=jnp.float64)
 
-        self.n_harmonics = self.kernel.n_harmonics
+        self.harmonics = self.kernel.harmonics
         self.n_lat = self.kernel.n_lat
         if self.spot_model.latitude_distribution.param_dict:
             self.lat_range = (-np.pi / 2, np.pi / 2)
@@ -1032,6 +1037,11 @@ class SpotFaculaeGPSolver:
         self._build_logposterior()
         self.map_result = None
 
+    @property
+    def n_harmonics(self):
+        """Largest harmonic order — the int summary of :attr:`harmonics`."""
+        return max(self.harmonics)
+
     def _compute_bandwidth(self):
         if self.N < 2:
             return self.N
@@ -1062,7 +1072,7 @@ class SpotFaculaeGPSolver:
         bounds = self.bounds
         x, y, yerr = self.x, self.y, self.yerr
         mean_val = self.mean_val
-        n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
+        n_h, n_l, lr = self.harmonics, self.n_lat, self.lat_range
         custom_prior = self._custom_log_prior
         fit_sn = self.fit_sigma_n
         qn, qw = self._quad_nodes, self._quad_weights
@@ -1083,7 +1093,7 @@ class SpotFaculaeGPSolver:
 
         if isinstance(self.spot_model.visibility, EdgeOnVisibilityFunction):
             eo_cn = jnp.array(
-                self.spot_model.visibility.cn_squared(0.0, self.n_harmonics))
+                self.spot_model.visibility.cn_squared(0.0, self.harmonics))
         else:
             eo_cn = None
 
@@ -1230,7 +1240,7 @@ class SpotFaculaeGPSolver:
         lag_train = jnp.abs(self.x[row_idx] - self.x[col_idx])
         K_upper = _kernel_eval(
             theta_kernel, lag_train,
-            self.n_harmonics, self.n_lat, self.lat_range,
+            self.harmonics, self.n_lat, self.lat_range,
             quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
             r_gamma_func=r_gamma_fn)
         K_upper = K_upper * (c_spot_obs[row_idx] * c_spot_obs[col_idx]
@@ -1253,7 +1263,7 @@ class SpotFaculaeGPSolver:
         lag_cross = jnp.abs(xpred[:, None] - self.x[None, :])
         Ks_geom = _kernel_eval(
             theta_kernel, lag_cross.ravel(),
-            self.n_harmonics, self.n_lat, self.lat_range,
+            self.harmonics, self.n_lat, self.lat_range,
             quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
             r_gamma_func=r_gamma_fn
         ).reshape(lag_cross.shape)
@@ -1265,7 +1275,7 @@ class SpotFaculaeGPSolver:
         V = jax.scipy.linalg.cho_solve((L, True), Ks.T)
         k0 = float(_kernel_eval(
             theta_kernel, jnp.zeros(1),
-            self.n_harmonics, self.n_lat, self.lat_range,
+            self.harmonics, self.n_lat, self.lat_range,
             quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
             r_gamma_func=r_gamma_fn)[0])
         var_prior = (c_spot_pred ** 2 + w_fac * c_fac_pred ** 2) * k0

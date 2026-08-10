@@ -22,7 +22,7 @@ class MassMatrixMixin:
 
         x, y, yerr = self.x, self.y, self.yerr
         mean_val = self.mean_val
-        n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
+        n_h, n_l, lr = self.harmonics, self.n_lat, self.lat_range
         fit_sn = self.fit_sigma_n
         to_phys = self._to_physical
         u_dt = self.uniform_dt

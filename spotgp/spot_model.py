@@ -332,10 +332,14 @@ class SpotEvolutionModel:
 
     # ── JAX-compilable visibility coefficient function ─────────────────────
 
-    def get_cn_sq_func(self, n_harmonics: int):
+    def get_cn_sq_func(self, n_harmonics):
         """
-        Return a JAX-traceable ``cn_sq(theta_arr, phi_grid) -> (n_phi, n_h+1)``
+        Return a JAX-traceable ``cn_sq(theta_arr, phi_grid) -> (n_phi, n_h)``
         function, or ``None`` to use the built-in analytic ``c_n``.
+
+        ``n_harmonics`` is an int (orders ``0..n``) or an explicit sequence
+        of orders; it is forwarded verbatim to the visibility's
+        ``cn_sq_jax``, so the returned columns align with those orders.
 
         The default ``VisibilityFunction`` (and ``EdgeOnVisibilityFunction``)
         rely on the closed-form ``_cn_general_jax`` coefficients that the

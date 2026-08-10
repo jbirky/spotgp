@@ -23,6 +23,38 @@ __all__ = [
 ]
 
 
+def _as_harmonic_orders(harmonics) -> tuple:
+    """
+    Normalize a harmonic specification to a tuple of non-negative ints.
+
+    Accepts either a scalar ``n`` -- shorthand for the contiguous set
+    ``(0, 1, ..., n)`` that the ``n_harmonics`` arguments have always meant --
+    or an explicit sequence of orders such as ``[0, 2, 4]``.
+    """
+    arr = np.asarray(harmonics)
+    if not np.issubdtype(arr.dtype, np.number):
+        raise TypeError(
+            f"harmonics must be numeric, got dtype {arr.dtype}")
+    if np.any(arr != np.round(arr)):
+        raise ValueError(f"harmonic orders must be integers, got {harmonics}")
+    if arr.ndim == 0:
+        n = int(arr)
+        if n < 0:
+            raise ValueError(f"n_harmonics must be >= 0, got {n}")
+        return tuple(range(n + 1))
+    if arr.ndim > 1:
+        raise ValueError(
+            f"harmonics must be 1-D, got shape {arr.shape}")
+    orders = tuple(int(n) for n in arr)
+    if not orders:
+        raise ValueError("harmonics must contain at least one order")
+    if any(n < 0 for n in orders):
+        raise ValueError(f"harmonic orders must be >= 0, got {orders}")
+    if len(set(orders)) != len(orders):
+        raise ValueError(f"harmonic orders must be unique, got {orders}")
+    return orders
+
+
 # ── Low-level JAX helpers (Fourier visibility coefficients) ─────────────────
 
 def _safe_arccos(x):
@@ -81,8 +113,14 @@ def _cn_general_jax(n, inc, phi):
 
 
 def _cn_squared_coefficients_jax(inc, phi, n_harmonics=2):
-    """Compute |c_n|² for n = 0, 1, ..., n_harmonics."""
-    ns = jnp.arange(n_harmonics + 1)
+    """
+    Compute |c_n|² at the requested harmonic orders.
+
+    ``n_harmonics`` is either an int ``n`` (orders 0, 1, ..., n) or an
+    explicit sequence of orders, e.g. ``[0, 2, 4]``.  Element ``i`` of the
+    result corresponds to order ``i`` in the resolved set.
+    """
+    ns = jnp.asarray(_as_harmonic_orders(n_harmonics))
     cn_vals = jax.vmap(lambda n: _cn_general_jax(n, inc, phi))(ns)
     return cn_vals ** 2
 
@@ -120,12 +158,20 @@ class VisibilityFunction:
         Differential rotation shear (dimensionless).
     inc : float
         Stellar inclination [radians].
+    harmonics : sequence of int or int
+        Rotation harmonic orders to retain, default ``(0, 1, 2)``.  The
+        orders need not be contiguous -- ``[0, 2, 4]`` keeps only the even
+        harmonics.  A scalar ``n`` is shorthand for ``(0, 1, ..., n)``.
+        :meth:`cn_squared` returns one coefficient per order, in the order
+        given here.
     """
 
-    def __init__(self, peq: float, kappa: float, inc: float):
+    def __init__(self, peq: float, kappa: float, inc: float,
+                 harmonics=(0, 1, 2)):
         self.peq = float(peq)
         self.kappa = float(kappa)
         self.inc = float(inc)
+        self.harmonics = _as_harmonic_orders(harmonics)
 
     @property
     def param_dict(self) -> dict:
@@ -137,19 +183,42 @@ class VisibilityFunction:
         """Ordered parameter names."""
         return ("peq", "kappa", "inc")
 
+    def _orders(self, n_harmonics=None) -> tuple:
+        """
+        Resolve the harmonic orders for a ``cn_squared``-style call.
+
+        ``None`` selects the orders this instance was constructed with;
+        anything else is interpreted by :func:`_as_harmonic_orders`, so
+        callers holding an int ``n_harmonics`` (the kernel classes) keep
+        the contiguous ``0..n`` behaviour.
+        """
+        if n_harmonics is None:
+            return self.harmonics
+        return _as_harmonic_orders(n_harmonics)
+
     def omega0(self, phi):
         """Latitude-dependent rotation angular frequency [rad/day]."""
         return 2.0 * jnp.pi * (1.0 - self.kappa * jnp.sin(phi) ** 2) / self.peq
 
-    def cn_squared(self, phi, n_harmonics: int = 3):
+    def cn_squared(self, phi, n_harmonics=None):
         """
         Squared Fourier coefficients |c_n|² at stellar latitude phi.
 
+        Parameters
+        ----------
+        phi : float
+            Spot latitude [radians].
+        n_harmonics : int or sequence of int, optional
+            Overrides :attr:`harmonics` for this call; an int ``n`` means
+            orders ``0..n``.  Defaults to :attr:`harmonics`.
+
         Returns
         -------
-        cn_sq : jnp.ndarray, shape (n_harmonics + 1,)
+        cn_sq : jnp.ndarray, shape (n_orders,)
+            One entry per resolved harmonic order.
         """
-        return _cn_squared_coefficients_jax(self.inc, phi, n_harmonics)
+        return _cn_squared_coefficients_jax(
+            self.inc, phi, self._orders(n_harmonics))
 
     def get_sympy(self, display=True, status=None):
         """
@@ -274,14 +343,22 @@ class EdgeOnVisibilityFunction(VisibilityFunction):
     ----------
     peq : float
         Equatorial rotation period [days].
+    harmonics : sequence of int or int
+        Rotation harmonic orders to retain, default ``(0, 1, 2)``.  Orders
+        above 2 have no power in this closed form and come back as zero.
     """
 
     # Pre-computed latitude-averaged |c_n|^2 = g_n^2 / 2
-    # where g_0 = 1/pi, g_1 = 1/4, g_2 = 1/(3*pi)
-    _CN_SQ = None  # lazily built as JAX array
+    # where g_0 = 1/pi, g_1 = 1/4, g_2 = 1/(3*pi).  All higher orders vanish.
+    _CN_SQ = {
+        0: 1.0 / (2.0 * np.pi ** 2),
+        1: 1.0 / 32.0,
+        2: 1.0 / (18.0 * np.pi ** 2),
+    }
 
-    def __init__(self, peq: float):
-        super().__init__(peq=peq, kappa=0.0, inc=jnp.pi / 2)
+    def __init__(self, peq: float, harmonics=(0, 1, 2)):
+        super().__init__(peq=peq, kappa=0.0, inc=jnp.pi / 2,
+                         harmonics=harmonics)
 
     @property
     def param_dict(self) -> dict:
@@ -295,23 +372,14 @@ class EdgeOnVisibilityFunction(VisibilityFunction):
         """Rotation frequency (latitude-independent for kappa=0)."""
         return 2.0 * jnp.pi / self.peq
 
-    def cn_squared(self, phi, n_harmonics: int = 3):
+    def cn_squared(self, phi, n_harmonics=None):
         """Latitude-averaged |c_n|^2 (independent of phi).
 
         Returns the closed-form coefficients for n = 0, 1, 2 and zero
         for higher harmonics.
         """
-        cn_sq = jnp.zeros(n_harmonics + 1)
-        pi2 = jnp.pi ** 2
-        # n=0: g_0 = 1/pi  => g_0^2/2 = 1/(2*pi^2)
-        cn_sq = cn_sq.at[0].set(1.0 / (2.0 * pi2))
-        # n=1: g_1 = 1/4   => g_1^2/2 = 1/32
-        if n_harmonics >= 1:
-            cn_sq = cn_sq.at[1].set(1.0 / 32.0)
-        # n=2: g_2 = 1/(3*pi) => g_2^2/2 = 1/(18*pi^2)
-        if n_harmonics >= 2:
-            cn_sq = cn_sq.at[2].set(1.0 / (18.0 * pi2))
-        return cn_sq
+        ns = self._orders(n_harmonics)
+        return jnp.array([self._CN_SQ.get(n, 0.0) for n in ns])
 
 
 class FullGeometryVisibilityFunction(VisibilityFunction):
@@ -355,11 +423,14 @@ class FullGeometryVisibilityFunction(VisibilityFunction):
         Fourier coefficients (default 0.1).
     n_lon : int
         Number of longitude points for the numerical DFT (default 512).
+    harmonics : sequence of int or int
+        Rotation harmonic orders to retain, default ``(0, 1, 2)``.
     """
 
     def __init__(self, peq: float, kappa: float, inc: float,
-                 alpha_ref: float = 0.1, n_lon: int = 512):
-        super().__init__(peq=peq, kappa=kappa, inc=inc)
+                 alpha_ref: float = 0.1, n_lon: int = 512,
+                 harmonics=(0, 1, 2)):
+        super().__init__(peq=peq, kappa=kappa, inc=inc, harmonics=harmonics)
         self.alpha_ref = float(alpha_ref)
         self.n_lon = int(n_lon)
 
@@ -472,7 +543,7 @@ class FullGeometryVisibilityFunction(VisibilityFunction):
         A = self.projected_area(alpha, beta)
         return lon_grid, A
 
-    def cn_squared(self, phi, n_harmonics: int = 3):
+    def cn_squared(self, phi, n_harmonics=None):
         """
         Numerically computed squared Fourier coefficients from the full
         projected-area profile.
@@ -487,13 +558,15 @@ class FullGeometryVisibilityFunction(VisibilityFunction):
         ----------
         phi : float
             Spot latitude [radians].
-        n_harmonics : int
-            Number of harmonics (default 3).
+        n_harmonics : int or sequence of int, optional
+            Overrides :attr:`harmonics` for this call; an int ``n`` means
+            orders ``0..n``.
 
         Returns
         -------
-        cn_sq : jnp.ndarray, shape (n_harmonics + 1,)
+        cn_sq : jnp.ndarray, shape (n_orders,)
         """
+        ns = self._orders(n_harmonics)
         _, A = self.visibility_profile(phi, self.alpha_ref)
         # Normalize by the peak area (fully visible, cos_beta=1)
         norm = jnp.pi * jnp.sin(self.alpha_ref) ** 2
@@ -503,7 +576,7 @@ class FullGeometryVisibilityFunction(VisibilityFunction):
         # DFT to extract Fourier coefficients
         fft_coeffs = jnp.fft.rfft(A_norm) / len(A_norm)
         # c_0 is the DC component, c_n for n>=1 are the cosine amplitudes
-        cn = jnp.abs(fft_coeffs[:n_harmonics + 1])
+        cn = jnp.abs(fft_coeffs[jnp.asarray(ns)])
         return cn ** 2
 
 
@@ -563,6 +636,10 @@ class LimbDarkenedVisibilityFunction(VisibilityFunction):
         Intensity law (default "quadratic").
     n_lon : int
         Number of longitude grid points for the DFT (default 512).
+    harmonics : sequence of int or int
+        Rotation harmonic orders to retain, default ``(0, 1, 2)``.  Because
+        limb darkening pushes power into higher harmonics, prefer a wider
+        set here than for the uniform-disk case.
 
     Examples
     --------
@@ -577,8 +654,8 @@ class LimbDarkenedVisibilityFunction(VisibilityFunction):
     """
 
     def __init__(self, peq, kappa, inc, u=(0.3, 0.2), law="quadratic",
-                 n_lon=512):
-        super().__init__(peq=peq, kappa=kappa, inc=inc)
+                 n_lon=512, harmonics=(0, 1, 2)):
+        super().__init__(peq=peq, kappa=kappa, inc=inc, harmonics=harmonics)
         if law not in ("quadratic", "claret"):
             raise ValueError(
                 f"Unknown limb-darkening law: {law!r}. "
@@ -652,22 +729,23 @@ class LimbDarkenedVisibilityFunction(VisibilityFunction):
 
     # ── Fourier coefficients ────────────────────────────────────────────────
 
-    def cn_squared(self, phi, n_harmonics: int = 3):
+    def cn_squared(self, phi, n_harmonics=None):
         """Squared Fourier coefficients |c_n|^2 at latitude phi."""
         return self.cn_sq_at(self.inc, phi, n_harmonics)
 
-    def cn_sq_at(self, inc, phi, n_harmonics: int = 3):
+    def cn_sq_at(self, inc, phi, n_harmonics=None):
         """
         |c_n|^2 at an explicitly supplied inclination.
 
         Separated from :meth:`cn_squared` so ``inc`` can be a JAX tracer,
         which is what lets gradients flow to ``inc`` during fitting.
         """
+        ns = self._orders(n_harmonics)
         _, V = self.visibility_profile(phi, inc=inc)
         cn = jnp.abs(jnp.fft.rfft(V) / V.shape[0])
-        return cn[:n_harmonics + 1] ** 2
+        return cn[jnp.asarray(ns)] ** 2
 
-    def cn_sq_jax(self, theta_vis, phi, n_harmonics: int = 3):
+    def cn_sq_jax(self, theta_vis, phi, n_harmonics=None):
         """
         JAX-traceable |c_n|^2 from the visibility slice of the theta vector.
 

@@ -7,10 +7,153 @@ import jax.numpy as jnp
 
 from spotgp.visibility import (
     VisibilityFunction,
+    EdgeOnVisibilityFunction,
     FullGeometryVisibilityFunction,
     LimbDarkenedVisibilityFunction,
     _cn_general_jax,
 )
+
+
+# ── harmonic-order selection ───────────────────────────────────────────────
+
+class TestHarmonicOrders:
+    """VisibilityFunction(harmonics=[...]) selects which orders c_n covers."""
+
+    INC = np.pi / 3
+    PHI = 0.3
+
+    def test_default_is_zero_one_two(self):
+        vis = VisibilityFunction(4.0, 0.0, self.INC)
+        assert vis.harmonics == (0, 1, 2)
+        assert vis.cn_squared(self.PHI).shape == (3,)
+
+    def test_scalar_is_contiguous_shorthand(self):
+        """A scalar keeps the historical `n_harmonics` meaning: 0..n."""
+        assert VisibilityFunction(4.0, 0.0, self.INC, harmonics=3).harmonics \
+            == (0, 1, 2, 3)
+
+    def test_sparse_orders_match_the_contiguous_subset(self):
+        vis = VisibilityFunction(4.0, 0.0, self.INC, harmonics=[0, 2, 4])
+        full = np.array(VisibilityFunction(
+            4.0, 0.0, self.INC).cn_squared(self.PHI, 4))
+        np.testing.assert_allclose(
+            np.array(vis.cn_squared(self.PHI)), full[[0, 2, 4]], rtol=1e-12)
+
+    def test_explicit_argument_overrides_the_attribute(self):
+        """Callers holding an int (the kernel classes) keep 0..n behaviour."""
+        vis = VisibilityFunction(4.0, 0.0, self.INC, harmonics=[0, 2, 4])
+        got = np.array(vis.cn_squared(self.PHI, 3))
+        ref = np.array([float(_cn_general_jax(n, self.INC, self.PHI)) ** 2
+                        for n in range(4)])
+        np.testing.assert_allclose(got, ref, rtol=1e-12)
+
+    @pytest.mark.parametrize("bad", [[0, 1, 1], [-1, 0], [], -1, 2.5,
+                                     [[0, 1], [2, 3]]])
+    def test_invalid_orders_rejected(self, bad):
+        with pytest.raises((ValueError, TypeError)):
+            VisibilityFunction(4.0, 0.0, self.INC, harmonics=bad)
+
+    def test_edge_on_selects_orders(self):
+        """Closed-form g_n vanish above n=2 whichever orders are requested."""
+        vis = EdgeOnVisibilityFunction(4.0, harmonics=[2, 5])
+        got = np.array(vis.cn_squared(0.0))
+        np.testing.assert_allclose(
+            got, [1.0 / (18.0 * np.pi ** 2), 0.0], rtol=1e-12)
+
+    @pytest.mark.parametrize("cls,kwargs", [
+        (FullGeometryVisibilityFunction, {}),
+        (LimbDarkenedVisibilityFunction, {"u": (0.4, 0.2)}),
+    ])
+    def test_dft_subclasses_select_orders(self, cls, kwargs):
+        """The DFT-based subclasses index the same coefficients, sparsely."""
+        sparse = cls(4.0, 0.0, self.INC, harmonics=[0, 1, 3], **kwargs)
+        full = np.array(sparse.cn_squared(self.PHI, 3))
+        np.testing.assert_allclose(
+            np.array(sparse.cn_squared(self.PHI)), full[[0, 1, 3]], rtol=1e-12)
+
+    def _model(self, vis):
+        from spotgp import SpotEvolutionModel
+        from spotgp.envelope import TrapezoidSymmetricEnvelope
+        return SpotEvolutionModel(
+            envelope=TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=2.0),
+            visibility=vis, sigma_k=0.01)
+
+    def test_kernel_inherits_visibility_harmonics(self):
+        """AnalyticKernel takes its orders from the visibility by default."""
+        from spotgp import AnalyticKernel
+        vis = VisibilityFunction(4.0, 0.1, self.INC, harmonics=[0, 2, 4])
+        assert AnalyticKernel(self._model(vis)).harmonics == (0, 2, 4)
+        # ...and an explicit n_harmonics still overrides it.
+        assert AnalyticKernel(
+            self._model(vis), n_harmonics=3).harmonics == (0, 1, 2, 3)
+
+    def test_kernel_matches_hand_rolled_series(self):
+        """Non-contiguous orders reach kernel(): c_0 undoubled, rest doubled."""
+        from spotgp import AnalyticKernel
+        orders, peq, kappa, sig = [0, 2, 4], 4.0, 0.1, 0.01
+        vis = VisibilityFunction(peq, kappa, self.INC, harmonics=orders)
+        model = self._model(vis)
+        ak = AnalyticKernel(model, n_lat=32)
+        lag = np.linspace(0.0, 8.0, 9)
+
+        phi = np.linspace(-np.pi / 2, np.pi / 2, 32)
+        R = np.asarray(model.envelope.R_Gamma(jnp.asarray(lag)))
+        acc = np.zeros_like(lag)
+        for p in phi:
+            w0 = 2 * np.pi * (1 - kappa * np.sin(p) ** 2) / peq
+            for n in orders:
+                c_sq = float(_cn_general_jax(n, self.INC, p)) ** 2
+                acc += (1.0 if n == 0 else 2.0) * c_sq * np.cos(n * w0 * lag)
+        np.testing.assert_allclose(
+            ak.kernel(lag), sig ** 2 * R * acc / len(phi), rtol=1e-12)
+
+    def test_dropping_orders_changes_the_likelihood(self):
+        """The order set must reach the GP log-likelihood, not just kernel()."""
+        from spotgp import GPSolver, TimeSeriesData
+        rng = np.random.default_rng(0)
+        t = np.sort(rng.uniform(0, 40, 50))
+        y = 0.01 * np.sin(2 * np.pi * t / 4.0) + 0.002 * rng.standard_normal(50)
+        data = TimeSeriesData(t, y, np.full_like(t, 0.002))
+        bounds = {"peq": (2, 8), "kappa": (0, 0.4), "inc": (0.3, 1.5),
+                  "lspot": (1, 10), "tau_spot": (1, 6),
+                  "log_sigma_k": (-4, -1)}
+
+        def solver(harmonics):
+            vis = VisibilityFunction(4.0, 0.1, self.INC, harmonics=harmonics)
+            return GPSolver(data, self._model(vis), bounds=bounds,
+                            matrix_solver="cholesky_full",
+                            n_lat=32).build_jax()
+
+        dense, sparse = solver([0, 1, 2, 3, 4]), solver([0, 2, 4])
+        assert dense.harmonics == (0, 1, 2, 3, 4)
+        assert sparse.harmonics == (0, 2, 4)
+        assert sparse.n_harmonics == 4      # int summary is the largest order
+        assert abs(float(dense.log_likelihood_fn(dense.theta0))
+                   - float(sparse.log_likelihood_fn(sparse.theta0))) > 1e-6
+        grad = np.asarray(sparse.grad_log_posterior(sparse.theta0))
+        assert np.all(np.isfinite(grad))
+
+    def test_harmonics_survive_save_load(self, tmp_path):
+        import h5py
+        from spotgp.io import _read_model, _write_model
+        from spotgp import SpotEvolutionModel
+        from spotgp.envelope import TrapezoidSymmetricEnvelope
+
+        vis = VisibilityFunction(4.0, 0.1, self.INC, harmonics=[0, 2, 4])
+        model = SpotEvolutionModel(
+            envelope=TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=2.0),
+            visibility=vis, sigma_k=0.01)
+        path = str(tmp_path / "vis.h5")
+        with h5py.File(path, "w") as f:
+            _write_model(f, model)
+        with h5py.File(path, "r") as f:
+            assert _read_model(f).visibility.harmonics == (0, 2, 4)
+
+        # Files written before harmonics existed fall back to the default.
+        with h5py.File(path, "a") as f:
+            del f["model/visibility"].attrs["harmonics"]
+        with h5py.File(path, "r") as f:
+            assert _read_model(f).visibility.harmonics == (0, 1, 2)
 
 
 class TestFullGeometryProjectedArea:

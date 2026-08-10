@@ -18,6 +18,7 @@ from .spot_model import (
     VisibilityFunction, EdgeOnVisibilityFunction, SpotEvolutionModel,
     _cn_squared_coefficients_jax, _cn_general_jax, _gauss_legendre_grid,
 )
+from .visibility import _as_harmonic_orders
 
 __all__ = ["AnalyticKernel", "NonstationaryAnalyticKernel",
            "compute_R_Gamma_numerical",
@@ -30,7 +31,21 @@ logger = logging.getLogger("spotgp")
 # Pure-functional kernel evaluation (single source of truth)
 # =====================================================================
 
-def _kernel_eval_edgeon(theta_arr, lag_flat, n_harmonics,
+def _harmonic_basis(harmonics):
+    """
+    Orders and their kernel weights for a harmonic set.
+
+    The rotation series is ``sum_n w_n |c_n|^2 cos(n omega_0 tau)`` with
+    ``w_n = 2`` for every oscillating term and ``w_0 = 1`` for the DC term
+    (which is not doubled).  Returning the weights this way keeps the sum
+    branchless and correct for non-contiguous order sets -- and for sets
+    that omit n = 0 entirely.
+    """
+    ns = jnp.asarray(_as_harmonic_orders(harmonics))
+    return ns, jnp.where(ns == 0, 1.0, 2.0)
+
+
+def _kernel_eval_edgeon(theta_arr, lag_flat, harmonics,
                         r_gamma_func=None, cn_sq_fixed=None):
     """
     Fast-path kernel evaluation for EdgeOnVisibilityFunction.
@@ -43,10 +58,11 @@ def _kernel_eval_edgeon(theta_arr, lag_flat, n_harmonics,
     theta_arr : jnp.ndarray
         Kernel parameters.  theta_arr[0] = peq, theta_arr[-1] = sigma_k.
     lag_flat : jnp.ndarray, shape (M,)
-    n_harmonics : int
+    harmonics : int or sequence of int
+        Harmonic orders; an int ``n`` means the contiguous set ``0..n``.
     r_gamma_func : callable or None
-    cn_sq_fixed : jnp.ndarray, shape (n_harmonics+1,)
-        Pre-computed latitude-averaged |c_n|^2.
+    cn_sq_fixed : jnp.ndarray, shape (n_orders,)
+        Pre-computed latitude-averaged |c_n|^2, aligned with ``harmonics``.
 
     Returns
     -------
@@ -63,14 +79,15 @@ def _kernel_eval_edgeon(theta_arr, lag_flat, n_harmonics,
         R = _R_Gamma_symmetric(lag_flat, lspot, tau_spot)
 
     w0 = 2.0 * jnp.pi / peq
-    harm_ns = jnp.arange(1, n_harmonics + 1)
-    cosine_terms = jnp.sum(
-        cn_sq_fixed[1:] * jnp.cos(harm_ns * w0 * lag_flat[:, None]), axis=1)
-    K = sigma_k ** 2 * R * (cn_sq_fixed[0] + 2.0 * cosine_terms)
+    harm_ns, harm_w = _harmonic_basis(harmonics)
+    series = jnp.sum(
+        cn_sq_fixed * harm_w * jnp.cos(harm_ns * w0 * lag_flat[:, None]),
+        axis=1)
+    K = sigma_k ** 2 * R * series
     return K
 
 
-def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
+def _kernel_eval(theta_arr, lag_flat, harmonics, n_lat, lat_range,
                   quad_nodes=None, quad_weights=None,
                   r_gamma_func=None,
                   edgeon_cn_sq=None,
@@ -97,7 +114,11 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
         last is always sigma_k.
     lag_flat : jnp.ndarray, shape (M,)
         Flattened time lags.
-    n_harmonics, n_lat, lat_range : kernel config (static).
+    harmonics : int or sequence of int
+        Harmonic orders to sum over (static).  An int ``n`` means the
+        contiguous set ``0..n``; a sequence selects those orders exactly,
+        so ``[0, 2, 4]`` keeps only the even harmonics.
+    n_lat, lat_range : kernel config (static).
     quad_nodes, quad_weights : jnp.ndarray or None
         Quadrature nodes and weights. If None, uses trapezoid rule on a
         linspace grid.
@@ -111,10 +132,10 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
         computes per-node latitude weights from the theta vector.
     cn_sq_func : callable or None
         JAX-traceable function ``f(theta_arr, phi_grid) -> |c_n|^2`` of
-        shape ``(n_phi, n_harmonics + 1)``.  When None (the default), the
-        closed-form ``_cn_general_jax`` coefficients are used.  Supplied by
-        visibility subclasses (e.g. limb darkening) that compute their own
-        Fourier coefficients.
+        shape ``(n_phi, n_orders)``, aligned with ``harmonics``.  When None
+        (the default), the closed-form ``_cn_general_jax`` coefficients are
+        used.  Supplied by visibility subclasses (e.g. limb darkening) that
+        compute their own Fourier coefficients.
 
     Returns
     -------
@@ -122,7 +143,7 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
         Kernel values at each lag.
     """
     if edgeon_cn_sq is not None:
-        return _kernel_eval_edgeon(theta_arr, lag_flat, n_harmonics,
+        return _kernel_eval_edgeon(theta_arr, lag_flat, harmonics,
                                    r_gamma_func=r_gamma_func,
                                    cn_sq_fixed=edgeon_cn_sq)
 
@@ -153,22 +174,21 @@ def _kernel_eval(theta_arr, lag_flat, n_harmonics, n_lat, lat_range,
 
     norm = jnp.sum(weights)
 
+    harm_ns, harm_w = _harmonic_basis(harmonics)
+
     if cn_sq_func is not None:
         cn_sq_all = cn_sq_func(theta_arr, phi_grid)
     else:
-        ns = jnp.arange(n_harmonics + 1)
         cn_sq_all = jax.vmap(
-            lambda phi: jax.vmap(lambda n: _cn_general_jax(n, inc, phi))(ns) ** 2
+            lambda phi: jax.vmap(
+                lambda n: _cn_general_jax(n, inc, phi))(harm_ns) ** 2
         )(phi_grid)
-
-    harm_ns = jnp.arange(1, n_harmonics + 1)
 
     def _lat_contribution(phi, cn_sq):
         w0 = 2 * jnp.pi * (1 - kappa * jnp.sin(phi) ** 2) / peq
-        cosine_terms = jnp.sum(
-            cn_sq[1:] * jnp.cos(harm_ns * w0 * lag_flat[:, None]), axis=1
+        return jnp.sum(
+            cn_sq * harm_w * jnp.cos(harm_ns * w0 * lag_flat[:, None]), axis=1
         )
-        return cn_sq[0] + 2 * cosine_terms
 
     all_contribs = jax.vmap(_lat_contribution)(phi_grid, cn_sq_all)
 
@@ -187,17 +207,27 @@ class AnalyticKernel:
     model_or_hparam : SpotEvolutionModel or dict
         Either a SpotEvolutionModel instance (new API) or a raw hparam dict
         (backward-compatible old API).
-    n_harmonics : int
-        Number of Fourier harmonics for the visibility function (default 3).
+    n_harmonics : int or sequence of int, optional
+        Fourier harmonic orders for the visibility function.  An int ``n``
+        selects the contiguous set ``0..n``; a sequence selects those orders
+        exactly (e.g. ``[0, 2, 4]``).  When omitted, the orders are taken
+        from ``model.visibility.harmonics``, so the visibility is the single
+        place harmonics need to be configured.
     n_lat : int
         Number of latitude quadrature points (default 64).
     lat_range : tuple
         (min, max) latitude in radians (default (-pi/2, pi/2)).
     quadrature : str
         Latitude integration method: "trapezoid" or "gauss-legendre".
+
+    Attributes
+    ----------
+    harmonics : tuple of int
+        The resolved harmonic orders.  ``n_harmonics`` remains available as
+        the largest order, for callers that want a single int.
     """
 
-    def __init__(self, model_or_hparam, n_harmonics=3, n_lat=64,
+    def __init__(self, model_or_hparam, n_harmonics=None, n_lat=64,
                  lat_range=None, quadrature="trapezoid"):
 
         # ── Accept SpotEvolutionModel or legacy hparam dict ────────────────
@@ -256,7 +286,13 @@ class AnalyticKernel:
             self.tau_dec = self.tau_spot
 
         # ── Kernel config ──────────────────────────────────────────────────
-        self.n_harmonics = n_harmonics
+        # Harmonic orders default to whatever the visibility was built with;
+        # an explicit n_harmonics overrides it for this kernel only.
+        # getattr keeps custom visibility subclasses that never call
+        # super().__init__() working, falling back to the historical 0..3.
+        if n_harmonics is None:
+            n_harmonics = getattr(self.visibility, "harmonics", 3)
+        self.harmonics   = _as_harmonic_orders(n_harmonics)
         self.n_lat       = n_lat
         self.lat_range   = (lat_range if lat_range is not None
                             else self.spot_model.latitude_distribution.lat_range)
@@ -275,6 +311,15 @@ class AnalyticKernel:
 
     # ── Core kernel helpers ─────────────────────────────────────────────────
 
+    @property
+    def n_harmonics(self):
+        """Largest harmonic order — the int summary of :attr:`harmonics`."""
+        return max(self.harmonics)
+
+    @n_harmonics.setter
+    def n_harmonics(self, value):
+        self.harmonics = _as_harmonic_orders(value)
+
     def omega0(self, phi):
         """Latitude-dependent rotation angular frequency [rad/day]."""
         return self.visibility.omega0(phi)
@@ -285,7 +330,7 @@ class AnalyticKernel:
 
     def cn_squared(self, phi):
         """Squared Fourier visibility coefficients at latitude phi."""
-        return self.visibility.cn_squared(phi, self.n_harmonics)
+        return self.visibility.cn_squared(phi, self.harmonics)
 
     # ── Single-latitude kernel ──────────────────────────────────────────────
 
@@ -296,10 +341,9 @@ class AnalyticKernel:
         cn_sq = self.cn_squared(phi)
         w0 = self.omega0(phi)
 
-        ns = jnp.arange(1, len(cn_sq))
-        cosine_terms = jnp.sum(
-            cn_sq[1:] * jnp.cos(ns * w0 * lag[:, None]), axis=1)
-        return R * (cn_sq[0] + 2 * cosine_terms)
+        ns, w = _harmonic_basis(self.harmonics)
+        return R * jnp.sum(
+            cn_sq * w * jnp.cos(ns * w0 * lag[:, None]), axis=1)
 
     # ── Stationary kernel (without sigma_k² scaling) ─────────────────────
 
@@ -320,11 +364,11 @@ class AnalyticKernel:
         theta_arr = jnp.asarray(theta0)
 
         r_gamma_func = self.spot_model.get_r_gamma_func()
-        cn_sq_func = self.spot_model.get_cn_sq_func(self.n_harmonics)
+        cn_sq_func = self.spot_model.get_cn_sq_func(self.harmonics)
 
         if isinstance(self.visibility, EdgeOnVisibilityFunction):
             edgeon_cn_sq = jnp.array(self.visibility.cn_squared(
-                0.0, self.n_harmonics))
+                0.0, self.harmonics))
         else:
             edgeon_cn_sq = None
 
@@ -344,7 +388,7 @@ class AnalyticKernel:
         weights = user_weights * raw_weights
 
         K = _kernel_eval(
-            theta_arr, lag_flat, self.n_harmonics, self.n_lat, self.lat_range,
+            theta_arr, lag_flat, self.harmonics, self.n_lat, self.lat_range,
             quad_nodes=phi_grid, quad_weights=weights,
             r_gamma_func=r_gamma_func,
             edgeon_cn_sq=edgeon_cn_sq,
@@ -393,7 +437,7 @@ class AnalyticKernel:
             quad_weights = self._quad_weights
             all_cn_sq  = jax.vmap(
                 lambda phi: _cn_squared_coefficients_jax(
-                    self.inc, phi, self.n_harmonics))(phi_grid)
+                    self.inc, phi, self.harmonics))(phi_grid)
             user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
             norm = jnp.sum(user_weights * quad_weights)
             cn_sq_avg = jnp.sum(
@@ -408,16 +452,16 @@ class AnalyticKernel:
             norm = jnp.sum(weights)
             all_cn_sq = jax.vmap(
                 lambda phi: _cn_squared_coefficients_jax(
-                    self.inc, phi, self.n_harmonics))(phi_grid)
+                    self.inc, phi, self.harmonics))(phi_grid)
             cn_sq_avg = jnp.sum(
                 user_weights[:, None] * all_cn_sq, axis=0) * dphi / norm
 
         w0 = 2 * jnp.pi / self.peq
         R  = self.R_Gamma(lag)
-        ns = jnp.arange(1, len(cn_sq_avg))
-        cosine_terms = jnp.sum(
-            cn_sq_avg[1:] * jnp.cos(ns * w0 * lag[:, None]), axis=1)
-        return np.asarray(R * (cn_sq_avg[0] + 2 * cosine_terms) * self.sigma_k ** 2)
+        ns, w = _harmonic_basis(self.harmonics)
+        series = jnp.sum(
+            cn_sq_avg * w * jnp.cos(ns * w0 * lag[:, None]), axis=1)
+        return np.asarray(R * series * self.sigma_k ** 2)
 
     # ── Power spectral density ──────────────────────────────────────────────
 
@@ -442,6 +486,12 @@ class AnalyticKernel:
         if lat_dist is None:
             lat_dist = self.spot_model.latitude_distribution
 
+        # Each order n contributes power at omega +/- n*omega_0.  The n = 0
+        # term is the single unshifted copy, so it carries half the weight of
+        # an oscillating order (whose two sidebands coincide at n = 0).
+        harm_ns, harm_w = _harmonic_basis(self.harmonics)
+        psd_w = harm_w / 2.0
+
         # Build the per-latitude PSD contribution based on envelope type
         if isinstance(self.envelope, (SkewedGaussianEnvelope, ExponentialEnvelope)):
             # Use envelope's Gamma_hat_sq directly
@@ -449,16 +499,13 @@ class AnalyticKernel:
                 cn_sq = self.cn_squared(phi)
                 w0 = self.omega0(phi)
 
-                contrib = cn_sq[0] * self.envelope.Gamma_hat_sq(omega)
-
-                def _harmonic(n):
-                    return cn_sq[n] * (
+                def _harmonic(n, c_sq, wt):
+                    return c_sq * wt * (
                         self.envelope.Gamma_hat_sq(omega - n * w0)
                         + self.envelope.Gamma_hat_sq(omega + n * w0))
 
-                ns = jnp.arange(1, len(cn_sq))
-                harmonic_contribs = jax.vmap(lambda n: _harmonic(n))(ns)
-                return contrib + jnp.sum(harmonic_contribs, axis=0)
+                return jnp.sum(
+                    jax.vmap(_harmonic)(harm_ns, cn_sq, psd_w), axis=0)
 
         else:
             # Trapezoid types use the closed-form _Gamma_hat
@@ -466,17 +513,13 @@ class AnalyticKernel:
                 cn_sq = self.cn_squared(phi)
                 w0 = self.omega0(phi)
 
-                Gh_0 = self.envelope.Gamma_hat(omega)
-                contrib = cn_sq[0] * Gh_0 ** 2
-
-                def _harmonic(n):
+                def _harmonic(n, c_sq, wt):
                     Gh_p = self.envelope.Gamma_hat(omega - n * w0)
                     Gh_m = self.envelope.Gamma_hat(omega + n * w0)
-                    return cn_sq[n] * (Gh_p ** 2 + Gh_m ** 2)
+                    return c_sq * wt * (Gh_p ** 2 + Gh_m ** 2)
 
-                ns = jnp.arange(1, len(cn_sq))
-                harmonic_contribs = jax.vmap(lambda n: _harmonic(n))(ns)
-                return contrib + jnp.sum(harmonic_contribs, axis=0)
+                return jnp.sum(
+                    jax.vmap(_harmonic)(harm_ns, cn_sq, psd_w), axis=0)
 
         if self.quadrature == "gauss-legendre":
             phi_grid    = self._quad_nodes

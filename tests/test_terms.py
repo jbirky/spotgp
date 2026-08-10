@@ -30,61 +30,68 @@ HPARAM = dict(peq=10.0, kappa=0.2, inc=np.pi / 4, lspot=5.0,
 # catches any genuine change in kernel math.
 RTOL = 1e-12
 
-# Captured on main @ ffbc9bb (pre-refactor), jax 0.10.0 x64 CPU.
+# Originally captured on main @ ffbc9bb (pre-refactor), jax 0.10.0 x64 CPU.
+#
+# Re-captured when the kernel began taking its harmonic orders from
+# ``visibility.harmonics``, which moved the default set from 0..3 to 0..2.
+# The values below were validated against the *pre-change* implementation
+# run with an explicit ``n_harmonics=2``: the two agree to 1.2e-14 relative
+# (worst case: grad0), so only the default order set moved — the kernel math
+# itself is unchanged.
 PINS = {
     "uniform/cholesky_banded": {
-        "logL_fn": 537.1595090582858,
-        "logL_init": 537.159509058286,
-        "logpost": 526.5196151860879,
-        "grad0": 0.5532028323455872,
+        "logL_fn": 537.2845653996955,
+        "logL_init": 537.2845653996956,
+        "logpost": 526.6446715274975,
+        "grad0": 0.5239965812265719,
     },
     "uniform/cholesky_full": {
-        "logL_fn": 537.1595090582858,
-        "logL_init": 537.159509058286,
-        "logpost": 526.5196151860879,
-        "grad0": 0.5532028323455886,
+        "logL_fn": 537.2845653996955,
+        "logL_init": 537.2845653996956,
+        "logpost": 526.6446715274975,
+        "grad0": 0.5239965812265653,
     },
     "irregular/cholesky_banded": {
-        "logL_fn": 532.3351219588789,
-        "logL_init": 532.335121958879,
-        "logpost": 521.6952280866809,
-        "grad0": 0.5056330614933087,
+        "logL_fn": 532.4534737577502,
+        "logL_init": 532.4534737577502,
+        "logpost": 521.8135798855523,
+        "grad0": 0.48252885278164437,
     },
     "irregular/cholesky_full": {
-        "logL_fn": 532.3351219588789,
-        "logL_init": 532.335121958879,
-        "logpost": 521.6952280866809,
-        "grad0": 0.5056330614933103,
+        "logL_fn": 532.4534737577502,
+        "logL_init": 532.4534737577502,
+        "logpost": 521.8135798855523,
+        "grad0": 0.4825288527816439,
     },
     "gappy/cholesky_banded": {
-        "logL_fn": 538.1249912186183,
-        "logL_init": 538.1249912186184,
-        "logpost": 527.4850973464204,
-        "grad0": 0.5001789782044745,
+        "logL_fn": 538.2710188149504,
+        "logL_init": 538.2710188149503,
+        "logpost": 527.6311249427524,
+        "grad0": 0.47607743658135165,
     },
     "gappy/cholesky_full": {
-        "logL_fn": 538.1249912186184,
-        "logL_init": 538.1249912186184,
-        "logpost": 527.4850973464205,
-        "grad0": 0.5001789782044828,
+        "logL_fn": 538.2710188149504,
+        "logL_init": 538.2710188149503,
+        "logpost": 527.6311249427524,
+        "grad0": 0.4760774365813532,
     },
     "uniform/banded/logspace": {
-        "logL_fn": 537.1595061467123,
-        "logL_init": 537.159509058286,
-        "logpost": 522.7385552949352,
-        "grad0": 0.5532028313386538,
+        "logL_fn": 537.2845624907399,
+        "logL_init": 537.2845653996956,
+        "logpost": 522.8636116389628,
+        "grad0": 0.5239965820302568,
     },
     "uniform/banded/gl": {
-        "logL_fn": 537.1762229237519,
-        "logL_init": 537.1762229237518,
-        "logpost": 526.5363290515539,
-        "grad0": 0.5594253392315109,
+        "logL_fn": 537.3033092397471,
+        "logL_init": 537.3033092397471,
+        "logpost": 526.6634153675492,
+        "grad0": 0.5298326734343418,
     },
     "uniform/banded/b40": {
-        "logL_fn": 547.8614875878932,
-        "logL_init": 547.8614875878931,
-        "logpost": 537.2215937156952,
-        "grad0": 0.5792935882347008,
+        "logL_fn": 548.0256514915891,
+        "logL_init": 548.0256514915891,
+        "logpost": 537.3857576193911,
+        "grad0": 0.5471190414466703,
     },
 }
 

@@ -56,6 +56,17 @@ def _get_class_registry():
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
+def _read_harmonics(attrs):
+    """Harmonic orders from an HDF5 attrs bag.
+
+    Files written before non-contiguous harmonics existed carry only the
+    int ``n_harmonics``, which still means the contiguous set ``0..n``.
+    """
+    if "harmonics" in attrs:
+        return tuple(int(n) for n in attrs["harmonics"])
+    return int(attrs["n_harmonics"])
+
+
 def _replace_group(f, name):
     if name in f:
         del f[name]
@@ -97,6 +108,9 @@ def _write_model(f, model, name="model"):
         vis.attrs["class_name"] = type(model.visibility).__name__
         for k, v in model.visibility.param_dict.items():
             vis.attrs[k] = float(v)
+        harmonics = getattr(model.visibility, "harmonics", None)
+        if harmonics is not None:
+            vis.attrs["harmonics"] = np.asarray(harmonics, dtype=np.int64)
         from .visibility import (
             FullGeometryVisibilityFunction, LimbDarkenedVisibilityFunction,
         )
@@ -124,10 +138,14 @@ def _write_config(f, gp):
     grp.attrs["fit_sigma_n"] = bool(gp.fit_sigma_n)
     grp.attrs["matrix_solver"] = gp.matrix_solver
     grp.attrs["bandwidth"] = int(gp.bandwidth) if hasattr(gp, "bandwidth") else -1
-    # n_harmonics/n_lat/quadrature are None for spot-free composite
+    # harmonics/n_lat/quadrature are None for spot-free composite
     # kernels (per-term values live under /kernel); -1 marks absent.
+    # n_harmonics is written alongside the order set so files stay readable
+    # by versions that predate non-contiguous harmonics.
     grp.attrs["n_harmonics"] = (int(gp.n_harmonics)
-                                if gp.n_harmonics is not None else -1)
+                                if gp.harmonics is not None else -1)
+    if gp.harmonics is not None:
+        grp.attrs["harmonics"] = np.asarray(gp.harmonics, dtype=np.int64)
     grp.attrs["n_lat"] = int(gp.n_lat) if gp.n_lat is not None else -1
     if gp.kernel is not None:
         grp.attrs["quadrature"] = gp.kernel.quadrature
@@ -160,6 +178,7 @@ def _write_kernel_terms(f, gp):
             tg = grp[name]
             ak = t.analytic_kernel
             tg.attrs["n_harmonics"] = int(ak.n_harmonics)
+            tg.attrs["harmonics"] = np.asarray(ak.harmonics, dtype=np.int64)
             tg.attrs["n_lat"] = int(ak.n_lat)
             tg.attrs["quadrature"] = ak.quadrature
             tg.create_dataset("term_lat_range", data=np.array(ak.lat_range))
@@ -171,6 +190,7 @@ def _write_kernel_terms(f, gp):
                 _write_model(tg, comp, name=f"comp{j}")
             ak = t._ref_term.analytic_kernel
             tg.attrs["n_harmonics"] = int(ak.n_harmonics)
+            tg.attrs["harmonics"] = np.asarray(ak.harmonics, dtype=np.int64)
             tg.attrs["n_lat"] = int(ak.n_lat)
             tg.attrs["quadrature"] = ak.quadrature
             tg.create_dataset("term_lat_range", data=np.array(ak.lat_range))
@@ -258,9 +278,14 @@ def _read_model(f, name="model"):
         visibility = None
     else:
         cls = registry[vis_name]
-        skip = {"class_name", "alpha_ref", "n_lon", "law", "u"}
+        skip = {"class_name", "alpha_ref", "n_lon", "law", "u", "harmonics"}
         params = {k: float(v) for k, v in grp["visibility"].attrs.items()
                   if k not in skip}
+        # Absent in files written before harmonics was configurable; the
+        # class default then applies.
+        if "harmonics" in grp["visibility"].attrs:
+            params["harmonics"] = tuple(
+                int(n) for n in grp["visibility"].attrs["harmonics"])
         if vis_name == "FullGeometryVisibilityFunction":
             params["alpha_ref"] = float(grp["visibility"].attrs["alpha_ref"])
             params["n_lon"] = int(grp["visibility"].attrs["n_lon"])
@@ -321,7 +346,9 @@ def _read_config(f):
     n_h = int(grp.attrs["n_harmonics"])
     n_l = int(grp.attrs["n_lat"])
     if n_h >= 0:
-        config["n_harmonics"] = n_h
+        # Prefer the explicit order set; older files carry only the int.
+        config["n_harmonics"] = (
+            _read_harmonics(grp.attrs) if "harmonics" in grp.attrs else n_h)
     if n_l >= 0:
         config["n_lat"] = n_l
     if "quadrature" in grp.attrs:
@@ -345,7 +372,7 @@ def _read_kernel_terms(f):
             model = _read_model(grp, name=f"term{i}")
             terms.append(SpotTerm(
                 model, prefix=prefix,
-                n_harmonics=int(tg.attrs["n_harmonics"]),
+                n_harmonics=_read_harmonics(tg.attrs),
                 n_lat=int(tg.attrs["n_lat"]),
                 quadrature=str(tg.attrs["quadrature"]),
                 lat_range=tuple(tg["term_lat_range"][:])))
@@ -355,7 +382,7 @@ def _read_kernel_terms(f):
                       for j in range(int(tg.attrs["n_components"]))]
             terms.append(SharedVisibilitySpotSum(
                 models, labels=labels, prefix=prefix,
-                n_harmonics=int(tg.attrs["n_harmonics"]),
+                n_harmonics=_read_harmonics(tg.attrs),
                 n_lat=int(tg.attrs["n_lat"]),
                 quadrature=str(tg.attrs["quadrature"]),
                 lat_range=tuple(tg["term_lat_range"][:])))

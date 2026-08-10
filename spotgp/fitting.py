@@ -140,7 +140,7 @@ class FittingMixin:
         u0 = np.asarray((free0_theta - blo) / brange, dtype=np.float64)
 
         qn, qw = self._quad_nodes, self._quad_weights
-        n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
+        n_h, n_l, lr = self.harmonics, self.n_lat, self.lat_range
         r_gamma_fn = self.spot_model.get_r_gamma_func()
         lat_wt_fn = self.spot_model.get_lat_weight_func()
         cn_sq_fn = self.spot_model.get_cn_sq_func(n_h)
@@ -283,7 +283,7 @@ class FittingMixin:
         brange = jnp.asarray(brange_np)
 
         qn, qw = self._quad_nodes, self._quad_weights
-        n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
+        n_h, n_l, lr = self.harmonics, self.n_lat, self.lat_range
         r_gamma_fn = self.spot_model.get_r_gamma_func()
         lat_wt_fn = self.spot_model.get_lat_weight_func()
         cn_sq_fn = self.spot_model.get_cn_sq_func(n_h)
@@ -543,7 +543,7 @@ class FittingMixin:
         n_kernel = len(self.spot_model.param_keys)  # envelope-dependent
         to_phys = self._to_physical
         qn, qw = self._quad_nodes, self._quad_weights
-        n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
+        n_h, n_l, lr = self.harmonics, self.n_lat, self.lat_range
         r_gamma_fn = self.spot_model.get_r_gamma_func()
         lat_wt_fn = self.spot_model.get_lat_weight_func()
         cn_sq_fn = self.spot_model.get_cn_sq_func(n_h)

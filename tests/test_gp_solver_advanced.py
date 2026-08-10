@@ -10,6 +10,20 @@ from spotgp.envelope import TrapezoidSymmetricEnvelope
 from spotgp.spot_model import SpotEvolutionModel, VisibilityFunction
 
 
+def _assert_symmetric(M):
+    """Symmetric to floating-point precision, scaled to the matrix magnitude.
+
+    These matrices come from a numerically-computed Hessian and a linear
+    solve, so exact symmetry is not guaranteed.  Entries run to ~1e6, which
+    makes a bare ``atol`` meaningless — the bound has to track the scale.
+    """
+    M = np.asarray(M)
+    asym = np.max(np.abs(M - M.T))
+    scale = np.max(np.abs(M))
+    assert asym <= 1e-8 * scale, (
+        f"asymmetry {asym:.3e} exceeds 1e-8 x scale {scale:.3e}")
+
+
 @pytest.fixture
 def gp_full(default_hparam, synthetic_data):
     """GPSolver with full Cholesky solver."""
@@ -76,7 +90,7 @@ class TestMassMatrixHessian:
 
     def test_symmetric(self, gp_full):
         M = np.array(gp_full.mass_matrix_hessian_map(gp_full.theta0))
-        np.testing.assert_allclose(M, M.T, atol=1e-10)
+        _assert_symmetric(M)
 
     def test_positive_diagonal(self, gp_full):
         M = np.array(gp_full.mass_matrix_hessian_map(gp_full.theta0))
@@ -95,7 +109,7 @@ class TestMassMatrixFisher:
 
     def test_full_solver_symmetric(self, gp_full):
         M = np.array(gp_full.mass_matrix_fisher(gp_full.theta0))
-        np.testing.assert_allclose(M, M.T, atol=1e-10)
+        _assert_symmetric(M)
 
     def test_banded_solver_shape(self, gp_banded):
         M = gp_banded.mass_matrix_fisher(gp_banded.theta0)
@@ -109,7 +123,7 @@ class TestMassMatrixLaplace:
 
     def test_symmetric(self, gp_full):
         M = np.array(gp_full.mass_matrix_laplace(gp_full.theta0))
-        np.testing.assert_allclose(M, M.T, atol=1e-10)
+        _assert_symmetric(M)
 
     def test_stored_on_solver(self, gp_full):
         gp_full.mass_matrix_laplace(gp_full.theta0)

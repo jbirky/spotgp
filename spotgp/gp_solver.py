@@ -50,7 +50,7 @@ HPARAM_KEYS_WITH_NOISE = list(HPARAM_KEYS_WITH_NOISE)
 
 
 def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
-                       n_harmonics, n_lat, lat_range,
+                       harmonics, n_lat, lat_range,
                        fit_sigma_n, n_kernel=6,
                        r_gamma_func=None,
                        quad_nodes=None, quad_weights=None,
@@ -81,7 +81,7 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
         Observations.
     mean_val : float
         Constant mean.
-    n_harmonics, n_lat, lat_range : kernel config.
+    harmonics, n_lat, lat_range : kernel config.
     fit_sigma_n : bool
         If True, last element of theta_full is sigma_n.
     n_kernel : int
@@ -122,7 +122,7 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
         # Legacy path: assemble the kernel closure from the kwarg bundle.
         def k_of_lag(theta_k, lags):
             return _kernel_eval(theta_k, lags,
-                                n_harmonics, n_lat, lat_range,
+                                harmonics, n_lat, lat_range,
                                 quad_nodes=quad_nodes,
                                 quad_weights=quad_weights,
                                 r_gamma_func=r_gamma_func,
@@ -167,7 +167,7 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
 
 
 def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
-                              n_harmonics, n_lat, lat_range,
+                              harmonics, n_lat, lat_range,
                               r_gamma_func=None,
                               quad_nodes=None, quad_weights=None,
                               edgeon_cn_sq=None,
@@ -196,7 +196,7 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
         Observation times.
     bandwidth : int
         Number of sub-diagonals.
-    n_harmonics, n_lat, lat_range : kernel config.
+    harmonics, n_lat, lat_range : kernel config.
     r_gamma_func : callable or None
         JAX-traceable envelope R_Gamma function (see _kernel_eval).
     quad_nodes, quad_weights : jnp.ndarray or None
@@ -227,7 +227,7 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
         # Legacy path: assemble the kernel closure from the kwarg bundle.
         def k_of_lag(theta_k, lags):
             return _kernel_eval(theta_k, lags,
-                                n_harmonics, n_lat, lat_range,
+                                harmonics, n_lat, lat_range,
                                 quad_nodes=quad_nodes,
                                 quad_weights=quad_weights,
                                 r_gamma_func=r_gamma_func,
@@ -262,7 +262,7 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
 
 
 def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
-                               n_harmonics, n_lat, lat_range,
+                               harmonics, n_lat, lat_range,
                                fit_sigma_n, bandwidth,
                                n_kernel=6,
                                r_gamma_func=None,
@@ -312,7 +312,7 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
 
     # Build covariance in compact banded storage: O(N*b) instead of O(N^2)
     cb = _build_banded_kernel_jax(theta_kernel, x, bandwidth,
-                                   n_harmonics, n_lat, lat_range,
+                                   harmonics, n_lat, lat_range,
                                    r_gamma_func=r_gamma_func,
                                    quad_nodes=quad_nodes,
                                    quad_weights=quad_weights,
@@ -750,13 +750,13 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                        if isinstance(t, SpotTerm)]
         if _spot_terms:
             _spot0 = _spot_terms[0]
-            self.n_harmonics = _spot0.n_harmonics
+            self.harmonics = _spot0.harmonics
             self.n_lat = _spot0.n_lat
             self.lat_range = _spot0.lat_range
             self._quad_nodes = _spot0._quad_nodes
             self._quad_weights = _spot0._quad_weights
         else:
-            self.n_harmonics = None
+            self.harmonics = None
             self.n_lat = None
             self.lat_range = None
             self._quad_nodes = None
@@ -788,6 +788,15 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
             import os as _os
             _os.makedirs(save_dir, exist_ok=True)
         self.save_dir = save_dir
+
+    @property
+    def n_harmonics(self):
+        """Largest harmonic order, or None for a spot-free kernel.
+
+        The int summary of :attr:`harmonics`, kept for callers that want a
+        single number rather than the full order set.
+        """
+        return None if self.harmonics is None else max(self.harmonics)
 
     def _autosave(self, filename, **arrays):
         """Save ``arrays`` to ``save_dir/filename`` if ``save_dir`` is set."""
@@ -1061,7 +1070,7 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         bounds = self.bounds
         x, y, yerr = self.x, self.y, self.yerr
         mean_val = self.mean_val
-        n_h, n_l, lr = self.n_harmonics, self.n_lat, self.lat_range
+        n_h, n_l, lr = self.harmonics, self.n_lat, self.lat_range
         custom_prior = self._custom_log_prior
         fit_sn = self.fit_sigma_n
         to_phys = self._to_physical  # sampling theta → physical theta

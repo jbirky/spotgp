@@ -317,7 +317,7 @@ class SpotTerm(Term):
         ak = self.analytic_kernel
         model = self.spot_model
 
-        self.n_harmonics = ak.n_harmonics
+        self.harmonics = ak.harmonics
         self.n_lat = ak.n_lat
         if model.latitude_distribution.param_dict:
             self.lat_range = (-np.pi / 2, np.pi / 2)
@@ -342,13 +342,18 @@ class SpotTerm(Term):
 
         self._r_gamma_func = model.get_r_gamma_func()
         self._lat_weight_func = model.get_lat_weight_func()
-        self._cn_sq_func = model.get_cn_sq_func(self.n_harmonics)
+        self._cn_sq_func = model.get_cn_sq_func(self.harmonics)
 
         if isinstance(model.visibility, EdgeOnVisibilityFunction):
             self._edgeon_cn_sq = jnp.array(
-                model.visibility.cn_squared(0.0, self.n_harmonics))
+                model.visibility.cn_squared(0.0, self.harmonics))
         else:
             self._edgeon_cn_sq = None
+
+    @property
+    def n_harmonics(self):
+        """Largest harmonic order — the int summary of :attr:`harmonics`."""
+        return max(self.harmonics)
 
     # ── Parameter layout ────────────────────────────────────────────────
 
@@ -366,7 +371,7 @@ class SpotTerm(Term):
         from .analytic_kernel import _kernel_eval
         return _kernel_eval(
             theta_slice, lag_flat,
-            self.n_harmonics, self.n_lat, self.lat_range,
+            self.harmonics, self.n_lat, self.lat_range,
             quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
             r_gamma_func=self._r_gamma_func,
             edgeon_cn_sq=self._edgeon_cn_sq,
@@ -477,13 +482,13 @@ class SharedVisibilitySpotSum(Term):
         # SpotTerm over component 0 (its per-model theta closures are
         # not used — only the static configuration).
         self._ref_term = SpotTerm(ref, **kernel_kwargs)
-        self.n_harmonics = self._ref_term.n_harmonics
+        self.harmonics = self._ref_term.harmonics
         self.n_lat = self._ref_term.n_lat
         self.lat_range = self._ref_term.lat_range
         self._quad_nodes = self._ref_term._quad_nodes
         self._quad_weights = self._ref_term._quad_weights
         self._edgeon_cn_sq = self._ref_term._edgeon_cn_sq
-        self._cn_sq_func = ref.get_cn_sq_func(self.n_harmonics)
+        self._cn_sq_func = ref.get_cn_sq_func(self.harmonics)
 
         # Static offsets into this term's theta slice.
         self._n_vis = len(ref.visibility.param_keys)
@@ -499,6 +504,11 @@ class SharedVisibilitySpotSum(Term):
             ref.latitude_distribution, self._n_vis)
 
     # ── Parameter layout ────────────────────────────────────────────────
+
+    @property
+    def n_harmonics(self):
+        """Largest harmonic order — the int summary of :attr:`harmonics`."""
+        return max(self.harmonics)
 
     @property
     def base_keys(self):
@@ -553,7 +563,7 @@ class SharedVisibilitySpotSum(Term):
         theta_eval = jnp.append(jnp.asarray(theta_slice), 1.0)
         return _kernel_eval(
             theta_eval, lag_flat,
-            self.n_harmonics, self.n_lat, self.lat_range,
+            self.harmonics, self.n_lat, self.lat_range,
             quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
             r_gamma_func=composite_r_gamma,
             edgeon_cn_sq=self._edgeon_cn_sq,
@@ -695,13 +705,13 @@ class PopulationSpotTerm(Term):
         # closures of the ref term are not used — only the static
         # configuration), mirroring SharedVisibilitySpotSum.
         self._ref_term = SpotTerm(model, **kernel_kwargs)
-        self.n_harmonics = self._ref_term.n_harmonics
+        self.harmonics = self._ref_term.harmonics
         self.n_lat = self._ref_term.n_lat
         self.lat_range = self._ref_term.lat_range
         self._quad_nodes = self._ref_term._quad_nodes
         self._quad_weights = self._ref_term._quad_weights
         self._edgeon_cn_sq = self._ref_term._edgeon_cn_sq
-        self._cn_sq_func = model.get_cn_sq_func(self.n_harmonics)
+        self._cn_sq_func = model.get_cn_sq_func(self.harmonics)
 
         self._n_vis = len(model.visibility.param_keys)
         self._n_lat_params = len(model.latitude_distribution.param_keys)
@@ -710,6 +720,11 @@ class PopulationSpotTerm(Term):
             model.latitude_distribution, self._n_vis)
 
     # ── Parameter layout ────────────────────────────────────────────────
+
+    @property
+    def n_harmonics(self):
+        """Largest harmonic order — the int summary of :attr:`harmonics`."""
+        return max(self.harmonics)
 
     @property
     def base_keys(self):
@@ -767,7 +782,7 @@ class PopulationSpotTerm(Term):
         theta_eval = jnp.append(jnp.asarray(theta_slice), 1.0)
         return _kernel_eval(
             theta_eval, lag_flat,
-            self.n_harmonics, self.n_lat, self.lat_range,
+            self.harmonics, self.n_lat, self.lat_range,
             quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
             r_gamma_func=marginalized_r_gamma,
             edgeon_cn_sq=self._edgeon_cn_sq,
