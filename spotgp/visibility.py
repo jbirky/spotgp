@@ -114,7 +114,7 @@ def _cn_general_jax(n, inc, phi):
 
 def _cn_squared_coefficients_jax(inc, phi, n_harmonics=2):
     """
-    Compute |c_n|² at the requested harmonic orders.
+    Compute ``|c_n|^2`` at the requested harmonic orders.
 
     ``n_harmonics`` is either an int ``n`` (orders 0, 1, ..., n) or an
     explicit sequence of orders, e.g. ``[0, 2, 4]``.  Element ``i`` of the
@@ -202,7 +202,7 @@ class VisibilityFunction:
 
     def cn_squared(self, phi, n_harmonics=None):
         """
-        Squared Fourier coefficients |c_n|² at stellar latitude phi.
+        Squared Fourier coefficients ``|c_n|^2`` at stellar latitude phi.
 
         Parameters
         ----------
@@ -249,8 +249,10 @@ class VisibilityFunction:
         Returns
         -------
         dict
-            ``{"omega0": expr, "a0": expr, "a1": expr,
-               "theta_v": expr, "c0": expr, "c1": expr, "cn": expr}``
+            Sympy expressions keyed by name::
+
+                {"omega0": expr, "a0": expr, "a1": expr,
+                 "theta_v": expr, "c0": expr, "c1": expr, "cn": expr}
         """
         try:
             import sympy as sp
@@ -327,7 +329,8 @@ class EdgeOnVisibilityFunction(VisibilityFunction):
 
         g_0 = 1/pi,  g_1 = 1/4,  g_2 = 1/(3*pi)
 
-    and the latitude-averaged *squared* coefficients are <|c_n|^2> = g_n^2/2:
+    and the latitude-averaged *squared* coefficients are
+    ``<|c_n|^2> = g_n^2/2``::
 
         <|c_0|^2> = 1 / (2 * pi^2)
         <|c_1|^2> = 1 / 32
@@ -373,7 +376,7 @@ class EdgeOnVisibilityFunction(VisibilityFunction):
         return 2.0 * jnp.pi / self.peq
 
     def cn_squared(self, phi, n_harmonics=None):
-        """Latitude-averaged |c_n|^2 (independent of phi).
+        """Latitude-averaged ``|c_n|^2`` (independent of phi).
 
         Returns the closed-form coefficients for n = 0, 1, 2 and zero
         for higher harmonics.
@@ -390,16 +393,19 @@ class FullGeometryVisibilityFunction(VisibilityFunction):
     The projected area of a circular spot with angular radius alpha at
     angle beta from the line of sight has three regimes:
 
-    - **Fully visible** (0 < beta < pi/2 - alpha):
-      A = pi sin^2(alpha) cos(beta)
+    - **Fully visible** (0 < beta < pi/2 - alpha)::
 
-    - **Partially visible** (pi/2 - alpha < beta < pi/2 + alpha):
-      A = arccos[cos(alpha) csc(beta)]
-          + cos(beta) sin^2(alpha) arccos[-cot(alpha) cot(beta)]
-          - cos(alpha) sin(beta) sqrt(1 - cos^2(alpha) csc^2(beta))
+        A = pi sin^2(alpha) cos(beta)
 
-    - **Hidden** (pi/2 + alpha < beta < pi):
-      A = 0
+    - **Partially visible** (pi/2 - alpha < beta < pi/2 + alpha)::
+
+        A = arccos[cos(alpha) csc(beta)]
+            + cos(beta) sin^2(alpha) arccos[-cot(alpha) cot(beta)]
+            - cos(alpha) sin(beta) sqrt(1 - cos^2(alpha) csc^2(beta))
+
+    - **Hidden** (pi/2 + alpha < beta < pi)::
+
+        A = 0
 
     The base ``VisibilityFunction`` uses the small-spot limit where
     A ~ pi alpha^2 cos(beta) and the partial-visibility window vanishes.
@@ -613,7 +619,7 @@ class LimbDarkenedVisibilityFunction(VisibilityFunction):
     I(mu), so the coefficients are obtained by evaluating V over one full
     rotation and taking the DFT -- the same strategy used by
     ``FullGeometryVisibilityFunction``.  ``n_lon`` sets the longitude
-    resolution; 512 gives |c_n|^2 accurate to ~1e-7.
+    resolution; 512 gives ``|c_n|^2`` accurate to ~1e-7.
 
     Limb darkening redistributes power toward higher harmonics: the
     intensity weighting sharpens the visibility profile, so harmonics that
@@ -730,12 +736,12 @@ class LimbDarkenedVisibilityFunction(VisibilityFunction):
     # ── Fourier coefficients ────────────────────────────────────────────────
 
     def cn_squared(self, phi, n_harmonics=None):
-        """Squared Fourier coefficients |c_n|^2 at latitude phi."""
+        """Squared Fourier coefficients ``|c_n|^2`` at latitude phi."""
         return self.cn_sq_at(self.inc, phi, n_harmonics)
 
     def cn_sq_at(self, inc, phi, n_harmonics=None):
         """
-        |c_n|^2 at an explicitly supplied inclination.
+        ``|c_n|^2`` at an explicitly supplied inclination.
 
         Separated from :meth:`cn_squared` so ``inc`` can be a JAX tracer,
         which is what lets gradients flow to ``inc`` during fitting.
@@ -747,7 +753,7 @@ class LimbDarkenedVisibilityFunction(VisibilityFunction):
 
     def cn_sq_jax(self, theta_vis, phi, n_harmonics=None):
         """
-        JAX-traceable |c_n|^2 from the visibility slice of the theta vector.
+        JAX-traceable ``|c_n|^2`` from the visibility slice of the theta vector.
 
         ``theta_vis`` is ``[peq, kappa, inc]`` -- the leading entries of
         ``theta_arr``, matching :attr:`param_keys`.  This method is the hook

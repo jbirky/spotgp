@@ -600,7 +600,9 @@ class NonstationaryAnalyticKernel(AnalyticKernel):
 
     The covariance between times t1 and t2 is:
 
-        K(t1, t2) = σ_k(t1) · σ_k(t2) · K_stationary(|t1 - t2|)
+    .. code-block:: text
+
+        K(t1, t2) = sigma_k(t1) * sigma_k(t2) * K_stationary(|t1 - t2|)
 
     where K_stationary is the latitude-averaged kernel without the σ_k²
     prefactor.  This factorization guarantees positive semi-definiteness

@@ -11,7 +11,7 @@ To define a custom envelope, subclass EnvelopeFunction and implement:
   - param_dict       : {name: value} of free parameters  [optional, needed for GPSolver]
   - lspot (property) : plateau duration [days]            [optional, default 0]
   - R_Gamma(lag)     : autocorrelation                    [optional, default: FFT]
-  - Gamma_hat(omega) : |FT[Gamma]|(omega)                 [optional, default: FFT]
+  - Gamma_hat(omega) : ``|FT[Gamma]|(omega)``                 [optional, default: FFT]
   - kernel_support() : upper lag support                  [optional, default: lspot+6*tau_spot]
 """
 from __future__ import annotations
@@ -47,7 +47,7 @@ def _Gamma_hat(omega, ell, tau_spot):
     """
     Fourier transform of the normalized squared envelope Gamma(t).
 
-    Uses safe_w = max(|omega|, eps) to avoid 1/w^3 singularity at omega=0.
+    Uses safe_w = max(``|omega|``, eps) to avoid 1/w^3 singularity at omega=0.
     """
     omega = jnp.asarray(omega, dtype=float)
     safe_w = jnp.where(jnp.abs(omega) > 1e-14, omega, 1.0)
@@ -188,7 +188,7 @@ def compute_R_Gamma_numerical(envelope_func, tau_ref, n_grid=4096, extent=12.0):
 
 def _compute_Gamma_hat_sq_numerical(envelope_func, tau_ref, n_grid=4096, extent=12.0):
     """
-    Precompute |Gamma_hat(ω)|² for a numerical envelope (used by compute_psd).
+    Precompute ``|Gamma_hat(omega)|^2`` for a numerical envelope (used by compute_psd).
 
     Returns
     -------
@@ -256,9 +256,9 @@ class EnvelopeFunction(ABC):
           not expose envelope parameters).
         - ``R_Gamma(lag)``        : autocorrelation ∫ Γ(t)Γ(t+lag)dt.
           Default: computed via FFT from ``Gamma``.
-        - ``Gamma_hat(omega)``    : |FT[Gamma]|(ω).
+        - ``Gamma_hat(omega)``    : ``|FT[Gamma]|(omega)``.
           Default: computed via FFT from ``Gamma``.
-        - ``Gamma_hat_sq(omega)`` : |FT[Gamma]|²(ω).
+        - ``Gamma_hat_sq(omega)`` : ``|FT[Gamma]|^2 (omega)``.
           Default: ``Gamma_hat(omega) ** 2``.
         - ``kernel_support()``    : upper lag bound where R_Gamma is negligible.
           Default: ``lspot + 6 * tau_spot``.
@@ -382,7 +382,7 @@ class EnvelopeFunction(ABC):
 
     def _ensure_numerical_grids(self):
         """
-        Build R_Gamma and |Gamma_hat|² grids from ``Gamma`` via FFT.
+        Build R_Gamma and ``|Gamma_hat|^2`` grids from ``Gamma`` via FFT.
 
         Called automatically by the default ``R_Gamma``, ``Gamma_hat``, and
         ``Gamma_hat_sq`` methods.  Results are cached on the instance so the
@@ -411,7 +411,7 @@ class EnvelopeFunction(ABC):
 
     def Gamma_hat(self, omega):
         """
-        Fourier transform magnitude |FT[Gamma]|(omega).
+        Fourier transform magnitude ``|FT[Gamma]|(omega)``.
 
         Default: interpolated from an FFT-based precomputed grid.
         Override with a closed-form expression for better performance.
@@ -426,7 +426,7 @@ class EnvelopeFunction(ABC):
 
     def Gamma_hat_sq(self, omega):
         """
-        |FT[Gamma](omega)|² = Gamma_hat(omega)².
+        ``|FT[Gamma](omega)|^2`` = Gamma_hat(omega)².
 
         Default: interpolated from an FFT-based precomputed grid.
         """
@@ -523,8 +523,10 @@ class EnvelopeFunction(ABC):
         Returns
         -------
         dict
-            ``{"Gamma": expr_or_None, "Gamma_hat": expr_or_None,
-               "R_Gamma": expr_or_None}``
+            Sympy expressions keyed by name::
+
+                {"Gamma": expr_or_None, "Gamma_hat": expr_or_None,
+                 "R_Gamma": expr_or_None}
         """
         try:
             import sympy as sp
@@ -1015,7 +1017,7 @@ class SkewedGaussianEnvelope(EnvelopeFunction):
 
         _env_func = _skew_normal_envelope_func(sigma_sn, n_sn)
 
-        # Precompute R_Gamma and |Gamma_hat|² on fine grids for interpolation
+        # Precompute R_Gamma and ``|Gamma_hat|^2`` on fine grids for interpolation
         self._R_lag_grid, self._R_vals = compute_R_Gamma_numerical(
             _env_func, tau_ref=sigma_sn)
         self._Gh_omega_grid, self._Gh_sq_vals = _compute_Gamma_hat_sq_numerical(
@@ -1085,14 +1087,14 @@ class ExponentialEnvelope(EnvelopeFunction):
     """
     Bilateral exponential (double-sided) envelope.
 
-    Gamma(t) = exp(-|t| / tau_spot)
+    Gamma(t) = exp(-``|t|`` / tau_spot)
 
     This gives a spot that is at peak at t = 0 and decays symmetrically
     with characteristic timescale tau_spot.  There is no plateau (lspot = 0).
 
     Analytical results:
       Gamma_hat(omega)  = 2*tau_spot / (1 + (omega*tau_spot)²)   [Lorentzian]
-      R_Gamma(lag)      = (tau_spot + |lag|) * exp(-|lag| / tau_spot)
+      R_Gamma(lag)      = (tau_spot + ``|lag|``) * exp(-``|lag|`` / tau_spot)
 
     Parameters
     ----------
@@ -1120,7 +1122,7 @@ class ExponentialEnvelope(EnvelopeFunction):
         return jnp.exp(-jnp.abs(t) / self._tau_spot)
 
     def Gamma_hat(self, omega):
-        """|FT[Gamma]| = 2*tau_spot / (1 + (omega*tau_spot)²) (Lorentzian)."""
+        """``|FT[Gamma]|`` = 2*tau_spot / (1 + (omega*tau_spot)²) (Lorentzian)."""
         omega = jnp.asarray(omega, dtype=float)
         return 2.0 * self._tau_spot / (1.0 + (omega * self._tau_spot) ** 2)
 
@@ -1129,7 +1131,7 @@ class ExponentialEnvelope(EnvelopeFunction):
         return gh ** 2
 
     def R_Gamma(self, lag):
-        """R_Gamma(lag) = (tau_spot + |lag|) * exp(-|lag| / tau_spot)."""
+        """R_Gamma(lag) = (tau_spot + ``|lag|``) * exp(-``|lag|`` / tau_spot)."""
         abs_lag = jnp.abs(jnp.asarray(lag, dtype=float))
         return (self._tau_spot + abs_lag) * jnp.exp(-abs_lag / self._tau_spot)
 

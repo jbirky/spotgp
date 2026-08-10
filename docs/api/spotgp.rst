@@ -3,18 +3,154 @@ API Reference (``spotgp``)
 
 .. module:: spotgp
 
+Spot Evolution Model
+--------------------
+
+The central model object.  It composes an envelope function, a visibility
+function, and a latitude distribution into the spot-evolution description
+that every kernel and solver consumes.
+
+.. autoclass:: spotgp.spot_model.SpotEvolutionModel
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Envelope Functions
+------------------
+
+:class:`~spotgp.envelope.EnvelopeFunction` is the base class; subclass it to
+define a custom spot emergence/decay profile.
+
+.. autoclass:: spotgp.envelope.EnvelopeFunction
+   :members:
+   :undoc-members:
+
+.. autoclass:: spotgp.envelope.TrapezoidSymmetricEnvelope
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.envelope.TrapezoidAsymmetricEnvelope
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.envelope.SkewedGaussianEnvelope
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.envelope.ExponentialEnvelope
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.envelope.ExponentialAsymmetricEnvelope
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autofunction:: spotgp.envelope.compute_R_Gamma_numerical
+
+Visibility Functions
+--------------------
+
+:class:`~spotgp.visibility.VisibilityFunction` is the base class; subclass it
+to define a custom stellar visibility law.  The ``harmonics`` argument selects
+which rotation harmonic orders are retained, and the kernel inherits that set
+unless overridden.
+
+.. autoclass:: spotgp.visibility.VisibilityFunction
+   :members:
+   :undoc-members:
+
+.. autoclass:: spotgp.visibility.EdgeOnVisibilityFunction
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.visibility.FullGeometryVisibilityFunction
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.visibility.LimbDarkenedVisibilityFunction
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Latitude Distributions
+----------------------
+
+:class:`~spotgp.latitude.LatitudeDistributionFunction` is the base class;
+subclass it to define a custom spot latitude density.
+
+.. autoclass:: spotgp.latitude.LatitudeDistributionFunction
+   :members:
+   :undoc-members:
+
+.. autoclass:: spotgp.latitude.UniformDoubleHemisphereBand
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Parameter Distributions
+-----------------------
+
+:class:`~spotgp.distributions.ParameterDistribution` is the base class for
+the priors attached to individual model parameters.
+
+.. autoclass:: spotgp.distributions.ParameterDistribution
+   :members:
+   :undoc-members:
+
+.. autoclass:: spotgp.distributions.DeltaDistribution
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.distributions.UniformDistribution
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.distributions.GaussianDistribution
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.distributions.LogNormalDistribution
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autofunction:: spotgp.distributions.as_distribution
+
+.. autofunction:: spotgp.distributions.is_distributed
+
 Lightcurve Model
 ----------------
+
+``inherited-members`` picks up the ``animate_*`` methods that
+``LightcurveModel`` gets from its ``AnimationMixin`` base class.
 
 .. autoclass:: spotgp.lightcurve.LightcurveModel
    :members:
    :undoc-members:
+   :inherited-members:
    :show-inheritance:
+
+.. autofunction:: spotgp.lightcurve.compute_sigmak
 
 Analytic Kernel
 ---------------
 
 .. autoclass:: spotgp.analytic_kernel.AnalyticKernel
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.analytic_kernel.NonstationaryAnalyticKernel
    :members:
    :undoc-members:
    :show-inheritance:
@@ -113,9 +249,14 @@ Numerical Kernel
 GP Solver
 ---------
 
+``inherited-members`` is set so that the fitting, mass-matrix, and plotting
+methods ``GPSolver`` picks up from its mixin base classes are documented here
+alongside the ones it defines itself.
+
 .. autoclass:: spotgp.gp_solver.GPSolver
    :members:
    :undoc-members:
+   :inherited-members:
    :show-inheritance:
 
 Multi-Band GP
@@ -168,6 +309,24 @@ Spectral Contrast
    :undoc-members:
    :show-inheritance:
 
+Transit Model
+-------------
+
+.. autoclass:: spotgp.transit.KeplerianOrbit
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.transit.QuadLimbDarkLightCurve
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.transit.SpotTransitModel
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Probabilistic Graphical Model
 -----------------------------
 
@@ -192,12 +351,82 @@ Power Spectral Density
 MCMC Sampler
 ------------
 
+:class:`~spotgp.mcmc.MCMCSampler` is the base class; the concrete samplers
+below implement it.
+
 .. autoclass:: spotgp.mcmc.MCMCSampler
    :members:
    :undoc-members:
-   :show-inheritance:
 
 .. autoclass:: spotgp.mcmc.BlackJAXSampler
    :members:
    :undoc-members:
    :show-inheritance:
+
+.. autoclass:: spotgp.mcmc.DynestySampler
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Fit Results
+-----------
+
+.. autoclass:: spotgp.results.MAPResult
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. autofunction:: spotgp.results.is_complete
+
+.. autofunction:: spotgp.results.mark_complete
+
+Saving and Loading
+------------------
+
+.. autofunction:: spotgp.io.save_gp
+
+.. autofunction:: spotgp.io.load_gp
+
+.. autofunction:: spotgp.io.save_sampler
+
+.. autofunction:: spotgp.io.load_sampler
+
+.. autofunction:: spotgp.io.load_samples
+
+Plotting
+--------
+
+.. autofunction:: spotgp.plotting.crb_corner_plot
+
+Sensitivity Analysis
+--------------------
+
+.. autofunction:: spotgp.sensitivity.sobol_indices
+
+Hyperparameter Specification
+----------------------------
+
+Registry that maps a raw hyperparameter dict onto the envelope and amplitude
+parameterization it describes.
+
+.. Both are dataclasses whose fields are already described by the docstring's
+.. Attributes section, which napoleon renders.  Documenting the fields as
+.. members too would emit each one twice, so member listing is turned off.
+
+.. autoclass:: spotgp.params.EnvelopeSpec
+   :no-members:
+   :show-inheritance:
+
+.. autoclass:: spotgp.params.AmplitudeSpec
+   :no-members:
+   :show-inheritance:
+
+.. autofunction:: spotgp.params.register_envelope
+
+.. autofunction:: spotgp.params.register_amplitude
+
+.. autofunction:: spotgp.params.resolve_hparam
+
+.. autodata:: spotgp.params.KERNEL_HPARAM_KEYS
+
+.. autodata:: spotgp.params.HPARAM_KEYS_WITH_NOISE

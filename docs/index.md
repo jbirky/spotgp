@@ -57,6 +57,7 @@ tutorials/limb_darkening
 
 tutorials/composite_kernels
 tutorials/random_variable_declarations
+tutorials/nonstationary_kernel
 ```
 
 ```{toctree}

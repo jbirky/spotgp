@@ -25,7 +25,7 @@ class LatitudeDistributionFunction:
 
     Examples
     --------
-    Equatorial band (spots confined to |phi| < 30 deg):
+    Equatorial band (spots confined to ``|phi|`` < 30 deg):
 
     >>> class EquatorialBand(LatitudeDistributionFunction):
     ...     @property
@@ -149,7 +149,7 @@ class LatitudeDistributionFunction:
 
 
 class UniformDoubleHemisphereBand(LatitudeDistributionFunction):
-    """Uniform distribution confined to min_lat < |phi| < max_lat."""
+    """Uniform distribution confined to min_lat < ``|phi|`` < max_lat."""
 
     def __init__(self, min_lat_deg: float = 0.0, max_lat_deg: float = 90.0):
         self._min_lat = float(np.deg2rad(min_lat_deg))

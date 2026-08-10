@@ -469,8 +469,11 @@ class SpotEvolutionModel:
         Returns
         -------
         dict
-            ``{"envelope": envelope_exprs, "visibility": visibility_exprs,
-               "latitude": latitude_exprs}``
+            Per-component expression dicts::
+
+                {"envelope": envelope_exprs, "visibility": visibility_exprs,
+                 "latitude": latitude_exprs}
+
             where each value is the dict returned by the respective
             ``get_sympy()`` call.
         """
