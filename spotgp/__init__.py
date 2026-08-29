@@ -10,12 +10,12 @@ from .distributions import (
 from .envelope import (
     EnvelopeFunction, TrapezoidSymmetricEnvelope, TrapezoidAsymmetricEnvelope,
     SkewedGaussianEnvelope, ExponentialEnvelope, ExponentialAsymmetricEnvelope,
-    compute_R_Gamma_numerical,
+    LogisticPlateauEnvelope, DoubleTrapezoidEnvelope, compute_R_Gamma_numerical,
 )
 from .latitude import LatitudeDistributionFunction, UniformDoubleHemisphereBand
 from .visibility import (
     VisibilityFunction, EdgeOnVisibilityFunction, FullGeometryVisibilityFunction,
-    LimbDarkenedVisibilityFunction,
+    LimbDarkenedVisibilityFunction, FullGeometryLimbDarkenedVisibilityFunction,
 )
 from .spot_model import SpotEvolutionModel
 from .lightcurve import LightcurveModel, compute_sigmak
@@ -33,6 +33,7 @@ from .numerical_kernel import NumericalKernel, generate_sims, avg_covariance_tla
 from .psd import compute_psd
 from .contrast import spot_contrast, contrast_factor, contrast_matrix
 from .gp_solver import GPSolver
+from .offsets import segment_labels, offset_design
 from .multiband import MultiBandData, MultiBandGPSolver, SpotFaculaeGPSolver
 from .spectral import (
     KorgProvider, BlackbodyProvider, BandpassSet, SpectralContrastModel,
@@ -41,7 +42,8 @@ from .pgm import PGModelVis
 from .mcmc import MCMCSampler, BlackJAXSampler, DynestySampler
 from .observations import TimeSeriesData
 from .results import MAPResult, is_complete, mark_complete
-from .io import save_gp, load_gp, save_sampler, load_sampler, load_samples
+from .io import (save_gp, load_gp, save_sampler, load_sampler,
+                 load_samples, register_io_class)
 from .plotting import crb_corner_plot
 from .sensitivity import sobol_indices
 from .transit import KeplerianOrbit, QuadLimbDarkLightCurve, SpotTransitModel
@@ -58,12 +60,12 @@ __all__ = [
     # envelope
     "EnvelopeFunction", "TrapezoidSymmetricEnvelope", "TrapezoidAsymmetricEnvelope",
     "SkewedGaussianEnvelope", "ExponentialEnvelope", "ExponentialAsymmetricEnvelope",
-    "compute_R_Gamma_numerical",
+    "LogisticPlateauEnvelope", "DoubleTrapezoidEnvelope", "compute_R_Gamma_numerical",
     # latitude
     "LatitudeDistributionFunction", "UniformDoubleHemisphereBand",
     # visibility
     "VisibilityFunction", "EdgeOnVisibilityFunction", "FullGeometryVisibilityFunction",
-    "LimbDarkenedVisibilityFunction",
+    "LimbDarkenedVisibilityFunction", "FullGeometryLimbDarkenedVisibilityFunction",
     # spot_model
     "SpotEvolutionModel",
     # lightcurve
@@ -84,6 +86,8 @@ __all__ = [
     "spot_contrast", "contrast_factor", "contrast_matrix",
     # solver
     "GPSolver",
+    "segment_labels",
+    "offset_design",
     # multiband
     "MultiBandData", "MultiBandGPSolver", "SpotFaculaeGPSolver",
     # spectral contrast
@@ -98,6 +102,7 @@ __all__ = [
     "MAPResult", "is_complete", "mark_complete",
     # io
     "save_gp", "load_gp", "save_sampler", "load_sampler", "load_samples",
+    "register_io_class",
     # plotting
     "crb_corner_plot",
     # sensitivity

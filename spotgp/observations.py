@@ -31,11 +31,11 @@ class TimeSeriesData:
     yerr : array_like, shape (N,) or float
         Measurement uncertainties. A scalar is broadcast to all points.
     normalize : bool
-        If True (default), normalize the flux so that the median is 1
+        If True, normalize the flux so that the median is 1
         and scale yerr accordingly.
     """
 
-    def __init__(self, x, y, yerr, normalize=True):
+    def __init__(self, x, y, yerr, normalize=False):
         x = np.asarray(x, dtype=float)
         y = np.asarray(y, dtype=float)
         yerr = np.asarray(yerr, dtype=float)
@@ -52,7 +52,7 @@ class TimeSeriesData:
 
         # Mask out non-finite values
         mask = np.isfinite(x) & np.isfinite(y) & np.isfinite(yerr)
-        self.x = x[mask]
+        self.x = x[mask] - x[mask][0]  # shift to start at 0
         self.y = y[mask]
         self.yerr = yerr[mask]
 
@@ -335,7 +335,7 @@ class TimeSeriesData:
         return cls(time, flux, flux_err, normalize=normalize)
 
     @classmethod
-    def from_lc_collection(cls, lc_collection, zero_mean=False, normalize=True):
+    def from_lc_collection(cls, lc_collection, zero_mean=False, normalize=False):
         """
         Create a TimeSeriesData from a lightkurve LightCurveCollection.
 
@@ -353,7 +353,7 @@ class TimeSeriesData:
             concatenating, removing sector-to-sector flux offsets.
             Default False.
         normalize : bool
-            If True (default), normalize the combined flux to a
+            If True, normalize the combined flux to a
             median of 1 (see ``normalize()``).  Combined with
             ``zero_mean=True`` the flux is centered near 0, so its
             median is not a meaningful scale; prefer

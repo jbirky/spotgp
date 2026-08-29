@@ -47,6 +47,7 @@ DEFAULT_TERM_BOUNDS = {
     "n_sn":      (-10.0, 10.0),
     "lat_min":   (0.0, np.pi / 2),
     "lat_max":   (0.0, np.pi / 2),
+    "t_gap":     (0.0, 100.0),
     "sigma_k":   (1e-6, 1.0),
     "sigma_n":   (1e-6, 0.1),
 }

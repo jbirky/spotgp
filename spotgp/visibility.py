@@ -16,6 +16,7 @@ __all__ = [
     "EdgeOnVisibilityFunction",
     "FullGeometryVisibilityFunction",
     "LimbDarkenedVisibilityFunction",
+    "FullGeometryLimbDarkenedVisibilityFunction",
     # low-level helpers re-exported for backward compat
     "_cn_general_jax",
     "_cn_squared_coefficients_jax",
@@ -770,3 +771,206 @@ class LimbDarkenedVisibilityFunction(VisibilityFunction):
             "LimbDarkenedVisibilityFunction computes c_n numerically by DFT; "
             "there is no closed-form expression to render. Use "
             "visibility_profile() to inspect V(theta) instead.")
+
+
+class FullGeometryLimbDarkenedVisibilityFunction(LimbDarkenedVisibilityFunction):
+    """
+    Visibility function with the full finite-spot geometry *and* limb
+    darkening.
+
+    Combines the two effects that the sibling subclasses treat separately:
+
+    - :class:`FullGeometryVisibilityFunction` keeps the exact projected
+      area of a spot with finite angular radius ``alpha`` -- including the
+      partial-visibility regime at the limb -- but assumes a uniformly
+      bright disk.
+    - :class:`LimbDarkenedVisibilityFunction` weights the deficit by the
+      local specific intensity ``I(mu)`` but takes the small-spot limit,
+      evaluating ``mu`` only at the spot centre.
+
+    Here the flux deficit is the surface integral of the projected,
+    intensity-weighted area over the *visible part* of the spot cap.  With
+    the cap parameterized by angular distance ``rho`` from the spot centre
+    and azimuth ``psi`` (surface element ``sin(rho) drho dpsi``), a point's
+    angle from the line of sight follows the spherical law of cosines,
+
+        mu(rho, psi) = cos(beta) cos(rho) + sin(beta) sin(rho) cos(psi),
+
+    where ``beta`` is the angle between the spot centre and the line of
+    sight, ``cos(beta) = cos(i) sin(phi) + sin(i) cos(phi) cos(theta)``.
+    The visibility is then
+
+        V(phi, theta) = D(beta) / (pi sin^2(alpha) F),
+
+        D(beta) = int_0^alpha int_0^2pi I(mu) max(mu, 0)
+                  sin(rho) dpsi drho,
+
+        F = int_0^1 2 mu I(mu) dmu.
+
+    The ``max(mu, 0)`` mask reproduces the full piecewise geometry of
+    Eq. 5 without any branch analysis: for ``I == 1`` the double integral
+    equals the exact projected area (all three regimes), so this class
+    reduces to :class:`FullGeometryVisibilityFunction`; for
+    ``alpha -> 0`` it reduces to :class:`LimbDarkenedVisibilityFunction`;
+    and with both simplifications it recovers the base class.  The
+    normalization ``pi sin^2(alpha)`` (spot area, so V is per unit spot
+    area) and ``F`` (disk-integrated flux) match those conventions.
+
+    The double integral is evaluated on a fixed Gauss-Legendre grid in
+    ``rho`` and a uniform (trapezoidal, exact for periodic integrands)
+    grid in ``psi``; the Fourier coefficients ``|c_n|^2`` are then
+    extracted by DFT over one rotation, exactly as in the two numeric
+    sibling classes.  Everything is branchless jnp array math, so
+    :meth:`cn_sq_at` remains differentiable in ``inc`` and the inherited
+    ``cn_sq_jax`` hook makes the class participate in the
+    latitude-averaged kernel (``AnalyticKernel`` covariance and the
+    ``GPSolver`` log-likelihood), not only the forward-model paths.
+
+    Note that, unlike the small-spot classes, the harmonic content now
+    depends on the spot size: a larger ``alpha_ref`` smooths the
+    visibility profile (the spot spends longer partially occulted at the
+    limb) and shifts power between harmonics.  ``alpha_ref`` is treated
+    as fixed configuration, like the limb-darkening coefficients.
+
+    Parameters
+    ----------
+    peq : float
+        Equatorial rotation period [days].
+    kappa : float
+        Differential rotation shear (dimensionless).
+    inc : float
+        Stellar inclination [radians].
+    alpha_ref : float
+        Spot angular radius [radians] used for the cap integral and the
+        area normalization (default 0.1).  Must lie in (0, pi/2).
+    u : sequence of float
+        Limb-darkening coefficients: ``(u1, u2)`` for ``law="quadratic"``,
+        ``(c1, c2, c3, c4)`` for ``law="claret"``.  ``u=(0.0, 0.0)``
+        recovers the uniform-disk full-geometry case.
+    law : {"quadratic", "claret"}
+        Intensity law (default "quadratic").
+    n_lon : int
+        Number of longitude grid points for the DFT (default 512).
+    n_rho, n_psi : int
+        Quadrature resolution over the spot cap (default 32 x 64).  The
+        integrand is smooth except along the visibility terminator
+        crossing the cap, so the defaults give |c_n|^2 to ~1e-6; double
+        them for spots larger than ~0.3 rad.
+    harmonics : sequence of int or int
+        Rotation harmonic orders to retain, default ``(0, 1, 2)``.  Both
+        limb darkening and the finite spot size move power across
+        harmonics, so prefer a wider set than for the base class.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from spotgp import FullGeometryLimbDarkenedVisibilityFunction
+    >>> vis = FullGeometryLimbDarkenedVisibilityFunction(
+    ...     peq=4.0, kappa=0.0, inc=np.pi / 3, alpha_ref=0.2, u=(0.4, 0.2))
+    >>> lon, V = vis.visibility_profile(phi=np.deg2rad(30))
+    """
+
+    def __init__(self, peq, kappa, inc, alpha_ref=0.1, u=(0.3, 0.2),
+                 law="quadratic", n_lon=512, n_rho=32, n_psi=64,
+                 harmonics=(0, 1, 2)):
+        super().__init__(peq=peq, kappa=kappa, inc=inc, u=u, law=law,
+                         n_lon=n_lon, harmonics=harmonics)
+        alpha_ref = float(alpha_ref)
+        if not 0.0 < alpha_ref < np.pi / 2:
+            raise ValueError(
+                f"alpha_ref must lie in (0, pi/2), got {alpha_ref}")
+        self.alpha_ref = alpha_ref
+        self.n_rho = int(n_rho)
+        self.n_psi = int(n_psi)
+
+        # Fixed quadrature over the spot cap: Gauss-Legendre in rho on
+        # [0, alpha_ref]; uniform psi with weight 2*pi/n_psi (the
+        # trapezoid rule, exact for periodic integrands).  sin(rho) is
+        # folded into the rho weights since it multiplies every integrand.
+        rho, w_rho = _gauss_legendre_grid(self.n_rho, 0.0, alpha_ref)
+        self._rho = rho                                  # (n_rho,)
+        self._w_rho = w_rho * jnp.sin(rho)               # (n_rho,)
+        self._psi = jnp.linspace(0.0, 2.0 * jnp.pi, self.n_psi,
+                                 endpoint=False)         # (n_psi,)
+        self._w_psi = 2.0 * jnp.pi / self.n_psi
+        # Spot area, the per-unit-spot-area normalization of V
+        self._spot_area = np.pi * float(np.sin(alpha_ref)) ** 2
+
+    # ── Spot-cap integral ───────────────────────────────────────────────────
+
+    def spot_deficit(self, cos_beta):
+        """
+        Limb-darkened flux deficit ``D(beta)`` of the finite spot.
+
+        Integrates ``I(mu) mu`` over the visible part of the spot cap for
+        each supplied ``cos(beta)``.  For ``I == 1`` this equals the exact
+        projected area of :meth:`FullGeometryVisibilityFunction.projected_area`
+        (all three visibility regimes emerge from the ``mu > 0`` mask).
+
+        Parameters
+        ----------
+        cos_beta : array_like, shape (...,)
+            Cosine of the angle between the spot centre and the line of
+            sight.  May be a JAX tracer.
+
+        Returns
+        -------
+        D : jnp.ndarray, shape (...,)
+            Unnormalized deficit; divide by ``pi sin^2(alpha_ref)`` for
+            the fractional-area convention and by :attr:`flux_norm` for
+            the limb-darkening normalization.
+        """
+        cos_b = jnp.asarray(cos_beta)[..., None, None]   # (..., 1, 1)
+        # Positive floor inside the clip: at cos_beta = +/-1 (spot centre
+        # crossing disk centre or anticentre) sqrt(0) has an infinite
+        # gradient, and the terms sin_b multiplies vanish there by psi
+        # symmetry, so inf * 0 = NaN in autodiff.  Clip's zero gradient
+        # outside its active range removes the inf; the sin_b-channel
+        # contribution it drops is 0 at that point.
+        sin_b = jnp.sqrt(jnp.clip(1.0 - cos_b ** 2, 1e-24, 1.0))
+        cos_r = jnp.cos(self._rho)[:, None]              # (n_rho, 1)
+        sin_r = jnp.sin(self._rho)[:, None]
+        cos_p = jnp.cos(self._psi)[None, :]              # (1, n_psi)
+
+        mu = cos_b * cos_r + sin_b * sin_r * cos_p       # (..., n_rho, n_psi)
+        # Strictly positive floor before I(mu): the Claret law's mu**(k/2)
+        # terms have infinite slope at mu = 0 and jnp.where propagates
+        # gradients through both branches (same guard as the parent).
+        mu_vis = jnp.clip(mu, 1e-12, 1.0)
+        integrand = jnp.where(mu > 0.0,
+                              self.intensity(mu_vis) * mu_vis, 0.0)
+        # psi sum (uniform weight), then weighted rho sum
+        return self._w_psi * jnp.einsum(
+            "...rp,r->...", integrand, self._w_rho)
+
+    # ── Visibility profile ──────────────────────────────────────────────────
+
+    def visibility_profile(self, phi, inc=None, n_lon=None):
+        """
+        Finite-spot, limb-darkened visibility over one rotation.
+
+        Same signature as the parent class, so the inherited DFT-based
+        ``cn_squared`` / ``cn_sq_at`` / ``cn_sq_jax`` operate on this
+        profile unchanged.  ``inc`` may be a JAX tracer.
+
+        Returns
+        -------
+        lon : jnp.ndarray, shape (n_lon,)
+        V : jnp.ndarray, shape (n_lon,)
+            Deficit per unit spot area, ``D(beta) / (pi sin^2(alpha) F)``.
+        """
+        inc = self.inc if inc is None else inc
+        n_lon = self.n_lon if n_lon is None else n_lon
+        lon = jnp.linspace(0.0, 2.0 * jnp.pi, n_lon, endpoint=False)
+        cos_b = (jnp.cos(inc) * jnp.sin(phi)
+                 + jnp.sin(inc) * jnp.cos(phi) * jnp.cos(lon))
+        V = self.spot_deficit(cos_b) / (self._spot_area * self.flux_norm)
+        return lon, V
+
+    def get_sympy(self, display=True, status=None):
+        """The combined c_n are numerical; there is no closed form."""
+        raise NotImplementedError(
+            "FullGeometryLimbDarkenedVisibilityFunction computes c_n "
+            "numerically (spot-cap quadrature + DFT); there is no "
+            "closed-form expression to render. Use visibility_profile() "
+            "to inspect V(theta) instead.")

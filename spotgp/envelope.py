@@ -30,6 +30,7 @@ __all__ = [
     "SkewedGaussianEnvelope",
     "ExponentialEnvelope",
     "ExponentialAsymmetricEnvelope",
+    "LogisticPlateauEnvelope",
     # low-level helpers (re-exported for backward compat with analytic_kernel)
     "compute_R_Gamma_numerical",
     "_Gamma_hat",
@@ -62,12 +63,13 @@ def _Gamma_hat(omega, ell, tau_spot):
 
 
 @jax.jit
-def _R_Gamma_symmetric(lag, ell, tau_s):
+def _R_Gamma_symmetric_core(lag, ell, tau_s):
     """
     Closed-form autocorrelation of the symmetric trapezoidal envelope.
 
     Piecewise degree-5 polynomial on [0, ell + 2*tau_s], zero beyond.
-    Assumes ell/2 > tau_s.
+    Only valid for ell >= tau_s > 0; the public ``_R_Gamma_symmetric``
+    wrapper enforces this for concrete arguments.
     """
     t = jnp.abs(jnp.asarray(lag, dtype=float).ravel())
 
@@ -97,12 +99,14 @@ def _R_Gamma_symmetric(lag, ell, tau_s):
 
 
 @jax.jit
-def _R_Gamma_asymmetric(lag, ell, te, td):
+def _R_Gamma_asymmetric_core(lag, ell, te, td):
     """
     Closed-form autocorrelation of the asymmetric trapezoidal envelope.
 
     Assumes te <= td (enforced by caller via min/max swap).
     Six intervals on [0, ell + te + td], zero beyond.
+    Only valid for ell >= td > 0; the public ``_R_Gamma_asymmetric``
+    wrapper enforces this for concrete arguments.
     """
     t = jnp.abs(jnp.asarray(lag, dtype=float).ravel())
 
@@ -150,6 +154,75 @@ def _R_Gamma_asymmetric(lag, ell, te, td):
            jnp.where(t <= ell + td, R5,
            jnp.where(t <= ell + te + td, R6,
                      0.0))))))
+
+
+def _check_trapezoid_acf_domain(kind, ell, **taus):
+    """
+    Validate the parameter domain of the closed-form trapezoid ACFs.
+
+    The piecewise polynomials in ``_R_Gamma_symmetric_core`` /
+    ``_R_Gamma_asymmetric_core`` are derived assuming the plateau is at
+    least as long as the (longest) ramp, ``lspot >= max(tau)``.  Outside
+    that regime they are wrong — R_Gamma goes negative and the resulting
+    covariance matrix is not positive semi-definite.
+
+    The check runs only when the arguments are concrete numbers.  Inside
+    ``jax.jit`` / ``vmap`` the values are tracers, so the check is skipped
+    silently (a Python exception cannot depend on traced values); guard
+    the sampler bounds instead when fitting these parameters.
+    """
+    try:
+        ell_c = float(ell)
+        taus_c = {name: float(t) for name, t in taus.items()}
+    except (TypeError, jax.errors.ConcretizationTypeError):
+        return  # traced argument: cannot validate at trace time
+
+    if not np.isfinite(ell_c) or not all(np.isfinite(t) for t in taus_c.values()):
+        raise ValueError(
+            f"{kind} trapezoid R_Gamma: parameters must be finite, got "
+            f"lspot={ell_c!r}, " + ", ".join(f"{k}={v!r}" for k, v in taus_c.items())
+        )
+    for name, t in taus_c.items():
+        if t <= 0:
+            raise ValueError(
+                f"{kind} trapezoid R_Gamma: {name}={t:g} must be positive."
+            )
+    tau_max = max(taus_c.values())
+    if ell_c < tau_max:
+        which = max(taus_c, key=taus_c.get)
+        raise ValueError(
+            f"{kind} trapezoid R_Gamma: closed form is invalid for "
+            f"lspot={ell_c:g} < {which}={tau_max:g}. The piecewise polynomial "
+            f"is derived assuming lspot >= {which}; outside that range it "
+            f"returns incorrect (even negative) values, producing a "
+            f"non-positive-definite kernel. Increase lspot, or use an "
+            f"envelope without this restriction (e.g. ExponentialEnvelope, "
+            f"or compute_R_Gamma_numerical)."
+        )
+
+
+def _R_Gamma_symmetric(lag, ell, tau_s):
+    """
+    Closed-form ACF of the symmetric trapezoidal envelope (validated).
+
+    Raises ValueError when called with concrete parameters outside the
+    validity range ``lspot >= tau_spot > 0``; traced arguments (inside
+    ``jax.jit``) skip the check and evaluate the closed form as before.
+    """
+    _check_trapezoid_acf_domain("symmetric", ell, tau_spot=tau_s)
+    return _R_Gamma_symmetric_core(lag, ell, tau_s)
+
+
+def _R_Gamma_asymmetric(lag, ell, te, td):
+    """
+    Closed-form ACF of the asymmetric trapezoidal envelope (validated).
+
+    Raises ValueError when called with concrete parameters outside the
+    validity range ``lspot >= max(tau_em, tau_dec) > 0``; traced arguments
+    (inside ``jax.jit``) skip the check and evaluate the closed form.
+    """
+    _check_trapezoid_acf_domain("asymmetric", ell, tau_em=te, tau_dec=td)
+    return _R_Gamma_asymmetric_core(lag, ell, te, td)
 
 
 def compute_R_Gamma_numerical(envelope_func, tau_ref, n_grid=4096, extent=12.0):
@@ -1030,6 +1103,18 @@ class SkewedGaussianEnvelope(EnvelopeFunction):
         self._t_grid = jnp.array(t_grid_np)
         self._Gamma_vals = jnp.array(gamma_np)
 
+        # 99.9th-percentile support: the interval [prc0.1, prc99.9] of
+        # the skew-normal CDF containing 99.8% of the envelope mass.
+        # R_Gamma(tau) is the autocorrelation of Gamma, whose support
+        # is at most prc99.9 - prc0.1.  The baseline cap is applied by
+        # GPSolver._compute_bandwidth via min(b, N-1).
+        dt = float(t_grid_np[1] - t_grid_np[0])
+        cdf = np.cumsum(gamma_np) * dt
+        cdf /= cdf[-1]
+        prc001 = float(np.interp(0.001, cdf, t_grid_np))
+        prc999 = float(np.interp(0.999, cdf, t_grid_np))
+        self._prc99_support = prc999 - prc001
+
     @property
     def tau_spot(self) -> float:
         return self._sigma_sn
@@ -1077,10 +1162,10 @@ class SkewedGaussianEnvelope(EnvelopeFunction):
         return jnp.interp(jnp.abs(lag), self._R_lag_grid, self._R_vals)
 
     def support_from_bounds(self, upper_fn):
-        return 12.0 * upper_fn("sigma_sn", self._sigma_sn)
+        return self._prc99_support
 
     def kernel_support(self) -> float:
-        return 12.0 * self._sigma_sn
+        return self._prc99_support
 
 
 class ExponentialEnvelope(EnvelopeFunction):
@@ -1252,3 +1337,221 @@ class ExponentialAsymmetricEnvelope(EnvelopeFunction):
 
     def kernel_support(self) -> float:
         return 6.0 * (self._tau_em + self._tau_dec)
+
+
+# ── Logistic plateau JAX helper ──────────────────────────────────────────────
+
+_LOGISTIC_N_QUAD = 4096
+_LOGISTIC_EXTENT = 12.0
+
+
+@jax.jit
+def _logistic_gamma(t, half, tau, inv_peak):
+    return (jax.nn.sigmoid((t + half) / tau)
+            * jax.nn.sigmoid((half - t) / tau) * inv_peak)
+
+
+@jax.jit
+def _logistic_R_Gamma_jax(lag, lspot, tau_spot):
+    half = lspot / 2.0
+    extent = half + _LOGISTIC_EXTENT * tau_spot
+    n = _LOGISTIC_N_QUAD
+    t_grid = jnp.linspace(-extent, extent, n)
+    dt = t_grid[1] - t_grid[0]
+
+    inv_peak = 1.0 / jax.nn.sigmoid(half / tau_spot) ** 2
+    gamma_t = _logistic_gamma(t_grid, half, tau_spot, inv_peak)
+
+    n_fft = 2 * n
+    G_fft = jnp.fft.rfft(gamma_t, n=n_fft)
+    R_raw = jnp.fft.irfft(jnp.abs(G_fft) ** 2, n=n_fft)[:n] * dt
+    lag_grid = jnp.arange(n) * dt
+
+    return jnp.interp(jnp.abs(lag), lag_grid, R_raw)
+
+
+class LogisticPlateauEnvelope(EnvelopeFunction):
+    r"""
+    Smooth (C-infinity) envelope with logistic rise, plateau, and logistic decay.
+
+    .. math::
+        \Gamma(t) = \frac{\sigma\!\bigl((t + \ell/2)/\tau\bigr)\;
+                          \sigma\!\bigl((\ell/2 - t)/\tau\bigr)}
+                         {\sigma(\ell/2\tau)^2}
+
+    where :math:`\sigma(x) = 1/(1 + e^{-x})`.  The normalization ensures
+    :math:`\Gamma(0) = 1`.  For :math:`\ell \gg \tau` this approaches the
+    symmetric trapezoid; for :math:`\ell = 0` it reduces to a bell-shaped
+    bump.  Unlike the trapezoid, all derivatives exist, which avoids the
+    spectral ringing associated with the kink at the ramp--plateau boundary.
+
+    Parameters
+    ----------
+    lspot : float
+        Plateau duration [days].
+    tau_spot : float
+        Logistic ramp timescale [days].  Smaller values give sharper
+        transitions; ``tau_spot`` plays the same role as the linear ramp
+        width in the trapezoid envelope.
+    """
+
+    def __init__(self, lspot: float, tau_spot: float):
+        self._lspot = float(lspot)
+        self._tau_spot = float(tau_spot)
+
+    @property
+    def tau_spot(self) -> float:
+        return self._tau_spot
+
+    @property
+    def lspot(self) -> float:
+        return self._lspot
+
+    @property
+    def param_dict(self) -> dict:
+        return {"lspot": self._lspot, "tau_spot": self._tau_spot}
+
+    def Gamma(self, t):
+        t = jnp.asarray(t, dtype=float)
+        half = self._lspot / 2.0
+        tau = self._tau_spot
+        inv_peak = 1.0 / jax.nn.sigmoid(half / tau) ** 2
+        return _logistic_gamma(t, half, tau, inv_peak)
+
+    def _ensure_numerical_grids(self):
+        if not hasattr(self, '_num_R_lag_grid'):
+            half_width = self._lspot / 2.0 + _LOGISTIC_EXTENT * self._tau_spot
+            env_func = lambda t_arr: np.asarray(
+                self.Gamma(jnp.array(t_arr)), dtype=np.float64)
+            self._num_R_lag_grid, self._num_R_vals = \
+                compute_R_Gamma_numerical(env_func, half_width, extent=1.0)
+            self._num_Gh_omega_grid, self._num_Gh_sq_vals = \
+                _compute_Gamma_hat_sq_numerical(env_func, half_width, extent=1.0)
+
+    def r_gamma_jax(self, theta_env, lag):
+        return _logistic_R_Gamma_jax(lag, theta_env[0], theta_env[1])
+
+    def support_from_bounds(self, upper_fn):
+        return (upper_fn("lspot", self._lspot)
+                + 6.0 * upper_fn("tau_spot", self._tau_spot))
+
+    def kernel_support(self) -> float:
+        return self._lspot + 6.0 * self._tau_spot
+
+
+class DoubleTrapezoidEnvelope(EnvelopeFunction):
+    r"""
+    Two symmetric trapezoids in sequence, modeling an active-longitude
+    spot complex that produces two generations of spots separated by a
+    quiescent gap.
+
+    .. math::
+        \Gamma(t) = \Gamma_1(t + \Delta/2) + \Gamma_1(t - \Delta/2)
+
+    where :math:`\Gamma_1` is a symmetric trapezoid with plateau
+    ``lspot`` and ramps ``tau_spot``, and :math:`\Delta` =
+    ``lspot + 2 \tau_{\rm spot} + t_gap`` is the center-to-center
+    separation.  The envelope is normalized so that its peak equals 1
+    (for non-overlapping sub-pulses the peak is already 1; for
+    overlapping ones the sum is rescaled).
+
+    The autocorrelation is:
+
+    .. math::
+        R_\Gamma(\tau) = 2\,R_1(\tau)
+                       + R_1(\tau - \Delta)
+                       + R_1(\tau + \Delta)
+
+    which is non-monotonic: it dips between the two sub-pulses and
+    recovers at :math:`\tau \approx \Delta`, reproducing the ACF
+    envelope shape observed in stars with persistent active longitudes.
+
+    Parameters
+    ----------
+    lspot : float
+        Plateau duration of each sub-pulse [days].
+    tau_spot : float
+        Rise/decay timescale of each sub-pulse [days].
+    t_gap : float
+        Quiescent gap between the end of the first sub-pulse and the
+        start of the second [days].  Zero means the decay of the first
+        meets the rise of the second with no gap.
+    """
+
+    def __init__(self, lspot: float, tau_spot: float, t_gap: float = 0.0):
+        self._lspot = float(lspot)
+        self._tau_spot = float(tau_spot)
+        self._t_gap = float(t_gap)
+        sub_duration = self._lspot + 2.0 * self._tau_spot
+        self._delta = sub_duration + self._t_gap
+
+    @property
+    def tau_spot(self) -> float:
+        return self._tau_spot
+
+    @property
+    def lspot(self) -> float:
+        return self._lspot
+
+    @property
+    def t_gap(self) -> float:
+        return self._t_gap
+
+    @property
+    def delta(self) -> float:
+        """Center-to-center separation of the two sub-pulses."""
+        return self._delta
+
+    @property
+    def param_dict(self) -> dict:
+        return {"lspot": self._lspot, "tau_spot": self._tau_spot,
+                "t_gap": self._t_gap}
+
+    def _single_trapezoid(self, t):
+        half = self._lspot / 2.0
+        tau = self._tau_spot
+        return jnp.where(
+            t < -(half + tau), 0.0,
+            jnp.where(
+                t < -half, (t + half + tau) / tau,
+                jnp.where(
+                    t <= half, 1.0,
+                    jnp.where(
+                        t < half + tau, (half + tau - t) / tau,
+                        0.0))))
+
+    def Gamma(self, t):
+        t = jnp.asarray(t, dtype=float)
+        half_delta = self._delta / 2.0
+        raw = self._single_trapezoid(t + half_delta) + \
+              self._single_trapezoid(t - half_delta)
+        peak = jnp.max(raw) if raw.ndim > 0 else raw
+        peak = jnp.where(peak > 1e-30, peak, 1.0)
+        return raw / peak
+
+    def R_Gamma(self, lag):
+        lag = jnp.asarray(lag)
+        R1 = _R_Gamma_symmetric(lag, self._lspot, self._tau_spot)
+        R1_plus = _R_Gamma_symmetric(lag + self._delta,
+                                     self._lspot, self._tau_spot)
+        R1_minus = _R_Gamma_symmetric(lag - self._delta,
+                                      self._lspot, self._tau_spot)
+        return 2.0 * R1 + R1_plus + R1_minus
+
+    def kernel_support(self) -> float:
+        return self._delta + self._lspot + 2.0 * self._tau_spot
+
+    def r_gamma_jax(self, theta_env, lag):
+        lspot, tau_spot, t_gap = theta_env[0], theta_env[1], theta_env[2]
+        delta = lspot + 2.0 * tau_spot + t_gap
+        R1 = _R_Gamma_symmetric_core(lag, lspot, tau_spot)
+        R1_plus = _R_Gamma_symmetric_core(lag + delta, lspot, tau_spot)
+        R1_minus = _R_Gamma_symmetric_core(lag - delta, lspot, tau_spot)
+        return 2.0 * R1 + R1_plus + R1_minus
+
+    def support_from_bounds(self, upper_fn):
+        return (upper_fn("lspot", self._lspot)
+                + 2.0 * upper_fn("tau_spot", self._tau_spot)
+                + upper_fn("t_gap", self._t_gap)
+                + upper_fn("lspot", self._lspot)
+                + 2.0 * upper_fn("tau_spot", self._tau_spot))

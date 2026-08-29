@@ -7,9 +7,16 @@
 ![Lightcurve animation](tutorials/lightcurve_animation.gif)
 
 
-## Development 
+## Development and support
 
-This project is build and maintained by [Jess Birky](https://github.com/jbirky)--keep an eye out for the paper (coming soon). If you are interested in contributing, feel free to reach out or make a pull request! 
+This project is built and maintained by [Jess Birky](https://github.com/jbirky).
+Bug reports, feature requests, and usage questions are welcome on the
+[GitHub issue tracker](https://github.com/jbirky/spotgp/issues); see the
+[contributing guide](https://github.com/jbirky/spotgp/blob/main/CONTRIBUTING.md)
+for development setup, running the tests, and the pull-request process. `spotgp`
+is released under the MIT licence. A paper describing the software and its
+companion derivation paper are in preparation; citation metadata is kept in
+[CITATION.cff](https://github.com/jbirky/spotgp/blob/main/CITATION.cff).
 
 <br>
 
@@ -43,6 +50,7 @@ tutorials/save_load
 :maxdepth: 2
 :caption: Custom Functions
 
+custom_components
 tutorials/parameter_registry
 tutorials/custom_envelope_gaussian
 tutorials/custom_visibility_function

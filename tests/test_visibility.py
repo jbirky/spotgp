@@ -10,6 +10,7 @@ from spotgp.visibility import (
     EdgeOnVisibilityFunction,
     FullGeometryVisibilityFunction,
     LimbDarkenedVisibilityFunction,
+    FullGeometryLimbDarkenedVisibilityFunction,
     _cn_general_jax,
 )
 
@@ -132,6 +133,79 @@ class TestHarmonicOrders:
                    - float(sparse.log_likelihood_fn(sparse.theta0))) > 1e-6
         grad = np.asarray(sparse.grad_log_posterior(sparse.theta0))
         assert np.all(np.isfinite(grad))
+
+    # ── per-harmonic decomposition ──────────────────────────────────────
+
+    @pytest.mark.parametrize("orders", [[0, 1, 2, 3], [0, 2, 4], [1, 2]])
+    @pytest.mark.parametrize("quadrature", ["trapezoid", "gauss-legendre"])
+    def test_components_sum_to_total(self, orders, quadrature):
+        """The decomposition is exact: no cross terms between orders."""
+        from spotgp import AnalyticKernel
+        vis = VisibilityFunction(4.0, 0.15, self.INC, harmonics=orders)
+        ak = AnalyticKernel(self._model(vis), n_lat=32, quadrature=quadrature)
+        lag = np.linspace(0.0, 12.0, 40)
+        omega = np.linspace(0.05, 6.0, 50)
+
+        K_n = ak.kernel_components(lag)
+        assert K_n.shape == (len(orders), len(lag))
+        np.testing.assert_allclose(K_n.sum(axis=0), ak.kernel(lag), rtol=1e-12)
+
+        freq, P_n = ak.psd_components(omega)
+        assert P_n.shape == (len(orders), len(omega))
+        f_ref, P_ref = ak.compute_psd(omega)
+        np.testing.assert_allclose(freq, f_ref, rtol=1e-12)
+        np.testing.assert_allclose(P_n.sum(axis=0), P_ref, rtol=1e-12)
+
+    @pytest.mark.parametrize("vis_factory", [
+        lambda inc: EdgeOnVisibilityFunction(4.0, harmonics=[0, 1, 2, 3]),
+        lambda inc: LimbDarkenedVisibilityFunction(
+            4.0, 0.15, inc, u=(0.4, 0.2), harmonics=[0, 1, 2, 3]),
+    ])
+    def test_components_exact_on_alternate_cn_paths(self, vis_factory):
+        """Holds for the edge-on fast path and the cn_sq_func hook alike."""
+        from spotgp import AnalyticKernel
+        ak = AnalyticKernel(self._model(vis_factory(self.INC)), n_lat=32)
+        lag = np.linspace(0.0, 12.0, 40)
+        np.testing.assert_allclose(
+            ak.kernel_components(lag).sum(axis=0), ak.kernel(lag), rtol=1e-12)
+        _, P_n = ak.psd_components(np.linspace(0.05, 6.0, 50))
+        np.testing.assert_allclose(
+            P_n.sum(axis=0),
+            ak.compute_psd(np.linspace(0.05, 6.0, 50))[1], rtol=1e-12)
+
+    def test_components_match_single_order_kernels(self):
+        """Each row equals the kernel built from that order alone."""
+        from spotgp import AnalyticKernel
+        orders = [0, 2, 4]
+        model = self._model(
+            VisibilityFunction(4.0, 0.15, self.INC, harmonics=orders))
+        ak = AnalyticKernel(model, n_lat=32)
+        lag = np.linspace(0.0, 12.0, 40)
+        for row, n in zip(ak.kernel_components(lag), orders):
+            solo = AnalyticKernel(model, n_harmonics=[n], n_lat=32).kernel(lag)
+            np.testing.assert_allclose(row, solo, rtol=1e-12)
+
+    def test_components_preserve_lag_shape(self):
+        """A 2-D lag grid keeps its shape behind the leading order axis."""
+        from spotgp import AnalyticKernel
+        vis = VisibilityFunction(4.0, 0.15, self.INC, harmonics=[0, 1, 2])
+        ak = AnalyticKernel(self._model(vis), n_lat=32)
+        t = np.linspace(0.0, 20.0, 9)
+        lag2d = np.abs(t[:, None] - t[None, :])
+        K_n = ak.kernel_components(lag2d)
+        assert K_n.shape == (3, 9, 9)
+        np.testing.assert_allclose(
+            K_n.sum(axis=0), ak.kernel(lag2d), rtol=1e-12)
+
+    def test_psd_components_do_not_clobber_cache(self):
+        """psd_components leaves compute_psd's cached arrays alone."""
+        from spotgp import AnalyticKernel
+        vis = VisibilityFunction(4.0, 0.15, self.INC, harmonics=[0, 1, 2])
+        ak = AnalyticKernel(self._model(vis), n_lat=32)
+        _, power = ak.compute_psd(np.linspace(0.05, 6.0, 50))
+        ak.psd_components(np.linspace(0.05, 3.0, 17))
+        np.testing.assert_allclose(ak.psd_power, power, rtol=1e-12)
+        assert ak.psd_power.shape == (50,)
 
     def test_harmonics_survive_save_load(self, tmp_path):
         import h5py
@@ -529,3 +603,108 @@ class TestCustomCnSqReachesKernel:
         assert np.all(np.isfinite(grad))
         inc_idx = list(gp_ld.param_keys).index("inc")
         assert abs(grad[inc_idx]) > 1e-9
+
+
+# ── full geometry + limb darkening ──────────────────────────────────────────
+class TestFullGeometryLimbDarkened:
+    PEQ, KAPPA, INC, PHI = 5.4, 0.1, np.deg2rad(65), np.deg2rad(25)
+
+    def test_uniform_disk_deficit_matches_exact_area(self):
+        """u=(0,0): the cap integral equals Eq. 5 in all three regimes."""
+        alpha = 0.25
+        vis = FullGeometryLimbDarkenedVisibilityFunction(
+            self.PEQ, self.KAPPA, self.INC, alpha_ref=alpha,
+            u=(0.0, 0.0), n_rho=48, n_psi=96)
+        beta = np.linspace(0.0, np.pi, 721)
+        A_ref = np.asarray(
+            FullGeometryVisibilityFunction.projected_area(alpha, beta))
+        D = np.asarray(vis.spot_deficit(np.cos(beta)))
+        np.testing.assert_allclose(D, A_ref, atol=1e-4 * A_ref.max())
+
+    def test_hidden_regime_is_zero(self):
+        alpha = 0.25
+        vis = FullGeometryLimbDarkenedVisibilityFunction(
+            self.PEQ, self.KAPPA, self.INC, alpha_ref=alpha, u=(0.4, 0.2))
+        beta_hidden = np.pi / 2 + alpha + 0.05
+        assert float(vis.spot_deficit(np.cos(beta_hidden))) == 0.0
+
+    def test_uniform_disk_cn_matches_fullgeometry(self):
+        alpha = 0.25
+        vis_fg = FullGeometryVisibilityFunction(
+            self.PEQ, self.KAPPA, self.INC, alpha_ref=alpha)
+        vis = FullGeometryLimbDarkenedVisibilityFunction(
+            self.PEQ, self.KAPPA, self.INC, alpha_ref=alpha,
+            u=(0.0, 0.0), n_rho=48, n_psi=96)
+        np.testing.assert_allclose(
+            np.asarray(vis.cn_squared(self.PHI)),
+            np.asarray(vis_fg.cn_squared(self.PHI)), rtol=2e-3, atol=1e-9)
+
+    def test_small_spot_limit_matches_limbdarkened(self):
+        u = (0.4, 0.2)
+        vis_ld = LimbDarkenedVisibilityFunction(
+            self.PEQ, self.KAPPA, self.INC, u=u)
+        vis = FullGeometryLimbDarkenedVisibilityFunction(
+            self.PEQ, self.KAPPA, self.INC, alpha_ref=1e-3, u=u)
+        np.testing.assert_allclose(
+            np.asarray(vis.cn_squared(self.PHI)),
+            np.asarray(vis_ld.cn_squared(self.PHI)), rtol=1e-4, atol=1e-12)
+
+    def test_both_limits_match_base_analytic(self):
+        vis = FullGeometryLimbDarkenedVisibilityFunction(
+            self.PEQ, self.KAPPA, self.INC, alpha_ref=1e-3, u=(0.0, 0.0))
+        ref = np.array([float(_cn_general_jax(n, self.INC, self.PHI)) ** 2
+                        for n in range(3)])
+        np.testing.assert_allclose(
+            np.asarray(vis.cn_squared(self.PHI)), ref, rtol=1e-3, atol=1e-10)
+
+    def test_finite_spot_shifts_harmonics(self):
+        """A large spot must change |c_n|^2 relative to the alpha->0 limit."""
+        u = (0.4, 0.2)
+        small = FullGeometryLimbDarkenedVisibilityFunction(
+            self.PEQ, self.KAPPA, self.INC, alpha_ref=1e-3, u=u)
+        big = FullGeometryLimbDarkenedVisibilityFunction(
+            self.PEQ, self.KAPPA, self.INC, alpha_ref=0.4, u=u,
+            n_rho=64, n_psi=128)
+        assert not np.allclose(np.asarray(big.cn_squared(self.PHI)),
+                               np.asarray(small.cn_squared(self.PHI)),
+                               rtol=1e-3)
+
+    def test_grad_inc_finite_and_correct_at_disk_center_crossing(self):
+        """inc+phi = pi/2 puts the spot through disk centre (cos beta = 1),
+        the geometry that made sqrt(1 - cos^2 beta) non-differentiable."""
+        vis = FullGeometryLimbDarkenedVisibilityFunction(
+            self.PEQ, self.KAPPA, self.INC, alpha_ref=0.15, u=(0.4, 0.2))
+        f = lambda i: jnp.sum(vis.cn_sq_at(i, self.PHI))
+        g_ad = float(jax.grad(f)(jnp.asarray(self.INC)))
+        eps = 1e-6
+        g_fd = (float(f(jnp.asarray(self.INC + eps)))
+                - float(f(jnp.asarray(self.INC - eps)))) / (2 * eps)
+        assert np.isfinite(g_ad)
+        assert g_ad == pytest.approx(g_fd, rel=1e-4)
+
+    def test_claret_grad_finite(self):
+        vis = FullGeometryLimbDarkenedVisibilityFunction(
+            self.PEQ, self.KAPPA, self.INC, alpha_ref=0.15,
+            u=(0.5, -0.1, 0.3, -0.05), law="claret")
+        g = jax.grad(lambda i: jnp.sum(vis.cn_sq_at(i, self.PHI)))(
+            jnp.asarray(self.INC))
+        assert np.isfinite(float(g))
+
+    def test_alpha_ref_validation(self):
+        for bad in [0.0, -0.1, np.pi / 2, 2.0]:
+            with pytest.raises(ValueError, match="alpha_ref"):
+                FullGeometryLimbDarkenedVisibilityFunction(
+                    self.PEQ, self.KAPPA, self.INC, alpha_ref=bad)
+
+    def test_cn_sq_jax_hook_reaches_spot_model(self):
+        from spotgp import SpotEvolutionModel, TrapezoidSymmetricEnvelope
+        vis = FullGeometryLimbDarkenedVisibilityFunction(
+            self.PEQ, self.KAPPA, self.INC, alpha_ref=0.2, u=(0.4, 0.2))
+        model = SpotEvolutionModel(
+            envelope=TrapezoidSymmetricEnvelope(lspot=20.0, tau_spot=2.0),
+            visibility=vis, sigma_k=1e-3)
+        fn = model.get_cn_sq_func((0, 1, 2))
+        assert fn is not None
+        out = fn(jnp.array(model.theta0), jnp.linspace(-1.0, 1.0, 5))
+        assert out.shape == (5, 3)
+        assert np.all(np.isfinite(np.asarray(out)))

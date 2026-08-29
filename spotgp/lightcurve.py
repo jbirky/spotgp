@@ -1,3 +1,4 @@
+import copy
 import logging
 import warnings
 
@@ -351,16 +352,14 @@ class LightcurveModel(AnimationMixin):
         self.lspot = lspot
         self.tlifetime = self.lspot + self.tem + self.tdec
 
+        # keep the raw specifications so the spots can be redrawn later
+        self._long_spec = long
+        self._lat_spec = lat
+        self._tmax_spec = tmax
+
         self.long = self._assign_property(long)
         self.lat = self._assign_property(lat)
-        if tmax is None:
-            self.tmax = np.random.uniform(-(self.lspot/2 + self.tdec),
-                                          self.tsim + self.lspot/2 + self.tem,
-                                          self.nspot)
-        elif isinstance(tmax, float):
-            self.tmax = np.full(self.nspot, tmax)
-        else:
-            self.tmax = np.asarray(tmax)
+        self.tmax = self._assign_tmax(tmax)
 
         self.rotate = bool(rotate)
         self.grow   = bool(grow)
@@ -479,14 +478,68 @@ class LightcurveModel(AnimationMixin):
             **kwargs,
         )
 
-    def _assign_property(self, var):
+    def _assign_property(self, var, rng=None):
+        rng = np.random if rng is None else rng
         if isinstance(var, float):
             return np.full(self.nspot, var)
         elif isinstance(var, (int, list, np.ndarray)):
-            return np.random.uniform(var[0], var[1], self.nspot)
+            return rng.uniform(var[0], var[1], self.nspot)
         else:
             raise TypeError("Invalid datatype for model parameter. "
                             "Valid types: int, float, list, np.ndarray")
+
+    def _assign_tmax(self, tmax, rng=None):
+        rng = np.random if rng is None else rng
+        if tmax is None:
+            return rng.uniform(-(self.lspot/2 + self.tdec),
+                               self.tsim + self.lspot/2 + self.tem,
+                               self.nspot)
+        elif isinstance(tmax, float):
+            return np.full(self.nspot, tmax)
+        else:
+            return np.asarray(tmax)
+
+    def resample_spots(self, seed=None, inplace=False):
+        """
+        Draw a new realization of the individual spots.
+
+        All model parameters (peq, kappa, inc, nspot, alpha_max, fspot,
+        lspot, tem, tdec, the longitude/latitude ranges, ...) are kept
+        fixed; only the per-spot longitudes, latitudes and emergence
+        times are redrawn, and the lightcurve is recomputed.
+
+        Properties that were specified explicitly rather than as a range
+        (e.g. ``lat=0.5`` or an array of ``tmax``) are not randomized and
+        carry over unchanged.
+
+        Parameters
+        ----------
+        seed : int or np.random.Generator, optional
+            Seed (or generator) for the new draw. If None, the global
+            numpy random state is used.
+        inplace : bool, optional
+            If True, resample this model in place and return it. If
+            False (default), return a new LightcurveModel and leave this
+            one untouched.
+
+        Returns
+        -------
+        LightcurveModel
+            The resampled model.
+        """
+        if seed is None:
+            rng = np.random
+        elif isinstance(seed, np.random.Generator):
+            rng = seed
+        else:
+            rng = np.random.default_rng(seed)
+
+        model = self if inplace else copy.copy(self)
+        model.long = model._assign_property(self._long_spec, rng=rng)
+        model.lat = model._assign_property(self._lat_spec, rng=rng)
+        model.tmax = model._assign_tmax(self._tmax_spec, rng=rng)
+        model.flux = model.Flux(model.t)
+        return model
 
     def Flux(self, teval):
         """

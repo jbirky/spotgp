@@ -46,7 +46,8 @@ def _harmonic_basis(harmonics):
 
 
 def _kernel_eval_edgeon(theta_arr, lag_flat, harmonics,
-                        r_gamma_func=None, cn_sq_fixed=None):
+                        r_gamma_func=None, cn_sq_fixed=None,
+                        per_order=False):
     """
     Fast-path kernel evaluation for EdgeOnVisibilityFunction.
 
@@ -63,10 +64,13 @@ def _kernel_eval_edgeon(theta_arr, lag_flat, harmonics,
     r_gamma_func : callable or None
     cn_sq_fixed : jnp.ndarray, shape (n_orders,)
         Pre-computed latitude-averaged |c_n|^2, aligned with ``harmonics``.
+    per_order : bool
+        If True, keep the harmonic axis instead of summing over it.
 
     Returns
     -------
-    K_flat : jnp.ndarray, shape (M,)
+    K_flat : jnp.ndarray, shape (M,), or (M, n_orders) when ``per_order``.
+        Summing the per-order form over axis 1 recovers the collapsed form.
     """
     peq = theta_arr[0]
     sigma_k = theta_arr[-1]
@@ -80,11 +84,10 @@ def _kernel_eval_edgeon(theta_arr, lag_flat, harmonics,
 
     w0 = 2.0 * jnp.pi / peq
     harm_ns, harm_w = _harmonic_basis(harmonics)
-    series = jnp.sum(
-        cn_sq_fixed * harm_w * jnp.cos(harm_ns * w0 * lag_flat[:, None]),
-        axis=1)
-    K = sigma_k ** 2 * R * series
-    return K
+    terms = cn_sq_fixed * harm_w * jnp.cos(harm_ns * w0 * lag_flat[:, None])
+    if per_order:
+        return sigma_k ** 2 * R[:, None] * terms
+    return sigma_k ** 2 * R * jnp.sum(terms, axis=1)
 
 
 def _kernel_eval(theta_arr, lag_flat, harmonics, n_lat, lat_range,
@@ -92,7 +95,8 @@ def _kernel_eval(theta_arr, lag_flat, harmonics, n_lat, lat_range,
                   r_gamma_func=None,
                   edgeon_cn_sq=None,
                   lat_weight_func=None,
-                  cn_sq_func=None):
+                  cn_sq_func=None,
+                  per_order=False):
     """
     Pure-functional kernel evaluation: theta_arr -> kernel values.
 
@@ -136,16 +140,22 @@ def _kernel_eval(theta_arr, lag_flat, harmonics, n_lat, lat_range,
         (the default), the closed-form ``_cn_general_jax`` coefficients are
         used.  Supplied by visibility subclasses (e.g. limb darkening) that
         compute their own Fourier coefficients.
+    per_order : bool
+        If True, keep the harmonic axis instead of summing over it, so each
+        order's separate contribution is returned.  The series has no cross
+        terms between orders, so this is an exact decomposition.
 
     Returns
     -------
-    K_flat : jnp.ndarray, shape (M,)
-        Kernel values at each lag.
+    K_flat : jnp.ndarray, shape (M,), or (M, n_orders) when ``per_order``.
+        Kernel values at each lag.  Summing the per-order form over axis 1
+        recovers the collapsed form.
     """
     if edgeon_cn_sq is not None:
         return _kernel_eval_edgeon(theta_arr, lag_flat, harmonics,
                                    r_gamma_func=r_gamma_func,
-                                   cn_sq_fixed=edgeon_cn_sq)
+                                   cn_sq_fixed=edgeon_cn_sq,
+                                   per_order=per_order)
 
     peq    = theta_arr[0]
     kappa  = theta_arr[1]
@@ -186,15 +196,15 @@ def _kernel_eval(theta_arr, lag_flat, harmonics, n_lat, lat_range,
 
     def _lat_contribution(phi, cn_sq):
         w0 = 2 * jnp.pi * (1 - kappa * jnp.sin(phi) ** 2) / peq
-        return jnp.sum(
-            cn_sq * harm_w * jnp.cos(harm_ns * w0 * lag_flat[:, None]), axis=1
-        )
+        terms = cn_sq * harm_w * jnp.cos(harm_ns * w0 * lag_flat[:, None])
+        return terms if per_order else jnp.sum(terms, axis=1)
 
     all_contribs = jax.vmap(_lat_contribution)(phi_grid, cn_sq_all)
 
-    K = jnp.sum(weights[:, None] * all_contribs, axis=0) / norm
+    lat_w = weights[:, None, None] if per_order else weights[:, None]
+    K = jnp.sum(lat_w * all_contribs, axis=0) / norm
 
-    K = R * K * sigma_k ** 2
+    K = (R[:, None] if per_order else R) * K * sigma_k ** 2
     return K
 
 
@@ -347,13 +357,16 @@ class AnalyticKernel:
 
     # ── Stationary kernel (without sigma_k² scaling) ─────────────────────
 
-    def _kernel_stationary(self, lag, lat_dist=None):
+    def _kernel_stationary(self, lag, lat_dist=None, per_order=False):
         """
         Stationary kernel *without* the σ_k² prefactor.
 
         Delegates to the module-level ``_kernel_eval`` (the single source
         of truth for the latitude-averaged kernel math), with sigma_k set
         to 1.0 so that the caller can apply sigma_k² separately.
+
+        With ``per_order``, the harmonic axis is kept and moved to the front,
+        giving ``(n_orders,) + lag.shape``.
         """
         lag = jnp.asarray(lag, dtype=float)
         orig_shape = lag.shape
@@ -394,8 +407,13 @@ class AnalyticKernel:
             edgeon_cn_sq=edgeon_cn_sq,
             lat_weight_func=None,
             cn_sq_func=cn_sq_func,
+            per_order=per_order,
         )
 
+        if per_order:
+            # (M, n_orders) -> (n_orders,) + lag.shape
+            K = K.reshape(orig_shape + (len(self.harmonics),))
+            return jnp.moveaxis(K, -1, 0)
         return K.reshape(orig_shape)
 
     # ── Full kernel (latitude-averaged) ────────────────────────────────────
@@ -423,6 +441,50 @@ class AnalyticKernel:
         K : ndarray, same shape as lag input.
         """
         K = self._kernel_stationary(lag, lat_dist=lat_dist)
+        return np.asarray(self.sigma_k ** 2 * K)
+
+    def kernel_components(self, lag, lat_dist=None):
+        """
+        Per-harmonic contributions to :meth:`kernel`.
+
+        The rotation series has no cross terms between orders, so the kernel
+        splits exactly into one term per harmonic::
+
+            K(tau) = sigma_k^2 R(tau) * <sum_n w_n |c_n(phi)|^2 cos(n w_0(phi) tau)>_phi
+
+        with ``w_n = 1`` for n = 0 and 2 otherwise.  ``kernel_components``
+        returns those terms individually instead of summed, which is what
+        makes it possible to see how much of the covariance each harmonic
+        carries, and out to which lag.
+
+        Parameters
+        ----------
+        lag : array_like
+            Time lags [days].  Any shape ``kernel`` accepts.
+        lat_dist : callable or None
+            Latitude probability density. If None, uniform.
+
+        Returns
+        -------
+        K_n : ndarray, shape ``(n_orders,) + lag.shape``
+            Row ``i`` is the contribution of order ``self.harmonics[i]``.
+            ``K_n.sum(axis=0)`` reproduces :meth:`kernel`.
+
+        Notes
+        -----
+        This keeps the harmonic axis alive through the latitude quadrature,
+        so peak memory is ``n_orders`` times that of :meth:`kernel`.  For
+        very long lag arrays, evaluating one single-order kernel at a time
+        (``AnalyticKernel(model, n_harmonics=[n])``) trades speed for space.
+
+        Examples
+        --------
+        >>> ak = AnalyticKernel(model)                     # doctest: +SKIP
+        >>> K_n = ak.kernel_components(lag)                # doctest: +SKIP
+        >>> for n, row in zip(ak.harmonics, K_n):          # doctest: +SKIP
+        ...     plt.plot(lag, row, label=f"n = {n}")
+        """
+        K = self._kernel_stationary(lag, lat_dist=lat_dist, per_order=True)
         return np.asarray(self.sigma_k ** 2 * K)
 
     def kernel_solid_body(self, lag, lat_dist=None):
@@ -465,21 +527,16 @@ class AnalyticKernel:
 
     # ── Power spectral density ──────────────────────────────────────────────
 
-    def compute_psd(self, omega, lat_dist=None):
+    def _psd_per_order(self, omega, lat_dist=None):
         """
-        Analytic power spectral density.
+        Latitude-averaged PSD split by harmonic order.
 
-        Parameters
-        ----------
-        omega : array_like
-            Angular frequencies [rad/day].
-        lat_dist : callable or None
-            Latitude probability density.
+        Shared by :meth:`compute_psd` and :meth:`psd_components` so the total
+        is by construction the sum of the parts.
 
         Returns
         -------
-        freq : ndarray   [cycles/day]
-        power : ndarray
+        psd_n : jnp.ndarray, shape (n_orders, len(omega))
         """
         omega = jnp.asarray(omega, dtype=float)
 
@@ -504,8 +561,7 @@ class AnalyticKernel:
                         self.envelope.Gamma_hat_sq(omega - n * w0)
                         + self.envelope.Gamma_hat_sq(omega + n * w0))
 
-                return jnp.sum(
-                    jax.vmap(_harmonic)(harm_ns, cn_sq, psd_w), axis=0)
+                return jax.vmap(_harmonic)(harm_ns, cn_sq, psd_w)
 
         else:
             # Trapezoid types use the closed-form _Gamma_hat
@@ -518,9 +574,10 @@ class AnalyticKernel:
                     Gh_m = self.envelope.Gamma_hat(omega + n * w0)
                     return c_sq * wt * (Gh_p ** 2 + Gh_m ** 2)
 
-                return jnp.sum(
-                    jax.vmap(_harmonic)(harm_ns, cn_sq, psd_w), axis=0)
+                return jax.vmap(_harmonic)(harm_ns, cn_sq, psd_w)
 
+        # all_contribs carries a harmonic axis now, so the latitude weights
+        # need one more trailing axis than in the collapsed form.
         if self.quadrature == "gauss-legendre":
             phi_grid    = self._quad_nodes
             quad_weights = self._quad_weights
@@ -528,7 +585,7 @@ class AnalyticKernel:
             user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
             norm = jnp.sum(user_weights * quad_weights)
             psd  = jnp.sum(
-                user_weights[:, None] * quad_weights[:, None]
+                user_weights[:, None, None] * quad_weights[:, None, None]
                 * all_contribs, axis=0) / norm
         else:
             phi_min, phi_max = self.lat_range
@@ -538,15 +595,70 @@ class AnalyticKernel:
             weights = user_weights * dphi
             norm = jnp.sum(weights)
             all_contribs = jax.vmap(_psd_at_lat)(phi_grid)
-            psd = jnp.sum(user_weights[:, None] * all_contribs, axis=0) * dphi / norm
+            psd = jnp.sum(
+                user_weights[:, None, None] * all_contribs, axis=0) * dphi / norm
 
-        psd = psd * self.sigma_k ** 2
+        return psd * self.sigma_k ** 2
 
+    def compute_psd(self, omega, lat_dist=None):
+        """
+        Analytic power spectral density.
+
+        Parameters
+        ----------
+        omega : array_like
+            Angular frequencies [rad/day].
+        lat_dist : callable or None
+            Latitude probability density.
+
+        Returns
+        -------
+        freq : ndarray   [cycles/day]
+        power : ndarray
+        """
+        psd = jnp.sum(self._psd_per_order(omega, lat_dist=lat_dist), axis=0)
+
+        omega = jnp.asarray(omega, dtype=float)
         self.psd_omega = np.asarray(omega)
         self.psd_freq  = np.asarray(omega / (2 * jnp.pi))
         self.psd_power = np.asarray(psd)
 
         return self.psd_freq, self.psd_power
+
+    def psd_components(self, omega, lat_dist=None):
+        """
+        Per-harmonic contributions to :meth:`compute_psd`.
+
+        Order ``n`` places power at ``omega +/- n*omega_0``, so each harmonic
+        shows up as its own pair of sidebands around the rotation frequency.
+        Splitting the PSD this way identifies which harmonic is responsible
+        for a given peak — useful when a periodogram shows structure at
+        multiples of ``1/P_eq`` and you want to know how much of it the model
+        attributes to each order.
+
+        Parameters
+        ----------
+        omega : array_like
+            Angular frequencies [rad/day].
+        lat_dist : callable or None
+            Latitude probability density.
+
+        Returns
+        -------
+        freq : ndarray, shape (len(omega),)   [cycles/day]
+        power_n : ndarray, shape (n_orders, len(omega))
+            Row ``i`` is the contribution of order ``self.harmonics[i]``.
+            ``power_n.sum(axis=0)`` reproduces the power from
+            :meth:`compute_psd`.
+
+        Notes
+        -----
+        Unlike :meth:`compute_psd`, this does not cache ``psd_freq`` /
+        ``psd_power`` on the instance.
+        """
+        comps = self._psd_per_order(omega, lat_dist=lat_dist)
+        freq = np.asarray(jnp.asarray(omega, dtype=float) / (2 * jnp.pi))
+        return freq, np.asarray(comps)
 
     def build_jax(self, n_lag=256):
         """

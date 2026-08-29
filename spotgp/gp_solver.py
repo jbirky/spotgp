@@ -28,6 +28,8 @@ from .analytic_kernel import (
 from .banded_cholesky import (banded_cholesky, banded_solve,
                                banded_cholesky_compact, banded_solve_compact)
 from .terms import Term, KernelSum, SpotTerm, DEFAULT_TERM_BOUNDS
+from .offsets import (segment_labels, offset_design,
+                      apply_offset_marginalization, offset_posterior)
 from .fitting import FittingMixin
 from .gp_plots import GPPlotsMixin
 from .mass_matrix import MassMatrixMixin
@@ -59,7 +61,8 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
                        cn_sq_func=None,
                        uniform_dt=None,
                        lag_table=None,
-                       k_of_lag=None):
+                       k_of_lag=None,
+                       design=None):
     """
     Pure-functional GP marginal log-likelihood.
 
@@ -104,6 +107,11 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
         (e.g. ``KernelSum.k_of_lag``).  When given, it supersedes the
         ``_kernel_eval`` closure kwargs above; when None, the legacy
         closure-kwarg path is used (backward compat).
+    design : jnp.ndarray, shape (N, S) or None
+        Design matrix of per-segment nuisance functions (sector/quarter
+        offsets).  When given, those linear parameters are marginalized
+        analytically under a flat prior; see ``offsets.py``.  None
+        disables the correction entirely.
 
     Returns
     -------
@@ -163,7 +171,15 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
     data_fit = resid @ alpha
     log_det = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))
 
-    return -0.5 * (data_fit + log_det + N * jnp.log(2 * jnp.pi))
+    n_free = N
+    if design is not None:
+        # Marginalize the per-segment offsets (see offsets.py).
+        Z = jla.cho_solve((L, True), design)
+        data_fit, log_det = apply_offset_marginalization(
+            data_fit, log_det, alpha, design, Z)
+        n_free = N - design.shape[1]
+
+    return -0.5 * (data_fit + log_det + n_free * jnp.log(2 * jnp.pi))
 
 
 def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
@@ -272,7 +288,8 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                cn_sq_func=None,
                                uniform_dt=None,
                                band_lag_table=None,
-                               k_of_lag=None):
+                               k_of_lag=None,
+                               design=None):
     """
     Pure-functional GP marginal log-likelihood using banded Cholesky.
 
@@ -335,7 +352,17 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
     data_fit = resid @ alpha
     log_det = 2.0 * jnp.sum(jnp.log(Lc[0, :]))
 
-    return -0.5 * (data_fit + log_det + N * jnp.log(2 * jnp.pi))
+    n_free = N
+    if design is not None:
+        # Marginalize the per-segment offsets.  banded_solve_compact vmaps
+        # over the columns of a matrix RHS, so this stays in compact
+        # storage and the bandwidth is preserved (see offsets.py).
+        Z = banded_solve_compact(Lc, design, bandwidth)
+        data_fit, log_det = apply_offset_marginalization(
+            data_fit, log_det, alpha, design, Z)
+        n_free = N - design.shape[1]
+
+    return -0.5 * (data_fit + log_det + n_free * jnp.log(2 * jnp.pi))
 
 
 def _default_log_prior(theta_arr, bounds):
@@ -527,6 +554,22 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
     log_prior : callable or None
         Custom log-prior function f(theta_arr) -> scalar.
         If None, uses soft uniform within bounds.
+    offsets : None, array_like, dict, or float
+        Per-segment flux offsets (Kepler quarters / TESS sectors) to
+        marginalize analytically under a flat prior.  Accepts:
+
+        - ``None`` (default): no offset modelling.
+        - a float or dict, e.g. ``0.5`` or ``dict(gap=0.5, order=1)``:
+          segments are found by splitting ``x`` at gaps larger than
+          ``gap``, and ``order`` sets the polynomial degree per segment
+          (0 = constant offset).
+        - an integer array of shape (N,): explicit segment labels.
+        - a float array of shape (N, S): an explicit design matrix.
+
+        Marginalizing rather than subtracting each segment's median
+        means the unknown zero points inflate the ``tau_spot``
+        uncertainty instead of biasing its point estimate.  See
+        ``spotgp.offsets``.
     kernel_kwargs : dict
         Extra kwargs forwarded to the kernel constructor.
     """
@@ -539,7 +582,8 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                  kernel_type="analytic",
                  mean=None, fit_sigma_n=False, bounds=None,
                  log_prior=None, matrix_solver="cholesky_banded",
-                 bandwidth=None, save_dir=None, **kernel_kwargs):
+                 bandwidth=None, save_dir=None, offsets=None,
+                 **kernel_kwargs):
 
         # ── Parse data source ────────────────────────────────────────────
         from .observations import TimeSeriesData
@@ -568,6 +612,11 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
 
         # ── Validate data quality ───────────────────────────────────────
         validate_data(self.data.x, self.data.y, self.data.yerr)
+
+        # ── Per-segment offsets, marginalized analytically ──────────────
+        self.offset_labels = None
+        self.design = self._resolve_offsets(offsets)
+        self.n_offsets = 0 if self.design is None else self.design.shape[1]
 
         # Detect uniform sampling.  On a uniform grid the covariance is
         # Toeplitz, so the kernel needs evaluating only once per distinct
@@ -1054,6 +1103,136 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                     context="initial covariance build (dense solver)")
             self._alpha = jla.cho_solve((self._L, True), self._resid)
 
+    def _resolve_offsets(self, offsets):
+        """
+        Normalize the ``offsets`` argument to a design matrix or None.
+
+        See the ``offsets`` entry in the class docstring for the accepted
+        forms.
+        """
+        if offsets is None:
+            return None
+
+        x = np.asarray(self.data.x, dtype=float)
+
+        # gap threshold, optionally with a polynomial order
+        if isinstance(offsets, (int, float)) and not isinstance(offsets, bool):
+            offsets = {"gap": float(offsets)}
+        if isinstance(offsets, dict):
+            spec = dict(offsets)
+            gap = spec.pop("gap", None)
+            order = spec.pop("order", 0)
+            if spec:
+                raise ValueError(
+                    f"Unknown keys in offsets dict: {sorted(spec)}. "
+                    f"Expected 'gap' and/or 'order'.")
+            if gap is None:
+                raise ValueError("offsets dict requires a 'gap' entry.")
+            self.offset_labels = segment_labels(x, gap)
+            design = offset_design(x, self.offset_labels, order=order)
+
+        else:
+            arr = np.asarray(offsets)
+            if arr.ndim == 1:
+                if arr.shape[0] != len(x):
+                    raise ValueError(
+                        f"offset labels must have length {len(x)}, "
+                        f"got {arr.shape[0]}")
+                self.offset_labels = arr.astype(int)
+                design = offset_design(x, self.offset_labels, order=0)
+            elif arr.ndim == 2:
+                if arr.shape[0] != len(x):
+                    raise ValueError(
+                        f"offset design matrix must have {len(x)} rows, "
+                        f"got {arr.shape[0]}")
+                design = arr.astype(float)
+            else:
+                raise ValueError(
+                    f"offsets array must be 1-D (labels) or 2-D (design "
+                    f"matrix), got {arr.ndim}-D")
+
+        n_seg = design.shape[1]
+        if n_seg >= len(x):
+            raise ValueError(
+                f"offset design has {n_seg} columns for {len(x)} points; "
+                f"the offsets would absorb the entire dataset.")
+        logger.info("Marginalizing %d offset column(s) over %d segment(s)",
+                    n_seg,
+                    len(np.unique(self.offset_labels))
+                    if self.offset_labels is not None else n_seg)
+
+        return jnp.asarray(design, dtype=jnp.float64)
+
+    def offset_estimates(self, theta=None, return_cov=False):
+        """
+        Posterior mean of the marginalized per-segment offsets.
+
+        The offsets are integrated out of the likelihood, but their
+        conditional posterior at a given ``theta`` is Gaussian with mean
+        ``A^-1 b`` and covariance ``A^-1``; this returns it, which is what
+        you need to plot the fitted trend or to remove the offsets from
+        the data for display.
+
+        Parameters
+        ----------
+        theta : array_like, optional
+            Parameter vector. Defaults to the MAP estimate, or the
+            current hyperparameters if no fit has been run.
+        return_cov : bool
+            If True, also return the (S, S) covariance.
+
+        Returns
+        -------
+        a_hat : ndarray, shape (S,)
+        a_cov : ndarray, shape (S, S), only if ``return_cov``
+        """
+        if self.design is None:
+            raise ValueError(
+                "This solver was built without offsets; pass offsets= to "
+                "GPSolver to enable per-segment offset modelling.")
+
+        if theta is None:
+            theta = (self.map_estimate if self.map_estimate is not None
+                     else self.theta0)
+        theta_full = self._to_physical(jnp.asarray(theta, dtype=jnp.float64))
+
+        if self.fit_sigma_n:
+            theta_kernel = theta_full[:len(self.kernel_sum.param_keys)]
+            sigma_n = theta_full[len(self.kernel_sum.param_keys)]
+        else:
+            theta_kernel, sigma_n = theta_full, 0.0
+
+        noise_var = self.yerr ** 2 + sigma_n ** 2
+        resid = self.y - self.mean_val
+
+        if self.matrix_solver == "cholesky_banded":
+            b = self.bandwidth
+            cb = _build_banded_kernel_jax(
+                theta_kernel, self.x, b,
+                self.harmonics, self.n_lat, self.lat_range,
+                uniform_dt=self.uniform_dt,
+                band_lag_table=self._band_lag_table(),
+                k_of_lag=self.kernel_sum.k_of_lag)
+            cb = cb.at[0, :].add(noise_var + 1e-8)
+            Lc = banded_cholesky_compact(cb, b)
+            alpha = banded_solve_compact(Lc, resid, b)
+            Z = banded_solve_compact(Lc, self.design, b)
+        else:
+            # k_of_lag broadcasts internally over harmonics, so it takes a
+            # flat lag vector rather than the (N, N) matrix.
+            lag = jnp.abs(self.x[:, None] - self.x[None, :]).ravel()
+            K = self.kernel_sum.k_of_lag(theta_kernel, lag).reshape(self.N,
+                                                                    self.N)
+            K = K + jnp.diag(noise_var) + 1e-8 * jnp.eye(self.N)
+            L = jla.cholesky(K, lower=True)
+            alpha = jla.cho_solve((L, True), resid)
+            Z = jla.cho_solve((L, True), self.design)
+
+        a_hat, a_cov = offset_posterior(alpha, self.design, Z)
+        if return_cov:
+            return np.asarray(a_hat), np.asarray(a_cov)
+        return np.asarray(a_hat)
+
     def _build_logposterior(self):
         """Build the JIT-compiled log-posterior and its value-and-gradient.
 
@@ -1088,6 +1267,9 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         k_of_lag_fn = self.kernel_sum.k_of_lag
         # Number of kernel params (excludes sigma_n)
         n_kernel = len(self.kernel_sum.param_keys)
+        # Per-segment offset design matrix (None disables the correction).
+        # Captured as a constant: it depends on x only, never on theta.
+        design = self.design
 
         if self.matrix_solver == "cholesky_banded":
             # Capture bandwidth as a Python int in the closure so that
@@ -1101,7 +1283,8 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                     n_kernel=n_kernel,
                     uniform_dt=u_dt,
                     band_lag_table=band_tab,
-                    k_of_lag=k_of_lag_fn)
+                    k_of_lag=k_of_lag_fn,
+                    design=design)
         else:
             def _log_likelihood_raw(theta_arr):
                 return _gp_log_likelihood(
@@ -1110,7 +1293,8 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                     n_kernel=n_kernel,
                     uniform_dt=u_dt,
                     lag_table=full_tab,
-                    k_of_lag=k_of_lag_fn)
+                    k_of_lag=k_of_lag_fn,
+                    design=design)
 
         def _log_prior_raw(theta_arr):
             return (custom_prior(theta_arr) if custom_prior is not None

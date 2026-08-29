@@ -29,10 +29,12 @@ def _get_class_registry():
         TrapezoidSymmetricEnvelope, TrapezoidAsymmetricEnvelope,
         SkewedGaussianEnvelope, ExponentialEnvelope,
         ExponentialAsymmetricEnvelope,
+        LogisticPlateauEnvelope, DoubleTrapezoidEnvelope,
     )
     from .visibility import (
         VisibilityFunction, EdgeOnVisibilityFunction,
         FullGeometryVisibilityFunction, LimbDarkenedVisibilityFunction,
+        FullGeometryLimbDarkenedVisibilityFunction,
     )
     from .latitude import (
         LatitudeDistributionFunction, UniformDoubleHemisphereBand,
@@ -44,14 +46,42 @@ def _get_class_registry():
         "SkewedGaussianEnvelope": SkewedGaussianEnvelope,
         "ExponentialEnvelope": ExponentialEnvelope,
         "ExponentialAsymmetricEnvelope": ExponentialAsymmetricEnvelope,
+        "LogisticPlateauEnvelope": LogisticPlateauEnvelope,
+        "DoubleTrapezoidEnvelope": DoubleTrapezoidEnvelope,
         "VisibilityFunction": VisibilityFunction,
         "EdgeOnVisibilityFunction": EdgeOnVisibilityFunction,
         "FullGeometryVisibilityFunction": FullGeometryVisibilityFunction,
         "LimbDarkenedVisibilityFunction": LimbDarkenedVisibilityFunction,
+        "FullGeometryLimbDarkenedVisibilityFunction":
+            FullGeometryLimbDarkenedVisibilityFunction,
         "LatitudeDistributionFunction": LatitudeDistributionFunction,
         "UniformDoubleHemisphereBand": UniformDoubleHemisphereBand,
     }
     return _CLASS_REGISTRY
+
+
+def register_io_class(cls, name=None):
+    """Register a user-defined component class for save_gp/load_gp.
+
+    Serialization stores components by class name; a subclass defined
+    outside spotgp (a custom envelope, visibility, latitude
+    distribution, or kernel term) must be registered here -- in the
+    *loading* process too -- before :func:`load_gp` can reconstruct it.
+
+    A custom visibility may additionally expose an ``io_attrs``
+    property returning a ``{name: float}`` dict of extra constructor
+    arguments beyond ``param_dict`` (e.g. a fixed scale or a flag);
+    they are written as HDF5 attributes and passed back to the
+    constructor on load.
+
+    Usable as a decorator::
+
+        @register_io_class
+        class MyVisibility(VisibilityFunction):
+            ...
+    """
+    _get_class_registry()[name or cls.__name__] = cls
+    return cls
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -99,6 +129,14 @@ def _write_model(f, model, name="model"):
         env.attrs["class_name"] = type(model.envelope).__name__
         for k, v in model.envelope.param_dict.items():
             env.attrs[k] = float(v)
+        # Registered custom envelopes persist constructor state beyond
+        # param_dict (e.g. a fixed-shape wrapper whose param_dict is
+        # empty) via the same io_attrs hook as visibilities; the reader
+        # passes every non-class_name attribute to the constructor.
+        extra = getattr(model.envelope, "io_attrs", None)
+        if extra:
+            for k, v in extra.items():
+                env.attrs[k] = float(v)
     else:
         env.attrs["class_name"] = "none"
 
@@ -113,14 +151,30 @@ def _write_model(f, model, name="model"):
             vis.attrs["harmonics"] = np.asarray(harmonics, dtype=np.int64)
         from .visibility import (
             FullGeometryVisibilityFunction, LimbDarkenedVisibilityFunction,
+            FullGeometryLimbDarkenedVisibilityFunction,
         )
-        if isinstance(model.visibility, FullGeometryVisibilityFunction):
+        if isinstance(model.visibility,
+                      FullGeometryLimbDarkenedVisibilityFunction):
+            vis.attrs["alpha_ref"] = model.visibility.alpha_ref
+            vis.attrs["n_rho"] = model.visibility.n_rho
+            vis.attrs["n_psi"] = model.visibility.n_psi
+            vis.attrs["law"] = model.visibility.law
+            vis.attrs["n_lon"] = model.visibility.n_lon
+            vis.attrs["u"] = np.asarray(model.visibility.u)
+        elif isinstance(model.visibility, FullGeometryVisibilityFunction):
             vis.attrs["alpha_ref"] = model.visibility.alpha_ref
             vis.attrs["n_lon"] = model.visibility.n_lon
         elif isinstance(model.visibility, LimbDarkenedVisibilityFunction):
             vis.attrs["law"] = model.visibility.law
             vis.attrs["n_lon"] = model.visibility.n_lon
             vis.attrs["u"] = np.asarray(model.visibility.u)
+        # Registered custom visibilities persist extra constructor state
+        # (beyond param_dict) via the io_attrs hook; _read_model passes
+        # unrecognized attributes back to the constructor as floats.
+        extra = getattr(model.visibility, "io_attrs", None)
+        if extra:
+            for k, v in extra.items():
+                vis.attrs[k] = float(v)
     else:
         vis.attrs["class_name"] = "none"
 
@@ -277,23 +331,38 @@ def _read_model(f, name="model"):
     if vis_name == "none":
         visibility = None
     else:
+        from .visibility import (
+            FullGeometryVisibilityFunction, LimbDarkenedVisibilityFunction,
+            FullGeometryLimbDarkenedVisibilityFunction,
+        )
         cls = registry[vis_name]
-        skip = {"class_name", "alpha_ref", "n_lon", "law", "u", "harmonics"}
+        skip = {"class_name", "alpha_ref", "n_lon", "law", "u",
+                "harmonics", "n_rho", "n_psi"}
         params = {k: float(v) for k, v in grp["visibility"].attrs.items()
                   if k not in skip}
         # Absent in files written before harmonics was configurable; the
         # class default then applies.
-        if "harmonics" in grp["visibility"].attrs:
-            params["harmonics"] = tuple(
-                int(n) for n in grp["visibility"].attrs["harmonics"])
-        if vis_name == "FullGeometryVisibilityFunction":
-            params["alpha_ref"] = float(grp["visibility"].attrs["alpha_ref"])
-            params["n_lon"] = int(grp["visibility"].attrs["n_lon"])
-        elif vis_name == "LimbDarkenedVisibilityFunction":
-            params["u"] = tuple(
-                float(x) for x in grp["visibility"].attrs["u"])
-            params["law"] = str(grp["visibility"].attrs["law"])
-            params["n_lon"] = int(grp["visibility"].attrs["n_lon"])
+        vattrs = grp["visibility"].attrs
+        if "harmonics" in vattrs:
+            params["harmonics"] = tuple(int(n) for n in vattrs["harmonics"])
+        # issubclass (not name equality) so registered custom subclasses
+        # get the same typed attribute handling; attribute presence is
+        # guarded for files written before an attribute existed.
+        if issubclass(cls, FullGeometryLimbDarkenedVisibilityFunction):
+            for k, cast in (("alpha_ref", float), ("n_lon", int),
+                            ("n_rho", int), ("n_psi", int),
+                            ("law", str)):
+                if k in vattrs:
+                    params[k] = cast(vattrs[k])
+            if "u" in vattrs:
+                params["u"] = tuple(float(x) for x in vattrs["u"])
+        elif issubclass(cls, FullGeometryVisibilityFunction):
+            params["alpha_ref"] = float(vattrs["alpha_ref"])
+            params["n_lon"] = int(vattrs["n_lon"])
+        elif issubclass(cls, LimbDarkenedVisibilityFunction):
+            params["u"] = tuple(float(x) for x in vattrs["u"])
+            params["law"] = str(vattrs["law"])
+            params["n_lon"] = int(vattrs["n_lon"])
         visibility = cls(**params)
 
     # Latitude
@@ -388,10 +457,15 @@ def _read_kernel_terms(f):
                 lat_range=tuple(tg["term_lat_range"][:])))
         else:
             from . import terms as _terms_mod
-            cls = getattr(_terms_mod, cls_name, None)
+            # Built-in analytic terms resolve from the terms module;
+            # user-defined terms from the register_io_class registry.
+            cls = (getattr(_terms_mod, cls_name, None)
+                   or _get_class_registry().get(cls_name))
             if cls is None:
                 raise ValueError(
-                    f"Unknown kernel term class in file: {cls_name!r}")
+                    f"Unknown kernel term class in file: {cls_name!r}. "
+                    "User-defined terms must be registered with "
+                    "spotgp.io.register_io_class before load_gp.")
             params = {k: float(tg.attrs[k])
                       for k in tg.attrs
                       if k not in ("term_class", "term_prefix")}
