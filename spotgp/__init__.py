@@ -10,7 +10,8 @@ from .distributions import (
 from .envelope import (
     EnvelopeFunction, TrapezoidSymmetricEnvelope, TrapezoidAsymmetricEnvelope,
     SkewedGaussianEnvelope, ExponentialEnvelope, ExponentialAsymmetricEnvelope,
-    LogisticPlateauEnvelope, DoubleTrapezoidEnvelope, compute_R_Gamma_numerical,
+    LogisticPlateauEnvelope, ModulatedGammaEnvelope, DoubleTrapezoidEnvelope,
+    compute_R_Gamma_numerical,
 )
 from .latitude import LatitudeDistributionFunction, UniformDoubleHemisphereBand
 from .visibility import (
@@ -60,7 +61,8 @@ __all__ = [
     # envelope
     "EnvelopeFunction", "TrapezoidSymmetricEnvelope", "TrapezoidAsymmetricEnvelope",
     "SkewedGaussianEnvelope", "ExponentialEnvelope", "ExponentialAsymmetricEnvelope",
-    "LogisticPlateauEnvelope", "DoubleTrapezoidEnvelope", "compute_R_Gamma_numerical",
+    "LogisticPlateauEnvelope", "ModulatedGammaEnvelope", "DoubleTrapezoidEnvelope",
+    "compute_R_Gamma_numerical",
     # latitude
     "LatitudeDistributionFunction", "UniformDoubleHemisphereBand",
     # visibility

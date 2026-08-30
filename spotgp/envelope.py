@@ -31,6 +31,7 @@ __all__ = [
     "ExponentialEnvelope",
     "ExponentialAsymmetricEnvelope",
     "LogisticPlateauEnvelope",
+    "ModulatedGammaEnvelope",
     # low-level helpers (re-exported for backward compat with analytic_kernel)
     "compute_R_Gamma_numerical",
     "_Gamma_hat",
@@ -1437,6 +1438,140 @@ class LogisticPlateauEnvelope(EnvelopeFunction):
 
     def kernel_support(self) -> float:
         return self._lspot + 6.0 * self._tau_spot
+
+
+_MODGAMMA_N_QUAD = 4096
+_MODGAMMA_EXTENT = 12.0
+
+
+@jax.jit
+def _modulated_gamma_envelope(t, alpha, tau, a, omega):
+    abs_t = jnp.abs(t)
+    base = jnp.power(abs_t / tau, alpha) * jnp.exp(-abs_t / tau)
+    modulated = base * (1.0 + a * jnp.cos(omega * t))
+    return modulated
+
+
+@jax.jit
+def _modulated_gamma_R_Gamma_jax(lag, alpha, tau, a, omega):
+    extent = _MODGAMMA_EXTENT * tau
+    n = _MODGAMMA_N_QUAD
+    t_grid = jnp.linspace(-extent, extent, n)
+    dt = t_grid[1] - t_grid[0]
+
+    raw = _modulated_gamma_envelope(t_grid, alpha, tau, a, omega)
+    peak = jnp.max(raw)
+    peak = jnp.where(peak > 1e-30, peak, 1.0)
+    gamma_t = raw / peak
+
+    n_fft = 2 * n
+    G_fft = jnp.fft.rfft(gamma_t, n=n_fft)
+    R_raw = jnp.fft.irfft(jnp.abs(G_fft) ** 2, n=n_fft)[:n] * dt
+    lag_grid = jnp.arange(n) * dt
+
+    return jnp.interp(jnp.abs(lag), lag_grid, R_raw)
+
+
+class ModulatedGammaEnvelope(EnvelopeFunction):
+    r"""
+    Bilateral gamma envelope with periodic cosine modulation.
+
+    .. math::
+        \Gamma(t) \propto \left(\frac{|t|}{\tau}\right)^{\!\alpha}
+                          \exp\!\left(-\frac{|t|}{\tau}\right)
+                          \bigl[1 + a\,\cos(\omega\,t)\bigr]
+
+    normalized so that the peak equals 1.  The base gamma shape rises
+    from zero, peaks at :math:`|t| = \alpha\,\tau`, and decays
+    exponentially; the cosine modulation adds oscillatory structure
+    within the envelope.  Positivity requires :math:`|a| < 1`.
+
+    The autocorrelation :math:`R_\Gamma` and Fourier transform are
+    computed numerically via FFT.
+
+    Parameters
+    ----------
+    alpha : float
+        Rise exponent (dimensionless).  Controls the sharpness of the
+        initial rise: larger values give a sharper peak.  Must be > 0.
+    tau : float
+        Decay timescale [days].
+    a : float
+        Modulation depth (dimensionless).  Must satisfy ``|a| < 1`` for
+        the envelope to remain non-negative.
+    omega : float
+        Modulation angular frequency [rad/day].  A period of
+        :math:`2\pi/\omega` days.
+    """
+
+    def __init__(self, alpha: float, tau: float, a: float = 0.0,
+                 omega: float = 0.0):
+        self._alpha = float(alpha)
+        self._tau = float(tau)
+        if abs(float(a)) >= 1.0:
+            raise ValueError(
+                f"ModulatedGammaEnvelope: |a|={abs(float(a)):.3f} >= 1 "
+                f"violates the positivity constraint. Require |a| < 1.")
+        self._a = float(a)
+        self._omega = float(omega)
+
+        # Precompute the normalization peak on a fine grid
+        t_fine = np.linspace(-_MODGAMMA_EXTENT * self._tau,
+                             _MODGAMMA_EXTENT * self._tau, 8192)
+        raw = np.asarray(_modulated_gamma_envelope(
+            jnp.array(t_fine), self._alpha, self._tau, self._a, self._omega))
+        self._peak = float(np.max(raw))
+        if self._peak <= 0:
+            self._peak = 1.0
+
+    @property
+    def tau_spot(self) -> float:
+        return self._tau
+
+    @property
+    def alpha(self) -> float:
+        return self._alpha
+
+    @property
+    def a(self) -> float:
+        return self._a
+
+    @property
+    def omega(self) -> float:
+        return self._omega
+
+    @property
+    def lspot(self) -> float:
+        return 0.0
+
+    @property
+    def param_dict(self) -> dict:
+        return {
+            "alpha_env": self._alpha,
+            "tau_spot": self._tau,
+            "a_mod": self._a,
+            "omega_mod": self._omega,
+        }
+
+    def Gamma(self, t):
+        t = jnp.asarray(t, dtype=float)
+        raw = _modulated_gamma_envelope(t, self._alpha, self._tau,
+                                        self._a, self._omega)
+        return raw / self._peak
+
+    def r_gamma_jax(self, theta_env, lag):
+        alpha = theta_env[0]
+        tau = theta_env[1]
+        a = theta_env[2]
+        omega = theta_env[3]
+        return _modulated_gamma_R_Gamma_jax(lag, alpha, tau, a, omega)
+
+    def support_from_bounds(self, upper_fn):
+        return 6.0 * upper_fn("tau_spot", self._tau) * (
+            1.0 + upper_fn("alpha_env", self._alpha))
+
+    def kernel_support(self) -> float:
+        return 6.0 * self._tau * (1.0 + self._alpha)
 
 
 class DoubleTrapezoidEnvelope(EnvelopeFunction):

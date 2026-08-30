@@ -257,6 +257,30 @@ def _resolve_skew_normal(raw: dict) -> dict:
     }
 
 
+def _resolve_modulated_gamma(raw: dict) -> dict:
+    alpha_env = float(raw["alpha_env"])
+    tau_spot = float(raw["tau_spot"])
+    a_mod = float(raw.get("a_mod", 0.0))
+    omega_mod = float(raw.get("omega_mod", 0.0))
+    return {
+        "alpha_env": alpha_env,
+        "tau_spot": tau_spot,
+        "a_mod": a_mod,
+        "omega_mod": omega_mod,
+    }
+
+
+register_envelope(EnvelopeSpec(
+    name="modulated_gamma",
+    signature_keys=frozenset({"alpha_env", "tau_spot", "a_mod", "omega_mod"}),
+    resolve=_resolve_modulated_gamma,
+    description=(
+        "Modulated gamma: bilateral |t|^alpha * exp(-|t|/tau) * [1 + a*cos(omega*t)]. "
+        "alpha_env (rise exponent), tau_spot (decay [days]), "
+        "a_mod (modulation depth, |a|<1), omega_mod (frequency [rad/day])."
+    ),
+))
+
 register_envelope(EnvelopeSpec(
     name="skew_normal",
     signature_keys=frozenset({"sigma_sn", "n_sn"}),

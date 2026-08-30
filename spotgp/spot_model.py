@@ -26,6 +26,7 @@ try:
         TrapezoidAsymmetricEnvelope,
         SkewedGaussianEnvelope,
         ExponentialEnvelope,
+        ModulatedGammaEnvelope,
     )
     from .params import resolve_hparam
     from .latitude import LatitudeDistributionFunction, UniformDoubleHemisphereBand
@@ -45,6 +46,7 @@ except ImportError:
         TrapezoidAsymmetricEnvelope,
         SkewedGaussianEnvelope,
         ExponentialEnvelope,
+        ModulatedGammaEnvelope,
     )
     from params import resolve_hparam
     from latitude import LatitudeDistributionFunction, UniformDoubleHemisphereBand
@@ -434,7 +436,11 @@ class SpotEvolutionModel:
 
         visibility = VisibilityFunction(p["peq"], p["kappa"], p["inc"])
 
-        if "sigma_sn" in hparam and "n_sn" in hparam:
+        if "alpha_env" in hparam and "a_mod" in hparam:
+            envelope = ModulatedGammaEnvelope(
+                alpha=p["alpha_env"], tau=p["tau_spot"],
+                a=p.get("a_mod", 0.0), omega=p.get("omega_mod", 0.0))
+        elif "sigma_sn" in hparam and "n_sn" in hparam:
             envelope = SkewedGaussianEnvelope(
                 p["sigma_sn"], p["n_sn"], p.get("lspot", 0.0))
         elif "tau_em" in hparam and "tau_dec" in hparam:

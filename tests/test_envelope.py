@@ -9,6 +9,7 @@ from spotgp.envelope import (
     TrapezoidAsymmetricEnvelope,
     SkewedGaussianEnvelope,
     ExponentialEnvelope,
+    ModulatedGammaEnvelope,
     compute_R_Gamma_numerical,
     _R_Gamma_symmetric,
     _R_Gamma_asymmetric,
@@ -194,6 +195,80 @@ class TestExponentialEnvelope:
         env = ExponentialEnvelope(tau_spot=2.0)
         R0 = float(env.R_Gamma(jnp.array([0.0]))[0])
         assert R0 > 0
+
+
+# =====================================================================
+# ModulatedGammaEnvelope
+# =====================================================================
+
+class TestModulatedGammaEnvelope:
+    def test_init(self):
+        env = ModulatedGammaEnvelope(alpha=2.0, tau=10.0, a=0.3, omega=0.5)
+        assert env.tau_spot == 10.0
+        assert env.alpha == 2.0
+        assert env.a == 0.3
+        assert env.omega == 0.5
+        assert env.lspot == 0.0
+
+    def test_gamma_peak_is_one(self):
+        env = ModulatedGammaEnvelope(alpha=2.0, tau=10.0, a=0.3, omega=0.5)
+        t = jnp.linspace(-80, 80, 2000)
+        g = np.array(env.Gamma(t))
+        np.testing.assert_allclose(np.max(g), 1.0, rtol=1e-3)
+
+    def test_gamma_zero_at_origin(self):
+        env = ModulatedGammaEnvelope(alpha=2.0, tau=10.0, a=0.0, omega=0.0)
+        assert float(env.Gamma(jnp.array(0.0))) == pytest.approx(0.0, abs=1e-12)
+
+    def test_gamma_non_negative(self):
+        env = ModulatedGammaEnvelope(alpha=2.0, tau=10.0, a=0.8, omega=0.5)
+        t = jnp.linspace(-80, 80, 2000)
+        g = np.array(env.Gamma(t))
+        assert np.all(g >= -1e-10)
+
+    def test_gamma_decays_at_large_t(self):
+        env = ModulatedGammaEnvelope(alpha=2.0, tau=10.0, a=0.3, omega=0.5)
+        g_far = float(env.Gamma(jnp.array(200.0)))
+        assert g_far < 1e-5
+
+    def test_R_Gamma_zero_lag_positive(self):
+        env = ModulatedGammaEnvelope(alpha=2.0, tau=10.0, a=0.3, omega=0.5)
+        R0 = float(env.R_Gamma(jnp.array([0.0]))[0])
+        assert R0 > 0
+
+    def test_R_Gamma_decays(self):
+        env = ModulatedGammaEnvelope(alpha=2.0, tau=10.0, a=0.3, omega=0.5)
+        R0 = float(env.R_Gamma(jnp.array([0.0]))[0])
+        R_far = float(env.R_Gamma(jnp.array([100.0]))[0])
+        assert R0 > R_far
+
+    def test_param_dict(self):
+        env = ModulatedGammaEnvelope(alpha=2.0, tau=10.0, a=0.3, omega=0.5)
+        pd = env.param_dict
+        assert "alpha_env" in pd
+        assert "tau_spot" in pd
+        assert "a_mod" in pd
+        assert "omega_mod" in pd
+
+    def test_kernel_support(self):
+        env = ModulatedGammaEnvelope(alpha=2.0, tau=10.0, a=0.3, omega=0.5)
+        ks = env.kernel_support()
+        assert ks > 0
+
+    def test_positivity_constraint_raises(self):
+        with pytest.raises(ValueError, match="positivity"):
+            ModulatedGammaEnvelope(alpha=2.0, tau=10.0, a=1.0, omega=0.5)
+
+    def test_reduces_to_unmodulated(self):
+        """With a=0, should match the unmodulated gamma shape."""
+        env = ModulatedGammaEnvelope(alpha=2.0, tau=10.0, a=0.0, omega=0.5)
+        t = jnp.linspace(-50, 50, 500)
+        g = np.array(env.Gamma(t))
+        # unmodulated: |t|^alpha * exp(-|t|/tau), normalized
+        t_np = np.array(t)
+        raw = np.abs(t_np / 10.0) ** 2 * np.exp(-np.abs(t_np) / 10.0)
+        raw /= raw.max()
+        np.testing.assert_allclose(g, raw, atol=1e-4)
 
 
 # =====================================================================
