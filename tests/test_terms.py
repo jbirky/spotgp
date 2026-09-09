@@ -38,60 +38,67 @@ RTOL = 1e-12
 # run with an explicit ``n_harmonics=2``: the two agree to 1.2e-14 relative
 # (worst case: grad0), so only the default order set moved — the kernel math
 # itself is unchanged.
+#
+# Re-captured again after commit 9932fc4 flipped the ``TimeSeriesData``
+# ``normalize`` default from True to False, so GPSolver no longer divides
+# y and yerr by the median flux.  The kernel itself was verified
+# bit-identical across that commit (R_Gamma, |c_n|^2, k_of_lag), and
+# feeding median-normalized data to the new code reproduces the previous
+# pins to ~1 ulp; only the data preprocessing moved.
 PINS = {
     "uniform/cholesky_banded": {
-        "logL_fn": 537.2845653996955,
-        "logL_init": 537.2845653996956,
-        "logpost": 526.6446715274975,
-        "grad0": 0.5239965812265719,
+        "logL_fn": 537.1860296386888,
+        "logL_init": 537.1860296386886,
+        "logpost": 526.5461357664908,
+        "grad0": 0.5237665446488494,
     },
     "uniform/cholesky_full": {
-        "logL_fn": 537.2845653996955,
-        "logL_init": 537.2845653996956,
-        "logpost": 526.6446715274975,
-        "grad0": 0.5239965812265653,
+        "logL_fn": 537.1860296386886,
+        "logL_init": 537.1860296386886,
+        "logpost": 526.5461357664907,
+        "grad0": 0.5237665446488572,
     },
     "irregular/cholesky_banded": {
-        "logL_fn": 532.4534737577502,
-        "logL_init": 532.4534737577502,
-        "logpost": 521.8135798855523,
-        "grad0": 0.48252885278164437,
+        "logL_fn": 532.1959798323368,
+        "logL_init": 532.1959798323368,
+        "logpost": 521.5560859601388,
+        "grad0": 0.4818934523316618,
     },
     "irregular/cholesky_full": {
-        "logL_fn": 532.4534737577502,
-        "logL_init": 532.4534737577502,
-        "logpost": 521.8135798855523,
-        "grad0": 0.4825288527816439,
+        "logL_fn": 532.1959798323365,
+        "logL_init": 532.1959798323367,
+        "logpost": 521.5560859601386,
+        "grad0": 0.4818934523316629,
     },
     "gappy/cholesky_banded": {
-        "logL_fn": 538.2710188149504,
-        "logL_init": 538.2710188149503,
-        "logpost": 527.6311249427524,
-        "grad0": 0.47607743658135165,
+        "logL_fn": 538.311925689684,
+        "logL_init": 538.311925689684,
+        "logpost": 527.6720318174861,
+        "grad0": 0.47621264579436473,
     },
     "gappy/cholesky_full": {
-        "logL_fn": 538.2710188149504,
-        "logL_init": 538.2710188149503,
-        "logpost": 527.6311249427524,
-        "grad0": 0.4760774365813532,
+        "logL_fn": 538.3119256896839,
+        "logL_init": 538.3119256896838,
+        "logpost": 527.672031817486,
+        "grad0": 0.47621264579436773,
     },
     "uniform/banded/logspace": {
-        "logL_fn": 537.2845624907399,
-        "logL_init": 537.2845653996956,
-        "logpost": 522.8636116389628,
-        "grad0": 0.5239965820302568,
+        "logL_fn": 537.1860267366094,
+        "logL_init": 537.1860296386886,
+        "logpost": 522.7650758848323,
+        "grad0": 0.5237665454471901,
     },
     "uniform/banded/gl": {
-        "logL_fn": 537.3033092397471,
-        "logL_init": 537.3033092397471,
-        "logpost": 526.6634153675492,
-        "grad0": 0.5298326734343418,
+        "logL_fn": 537.2047375380822,
+        "logL_init": 537.2047375380822,
+        "logpost": 526.5648436658843,
+        "grad0": 0.5296000004897113,
     },
     "uniform/banded/b40": {
-        "logL_fn": 548.0256514915891,
-        "logL_init": 548.0256514915891,
-        "logpost": 537.3857576193911,
-        "grad0": 0.5471190414466703,
+        "logL_fn": 548.026479643483,
+        "logL_init": 548.026479643483,
+        "logpost": 537.386585771285,
+        "grad0": 0.5471215519469179,
     },
 }
 
