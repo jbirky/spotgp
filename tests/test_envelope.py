@@ -260,13 +260,15 @@ class TestModulatedGammaEnvelope:
             ModulatedGammaEnvelope(alpha=2.0, tau=10.0, a=1.0, omega=0.5)
 
     def test_reduces_to_unmodulated(self):
-        """With a=0, should match the unmodulated gamma shape."""
+        """With a=0, should match the unmodulated gamma shape (one-sided)."""
         env = ModulatedGammaEnvelope(alpha=2.0, tau=10.0, a=0.0, omega=0.5)
         t = jnp.linspace(-50, 50, 500)
         g = np.array(env.Gamma(t))
-        # unmodulated: |t|^alpha * exp(-|t|/tau), normalized
+        # unmodulated: t^alpha * exp(-t/tau) for t>0, zero otherwise
         t_np = np.array(t)
-        raw = np.abs(t_np / 10.0) ** 2 * np.exp(-np.abs(t_np) / 10.0)
+        raw = np.where(t_np > 0,
+                       (t_np / 10.0) ** 2 * np.exp(-t_np / 10.0),
+                       0.0)
         raw /= raw.max()
         np.testing.assert_allclose(g, raw, atol=1e-4)
 

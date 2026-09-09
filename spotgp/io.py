@@ -30,11 +30,14 @@ def _get_class_registry():
         SkewedGaussianEnvelope, ExponentialEnvelope,
         ExponentialAsymmetricEnvelope,
         LogisticPlateauEnvelope, DoubleTrapezoidEnvelope,
+        DoubleTrapezoidAsymmetricEnvelope,
+        TripleTrapezoidAsymmetricEnvelope,
     )
     from .visibility import (
         VisibilityFunction, EdgeOnVisibilityFunction,
         FullGeometryVisibilityFunction, LimbDarkenedVisibilityFunction,
         FullGeometryLimbDarkenedVisibilityFunction,
+        DCScaledVisibilityFunction,
     )
     from .latitude import (
         LatitudeDistributionFunction, UniformDoubleHemisphereBand,
@@ -48,12 +51,15 @@ def _get_class_registry():
         "ExponentialAsymmetricEnvelope": ExponentialAsymmetricEnvelope,
         "LogisticPlateauEnvelope": LogisticPlateauEnvelope,
         "DoubleTrapezoidEnvelope": DoubleTrapezoidEnvelope,
+        "DoubleTrapezoidAsymmetricEnvelope": DoubleTrapezoidAsymmetricEnvelope,
+        "TripleTrapezoidAsymmetricEnvelope": TripleTrapezoidAsymmetricEnvelope,
         "VisibilityFunction": VisibilityFunction,
         "EdgeOnVisibilityFunction": EdgeOnVisibilityFunction,
         "FullGeometryVisibilityFunction": FullGeometryVisibilityFunction,
         "LimbDarkenedVisibilityFunction": LimbDarkenedVisibilityFunction,
         "FullGeometryLimbDarkenedVisibilityFunction":
             FullGeometryLimbDarkenedVisibilityFunction,
+        "DCScaledVisibilityFunction": DCScaledVisibilityFunction,
         "LatitudeDistributionFunction": LatitudeDistributionFunction,
         "UniformDoubleHemisphereBand": UniformDoubleHemisphereBand,
     }

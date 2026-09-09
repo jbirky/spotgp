@@ -17,6 +17,7 @@ __all__ = [
     "FullGeometryVisibilityFunction",
     "LimbDarkenedVisibilityFunction",
     "FullGeometryLimbDarkenedVisibilityFunction",
+    "DCScaledVisibilityFunction",
     # low-level helpers re-exported for backward compat
     "_cn_general_jax",
     "_cn_squared_coefficients_jax",
@@ -974,3 +975,91 @@ class FullGeometryLimbDarkenedVisibilityFunction(LimbDarkenedVisibilityFunction)
             "numerically (spot-cap quadrature + DFT); there is no "
             "closed-form expression to render. Use visibility_profile() "
             "to inspect V(theta) instead.")
+
+
+class DCScaledVisibilityFunction(FullGeometryLimbDarkenedVisibilityFunction):
+    """Full-geometry, limb-darkened visibility with a multiplicative
+    scale ``f0`` on the ``|c_0|^2`` coefficient.
+
+    The coefficients are those of
+    :class:`FullGeometryLimbDarkenedVisibilityFunction` -- the exact
+    finite-spot projected area weighted by the limb-darkened intensity,
+    evaluated by cap quadrature + DFT -- with the aperiodic n = 0 term
+    rescaled by ``f0``.  ``f0=1`` with ``free_f0=False`` recovers the
+    unscaled model exactly and ``f0=0`` removes the DC term, all on one
+    code path, which is what makes the evidences of the three
+    treatments directly comparable.
+
+    Parameters
+    ----------
+    peq : float
+        Equatorial rotation period [days].
+    kappa : float
+        Differential rotation shear (dimensionless).
+    inc : float
+        Stellar inclination [radians].
+    f0 : float
+        Multiplicative scale on the n = 0 (DC) coefficient (default 1.0).
+    free_f0 : bool
+        Whether ``f0`` is a free parameter in the sampled vector
+        (default True).
+    alpha_ref : float
+        Reference spot angular radius [radians] (default 0.1).
+    u : sequence of float
+        Limb-darkening coefficients (default ``(0.3, 0.2)``).
+    law : {"quadratic", "claret"}
+        Intensity law (default "quadratic").
+    n_lon : int
+        Longitude grid for DFT (default 512).
+    n_rho, n_psi : int
+        Cap quadrature resolution (default 32 x 64).
+    harmonics : sequence of int or int
+        Rotation harmonic orders to retain (default ``(0, 1, 2)``).
+        Must include 0.
+    """
+
+    def __init__(self, peq, kappa, inc, f0=1.0, free_f0=True,
+                 alpha_ref=0.1, u=(0.3, 0.2), law="quadratic",
+                 n_lon=512, n_rho=32, n_psi=64, harmonics=(0, 1, 2)):
+        super().__init__(peq=peq, kappa=kappa, inc=inc,
+                         alpha_ref=alpha_ref, u=u, law=law, n_lon=n_lon,
+                         n_rho=n_rho, n_psi=n_psi, harmonics=harmonics)
+        if 0 not in self.harmonics:
+            raise ValueError(
+                f"harmonics={self.harmonics} omits n=0; there is no DC "
+                "term to scale.")
+        self.f0 = float(f0)
+        self.free_f0 = bool(free_f0)
+
+    @property
+    def param_dict(self):
+        d = {"peq": self.peq, "kappa": self.kappa, "inc": self.inc}
+        if self.free_f0:
+            d["f0"] = self.f0
+        return d
+
+    @property
+    def param_keys(self):
+        return ("peq", "kappa", "inc", "f0") if self.free_f0 \
+            else ("peq", "kappa", "inc")
+
+    def _dc_weights(self, orders, f0):
+        return jnp.where(jnp.asarray(orders) == 0, f0, 1.0)
+
+    def cn_sq_at(self, inc, phi, n_harmonics=None, f0=None):
+        """Parent's finite-spot limb-darkened ``|c_n|^2`` with the
+        n = 0 coefficient rescaled.  ``f0`` defaults to the instance
+        value; ``cn_sq_jax`` passes the sampled one (a tracer)."""
+        ns = self._orders(n_harmonics)
+        cn_sq = super().cn_sq_at(inc, phi, ns)
+        return cn_sq * self._dc_weights(
+            ns, self.f0 if f0 is None else f0)
+
+    def cn_sq_jax(self, theta_vis, phi, n_harmonics=None):
+        f0 = theta_vis[3] if self.free_f0 else self.f0
+        return self.cn_sq_at(theta_vis[2], phi, n_harmonics, f0=f0)
+
+    @property
+    def io_attrs(self):
+        """Extra constructor state persisted by save_gp/load_gp."""
+        return {"f0": self.f0, "free_f0": float(self.free_f0)}

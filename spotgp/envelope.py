@@ -1446,10 +1446,10 @@ _MODGAMMA_EXTENT = 12.0
 
 @jax.jit
 def _modulated_gamma_envelope(t, alpha, tau, a, omega):
-    abs_t = jnp.abs(t)
-    base = jnp.power(abs_t / tau, alpha) * jnp.exp(-abs_t / tau)
+    safe_t = jnp.maximum(t, 0.0)
+    base = jnp.power(safe_t / tau, alpha) * jnp.exp(-safe_t / tau)
     modulated = base * (1.0 + a * jnp.cos(omega * t))
-    return modulated
+    return jnp.where(t > 0, modulated, 0.0)
 
 
 @jax.jit
@@ -1474,17 +1474,18 @@ def _modulated_gamma_R_Gamma_jax(lag, alpha, tau, a, omega):
 
 class ModulatedGammaEnvelope(EnvelopeFunction):
     r"""
-    Bilateral gamma envelope with periodic cosine modulation.
+    One-sided gamma envelope with periodic cosine modulation.
 
     .. math::
-        \Gamma(t) \propto \left(\frac{|t|}{\tau}\right)^{\!\alpha}
-                          \exp\!\left(-\frac{|t|}{\tau}\right)
+        \Gamma(t) \propto \left(\frac{t}{\tau}\right)^{\!\alpha}
+                          \exp\!\left(-\frac{t}{\tau}\right)
                           \bigl[1 + a\,\cos(\omega\,t)\bigr]
 
-    normalized so that the peak equals 1.  The base gamma shape rises
-    from zero, peaks at :math:`|t| = \alpha\,\tau`, and decays
-    exponentially; the cosine modulation adds oscillatory structure
-    within the envelope.  Positivity requires :math:`|a| < 1`.
+    for :math:`t > 0`, and zero otherwise.  Normalized so that the peak
+    equals 1.  The base gamma shape rises from zero, peaks at
+    :math:`t = \alpha\,\tau`, and decays exponentially; the cosine
+    modulation adds oscillatory structure within the envelope.
+    Positivity requires :math:`|a| < 1`.
 
     The autocorrelation :math:`R_\Gamma` and Fourier transform are
     computed numerically via FFT.
@@ -1515,9 +1516,8 @@ class ModulatedGammaEnvelope(EnvelopeFunction):
         self._a = float(a)
         self._omega = float(omega)
 
-        # Precompute the normalization peak on a fine grid
-        t_fine = np.linspace(-_MODGAMMA_EXTENT * self._tau,
-                             _MODGAMMA_EXTENT * self._tau, 8192)
+        # Precompute the normalization peak on a fine one-sided grid
+        t_fine = np.linspace(0, _MODGAMMA_EXTENT * self._tau, 8192)
         raw = np.asarray(_modulated_gamma_envelope(
             jnp.array(t_fine), self._alpha, self._tau, self._a, self._omega))
         self._peak = float(np.max(raw))
@@ -1619,6 +1619,7 @@ class DoubleTrapezoidEnvelope(EnvelopeFunction):
         self._t_gap = float(t_gap)
         sub_duration = self._lspot + 2.0 * self._tau_spot
         self._delta = sub_duration + self._t_gap
+        self._ensure_numerical_grids()
 
     @property
     def tau_spot(self) -> float:
@@ -1664,25 +1665,15 @@ class DoubleTrapezoidEnvelope(EnvelopeFunction):
         peak = jnp.where(peak > 1e-30, peak, 1.0)
         return raw / peak
 
-    def R_Gamma(self, lag):
-        lag = jnp.asarray(lag)
-        R1 = _R_Gamma_symmetric(lag, self._lspot, self._tau_spot)
-        R1_plus = _R_Gamma_symmetric(lag + self._delta,
-                                     self._lspot, self._tau_spot)
-        R1_minus = _R_Gamma_symmetric(lag - self._delta,
-                                      self._lspot, self._tau_spot)
-        return 2.0 * R1 + R1_plus + R1_minus
-
     def kernel_support(self) -> float:
         return self._delta + self._lspot + 2.0 * self._tau_spot
 
     def r_gamma_jax(self, theta_env, lag):
-        lspot, tau_spot, t_gap = theta_env[0], theta_env[1], theta_env[2]
-        delta = lspot + 2.0 * tau_spot + t_gap
-        R1 = _R_Gamma_symmetric_core(lag, lspot, tau_spot)
-        R1_plus = _R_Gamma_symmetric_core(lag + delta, lspot, tau_spot)
-        R1_minus = _R_Gamma_symmetric_core(lag - delta, lspot, tau_spot)
-        return 2.0 * R1 + R1_plus + R1_minus
+        lspot = theta_env[0]
+        tau_spot = theta_env[1]
+        t_gap = theta_env[2]
+        return _double_trap_asym_R_Gamma_jax(
+            lag, lspot, tau_spot, lspot, tau_spot, t_gap)
 
     def support_from_bounds(self, upper_fn):
         return (upper_fn("lspot", self._lspot)
@@ -1690,3 +1681,325 @@ class DoubleTrapezoidEnvelope(EnvelopeFunction):
                 + upper_fn("t_gap", self._t_gap)
                 + upper_fn("lspot", self._lspot)
                 + 2.0 * upper_fn("tau_spot", self._tau_spot))
+
+
+_DOUBLE_TRAP_ASYM_N = 4096
+_DOUBLE_TRAP_ASYM_EXTENT = 3.0
+
+
+@jax.jit
+def _single_trap_jax(t, half, tau):
+    return jnp.where(
+        t < -(half + tau), 0.0,
+        jnp.where(
+            t < -half, (t + half + tau) / tau,
+            jnp.where(
+                t <= half, 1.0,
+                jnp.where(
+                    t < half + tau, (half + tau - t) / tau,
+                    0.0))))
+
+
+@jax.jit
+def _double_trap_asym_R_Gamma_jax(lag, lspot1, tau_spot1, lspot2, tau_spot2, t_gap):
+    sub1 = lspot1 + 2.0 * tau_spot1
+    sub2 = lspot2 + 2.0 * tau_spot2
+    delta = sub1 / 2.0 + t_gap + sub2 / 2.0
+    half_delta = delta / 2.0
+
+    extent = _DOUBLE_TRAP_ASYM_EXTENT * (delta + jnp.maximum(sub1, sub2))
+    n = _DOUBLE_TRAP_ASYM_N
+    t_grid = jnp.linspace(-extent, extent, n)
+    dt = t_grid[1] - t_grid[0]
+
+    raw = (_single_trap_jax(t_grid + half_delta, lspot1 / 2.0, tau_spot1)
+           + _single_trap_jax(t_grid - half_delta, lspot2 / 2.0, tau_spot2))
+    peak = jnp.max(raw)
+    peak = jnp.where(peak > 1e-30, peak, 1.0)
+    gamma_t = raw / peak
+
+    n_fft = 2 * n
+    G_fft = jnp.fft.rfft(gamma_t, n=n_fft)
+    R_raw = jnp.fft.irfft(jnp.abs(G_fft) ** 2, n=n_fft)[:n] * dt
+    lag_grid = jnp.arange(n) * dt
+
+    return jnp.interp(jnp.abs(lag), lag_grid, R_raw)
+
+
+class DoubleTrapezoidAsymmetricEnvelope(EnvelopeFunction):
+    r"""
+    Two symmetric trapezoids in sequence with independent shape parameters,
+    modeling an active-longitude spot complex where the two generations of
+    spots have different lifetimes and rise/decay timescales.
+
+    .. math::
+        \Gamma(t) = \Gamma_1(t + \Delta/2) + \Gamma_2(t - \Delta/2)
+
+    where :math:`\Gamma_1` is a symmetric trapezoid with plateau ``lspot1``
+    and ramps ``tau_spot1``, :math:`\Gamma_2` has plateau ``lspot2`` and
+    ramps ``tau_spot2``, and
+
+    .. math::
+        \Delta = \tfrac{1}{2}(\ell_1 + 2\tau_1) + t_{\rm gap}
+               + \tfrac{1}{2}(\ell_2 + 2\tau_2)
+
+    is the center-to-center separation.  The envelope is normalized so
+    that its peak equals 1.
+
+    Because the two sub-pulses have different shapes, the autocorrelation
+    is computed numerically via FFT (inherited from the base class).
+
+    Parameters
+    ----------
+    lspot1 : float
+        Plateau duration of the first sub-pulse [days].
+    tau_spot1 : float
+        Rise/decay timescale of the first sub-pulse [days].
+    lspot2 : float
+        Plateau duration of the second sub-pulse [days].
+    tau_spot2 : float
+        Rise/decay timescale of the second sub-pulse [days].
+    t_gap : float
+        Quiescent gap between the end of the first sub-pulse and the
+        start of the second [days].
+    """
+
+    def __init__(self, lspot1: float, tau_spot1: float,
+                 lspot2: float, tau_spot2: float, t_gap: float = 0.0):
+        self._lspot1 = float(lspot1)
+        self._tau_spot1 = float(tau_spot1)
+        self._lspot2 = float(lspot2)
+        self._tau_spot2 = float(tau_spot2)
+        self._t_gap = float(t_gap)
+        sub1 = self._lspot1 + 2.0 * self._tau_spot1
+        sub2 = self._lspot2 + 2.0 * self._tau_spot2
+        self._delta = sub1 / 2.0 + self._t_gap + sub2 / 2.0
+        self._ensure_numerical_grids()
+
+    @property
+    def tau_spot(self) -> float:
+        return max(self._tau_spot1, self._tau_spot2)
+
+    @property
+    def lspot1(self) -> float:
+        return self._lspot1
+
+    @property
+    def tau_spot1(self) -> float:
+        return self._tau_spot1
+
+    @property
+    def lspot2(self) -> float:
+        return self._lspot2
+
+    @property
+    def tau_spot2(self) -> float:
+        return self._tau_spot2
+
+    @property
+    def t_gap(self) -> float:
+        return self._t_gap
+
+    @property
+    def delta(self) -> float:
+        """Center-to-center separation of the two sub-pulses."""
+        return self._delta
+
+    @property
+    def param_dict(self) -> dict:
+        return {"lspot1": self._lspot1, "tau_spot1": self._tau_spot1,
+                "lspot2": self._lspot2, "tau_spot2": self._tau_spot2,
+                "t_gap": self._t_gap}
+
+    def _single_trapezoid(self, t, half, tau):
+        return jnp.where(
+            t < -(half + tau), 0.0,
+            jnp.where(
+                t < -half, (t + half + tau) / tau,
+                jnp.where(
+                    t <= half, 1.0,
+                    jnp.where(
+                        t < half + tau, (half + tau - t) / tau,
+                        0.0))))
+
+    def Gamma(self, t):
+        t = jnp.asarray(t, dtype=float)
+        half_delta = self._delta / 2.0
+        raw = (self._single_trapezoid(t + half_delta,
+                                      self._lspot1 / 2.0, self._tau_spot1)
+               + self._single_trapezoid(t - half_delta,
+                                        self._lspot2 / 2.0, self._tau_spot2))
+        peak = jnp.max(raw) if raw.ndim > 0 else raw
+        peak = jnp.where(peak > 1e-30, peak, 1.0)
+        return raw / peak
+
+    def r_gamma_jax(self, theta_env, lag):
+        lspot1 = theta_env[0]
+        tau_spot1 = theta_env[1]
+        lspot2 = theta_env[2]
+        tau_spot2 = theta_env[3]
+        t_gap = theta_env[4]
+        return _double_trap_asym_R_Gamma_jax(
+            lag, lspot1, tau_spot1, lspot2, tau_spot2, t_gap)
+
+    def kernel_support(self) -> float:
+        sub1 = self._lspot1 + 2.0 * self._tau_spot1
+        sub2 = self._lspot2 + 2.0 * self._tau_spot2
+        return self._delta + max(sub1, sub2)
+
+    def support_from_bounds(self, upper_fn):
+        sub1 = (upper_fn("lspot1", self._lspot1)
+                + 2.0 * upper_fn("tau_spot1", self._tau_spot1))
+        sub2 = (upper_fn("lspot2", self._lspot2)
+                + 2.0 * upper_fn("tau_spot2", self._tau_spot2))
+        gap = upper_fn("t_gap", self._t_gap)
+        return sub1 / 2.0 + gap + sub2 / 2.0 + max(sub1, sub2)
+
+
+@jax.jit
+def _triple_trap_asym_R_Gamma_jax(lag, lspot1, tau1, lspot2, tau2,
+                                   lspot3, tau3, t_gap12, t_gap23):
+    sub1 = lspot1 + 2.0 * tau1
+    sub2 = lspot2 + 2.0 * tau2
+    sub3 = lspot3 + 2.0 * tau3
+    sep12 = sub1 / 2.0 + t_gap12 + sub2 / 2.0
+    sep23 = sub2 / 2.0 + t_gap23 + sub3 / 2.0
+    total_span = sub1 / 2.0 + t_gap12 + sub2 + t_gap23 + sub3 / 2.0
+    center = total_span / 2.0
+    c1 = sub1 / 2.0 - center
+    c2 = c1 + sep12
+    c3 = c2 + sep23
+
+    max_sub = jnp.maximum(sub1, jnp.maximum(sub2, sub3))
+    extent = _DOUBLE_TRAP_ASYM_EXTENT * (total_span + max_sub)
+    n = _DOUBLE_TRAP_ASYM_N
+    t_grid = jnp.linspace(-extent, extent, n)
+    dt = t_grid[1] - t_grid[0]
+
+    raw = (_single_trap_jax(t_grid - c1, lspot1 / 2.0, tau1)
+           + _single_trap_jax(t_grid - c2, lspot2 / 2.0, tau2)
+           + _single_trap_jax(t_grid - c3, lspot3 / 2.0, tau3))
+    peak = jnp.max(raw)
+    peak = jnp.where(peak > 1e-30, peak, 1.0)
+    gamma_t = raw / peak
+
+    n_fft = 2 * n
+    G_fft = jnp.fft.rfft(gamma_t, n=n_fft)
+    R_raw = jnp.fft.irfft(jnp.abs(G_fft) ** 2, n=n_fft)[:n] * dt
+    lag_grid = jnp.arange(n) * dt
+
+    return jnp.interp(jnp.abs(lag), lag_grid, R_raw)
+
+
+class TripleTrapezoidAsymmetricEnvelope(EnvelopeFunction):
+    r"""
+    Three symmetric trapezoids in sequence with independent shape
+    parameters, modeling an active-longitude spot complex that produces
+    three generations of spots separated by quiescent gaps.
+
+    .. math::
+        \Gamma(t) = \Gamma_1(t - c_1) + \Gamma_2(t - c_2)
+                   + \Gamma_3(t - c_3)
+
+    where each :math:`\Gamma_i` is a symmetric trapezoid with plateau
+    ``lspot_i`` and ramps ``tau_spot_i``, and the centers
+    :math:`c_1 < c_2 < c_3` are determined by the sub-pulse widths and
+    inter-pulse gaps.  The envelope is normalized so that its peak
+    equals 1.
+
+    The autocorrelation is computed numerically via FFT.
+
+    Parameters
+    ----------
+    lspot1 : float
+        Plateau duration of the first sub-pulse [days].
+    tau_spot1 : float
+        Rise/decay timescale of the first sub-pulse [days].
+    lspot2 : float
+        Plateau duration of the second sub-pulse [days].
+    tau_spot2 : float
+        Rise/decay timescale of the second sub-pulse [days].
+    lspot3 : float
+        Plateau duration of the third sub-pulse [days].
+    tau_spot3 : float
+        Rise/decay timescale of the third sub-pulse [days].
+    t_gap12 : float
+        Quiescent gap between the first and second sub-pulses [days].
+    t_gap23 : float
+        Quiescent gap between the second and third sub-pulses [days].
+    """
+
+    def __init__(self, lspot1: float, tau_spot1: float,
+                 lspot2: float, tau_spot2: float,
+                 lspot3: float, tau_spot3: float,
+                 t_gap12: float = 0.0, t_gap23: float = 0.0):
+        self._lspot1 = float(lspot1)
+        self._tau_spot1 = float(tau_spot1)
+        self._lspot2 = float(lspot2)
+        self._tau_spot2 = float(tau_spot2)
+        self._lspot3 = float(lspot3)
+        self._tau_spot3 = float(tau_spot3)
+        self._t_gap12 = float(t_gap12)
+        self._t_gap23 = float(t_gap23)
+        self._ensure_numerical_grids()
+
+    @property
+    def tau_spot(self) -> float:
+        return max(self._tau_spot1, self._tau_spot2, self._tau_spot3)
+
+    @property
+    def param_dict(self) -> dict:
+        return {
+            "lspot1": self._lspot1, "tau_spot1": self._tau_spot1,
+            "lspot2": self._lspot2, "tau_spot2": self._tau_spot2,
+            "lspot3": self._lspot3, "tau_spot3": self._tau_spot3,
+            "t_gap12": self._t_gap12, "t_gap23": self._t_gap23,
+        }
+
+    def _sub_centers(self):
+        sub1 = self._lspot1 + 2.0 * self._tau_spot1
+        sub2 = self._lspot2 + 2.0 * self._tau_spot2
+        sub3 = self._lspot3 + 2.0 * self._tau_spot3
+        total = sub1 / 2.0 + self._t_gap12 + sub2 + self._t_gap23 + sub3 / 2.0
+        center = total / 2.0
+        c1 = sub1 / 2.0 - center
+        c2 = c1 + sub1 / 2.0 + self._t_gap12 + sub2 / 2.0
+        c3 = c2 + sub2 / 2.0 + self._t_gap23 + sub3 / 2.0
+        return c1, c2, c3
+
+    def Gamma(self, t):
+        t = jnp.asarray(t, dtype=float)
+        c1, c2, c3 = self._sub_centers()
+        raw = (_single_trap_jax(t - c1, self._lspot1 / 2.0, self._tau_spot1)
+               + _single_trap_jax(t - c2, self._lspot2 / 2.0, self._tau_spot2)
+               + _single_trap_jax(t - c3, self._lspot3 / 2.0, self._tau_spot3))
+        peak = jnp.max(raw) if raw.ndim > 0 else raw
+        peak = jnp.where(peak > 1e-30, peak, 1.0)
+        return raw / peak
+
+    def r_gamma_jax(self, theta_env, lag):
+        return _triple_trap_asym_R_Gamma_jax(
+            lag,
+            theta_env[0], theta_env[1],
+            theta_env[2], theta_env[3],
+            theta_env[4], theta_env[5],
+            theta_env[6], theta_env[7])
+
+    def kernel_support(self) -> float:
+        sub1 = self._lspot1 + 2.0 * self._tau_spot1
+        sub2 = self._lspot2 + 2.0 * self._tau_spot2
+        sub3 = self._lspot3 + 2.0 * self._tau_spot3
+        total = sub1 / 2.0 + self._t_gap12 + sub2 + self._t_gap23 + sub3 / 2.0
+        return total + max(sub1, sub2, sub3)
+
+    def support_from_bounds(self, upper_fn):
+        sub1 = (upper_fn("lspot1", self._lspot1)
+                + 2.0 * upper_fn("tau_spot1", self._tau_spot1))
+        sub2 = (upper_fn("lspot2", self._lspot2)
+                + 2.0 * upper_fn("tau_spot2", self._tau_spot2))
+        sub3 = (upper_fn("lspot3", self._lspot3)
+                + 2.0 * upper_fn("tau_spot3", self._tau_spot3))
+        gap12 = upper_fn("t_gap12", self._t_gap12)
+        gap23 = upper_fn("t_gap23", self._t_gap23)
+        total = sub1 / 2.0 + gap12 + sub2 + gap23 + sub3 / 2.0
+        return total + max(sub1, sub2, sub3)

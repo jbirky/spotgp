@@ -275,7 +275,7 @@ register_envelope(EnvelopeSpec(
     signature_keys=frozenset({"alpha_env", "tau_spot", "a_mod", "omega_mod"}),
     resolve=_resolve_modulated_gamma,
     description=(
-        "Modulated gamma: bilateral |t|^alpha * exp(-|t|/tau) * [1 + a*cos(omega*t)]. "
+        "Modulated gamma: one-sided t^alpha * exp(-t/tau) * [1 + a*cos(omega*t)] for t>0. "
         "alpha_env (rise exponent), tau_spot (decay [days]), "
         "a_mod (modulation depth, |a|<1), omega_mod (frequency [rad/day])."
     ),

@@ -11,12 +11,14 @@ from .envelope import (
     EnvelopeFunction, TrapezoidSymmetricEnvelope, TrapezoidAsymmetricEnvelope,
     SkewedGaussianEnvelope, ExponentialEnvelope, ExponentialAsymmetricEnvelope,
     LogisticPlateauEnvelope, ModulatedGammaEnvelope, DoubleTrapezoidEnvelope,
+    DoubleTrapezoidAsymmetricEnvelope, TripleTrapezoidAsymmetricEnvelope,
     compute_R_Gamma_numerical,
 )
 from .latitude import LatitudeDistributionFunction, UniformDoubleHemisphereBand
 from .visibility import (
     VisibilityFunction, EdgeOnVisibilityFunction, FullGeometryVisibilityFunction,
     LimbDarkenedVisibilityFunction, FullGeometryLimbDarkenedVisibilityFunction,
+    DCScaledVisibilityFunction,
 )
 from .spot_model import SpotEvolutionModel
 from .lightcurve import LightcurveModel, compute_sigmak
@@ -62,12 +64,14 @@ __all__ = [
     "EnvelopeFunction", "TrapezoidSymmetricEnvelope", "TrapezoidAsymmetricEnvelope",
     "SkewedGaussianEnvelope", "ExponentialEnvelope", "ExponentialAsymmetricEnvelope",
     "LogisticPlateauEnvelope", "ModulatedGammaEnvelope", "DoubleTrapezoidEnvelope",
+    "DoubleTrapezoidAsymmetricEnvelope", "TripleTrapezoidAsymmetricEnvelope",
     "compute_R_Gamma_numerical",
     # latitude
     "LatitudeDistributionFunction", "UniformDoubleHemisphereBand",
     # visibility
     "VisibilityFunction", "EdgeOnVisibilityFunction", "FullGeometryVisibilityFunction",
     "LimbDarkenedVisibilityFunction", "FullGeometryLimbDarkenedVisibilityFunction",
+    "DCScaledVisibilityFunction",
     # spot_model
     "SpotEvolutionModel",
     # lightcurve

@@ -1,6 +1,14 @@
 """GP plotting methods, mixed into GPSolver."""
 
+import jax.numpy as jnp
 import numpy as np
+
+# Default style cycles for per-term overlays (plot_acf/plot_psd,
+# components=True). The total curve keeps model_color/model_label; these
+# are only for the individual KernelSum terms.
+_COMPONENT_STYLES = ["--", ":", "-.", (0, (3, 1, 1, 1, 1, 1)),
+                     (0, (5, 2, 1, 2))]
+_COMPONENT_COLORS = ["C1", "C2", "C3", "C4", "C5"]
 
 
 class GPPlotsMixin:
@@ -171,8 +179,10 @@ class GPPlotsMixin:
 
     def plot_acf(self, theta=None, tlags=None, n_bins=50, ax=None,
                  normalize=False, data_color="k", model_color="r",
-                 show_legend=True, xlim=None, ylim=None, 
-                 model_label="Analytic ACF", data_label="Data ACF"):
+                 show_legend=True, xlim=None, ylim=None,
+                 model_label="Analytic ACF", data_label="Data ACF",
+                 components=False, drop_dc=False,
+                 component_colors=None, component_styles=None):
         """
         Plot the empirical ACF and optionally the analytic kernel.
 
@@ -197,6 +207,23 @@ class GPPlotsMixin:
             Limits for the x-axis. If None, defaults to the data range.
         ylim : tuple, optional
             Limits for the y-axis. If None, defaults to the data range.
+        components : bool
+            If True and ``self.kernel_sum`` is a composite (multi-term)
+            kernel, overlay each term individually (using
+            ``component_colors``/``component_styles``) in addition to
+            the total curve. A single-term kernel is unaffected — there
+            is nothing to decompose, so this is a no-op.
+        drop_dc : bool
+            If True, exclude the n = 0 (DC) harmonic from every spot
+            term (see ``Term.k_of_lag_no_dc``) before plotting, both for
+            the total and for each component. Non-spot terms (SHO,
+            Harvey, jitter, ...) are unaffected. Useful for comparing
+            against an empirical ACF whose own DC power has been
+            suppressed by mean subtraction or detrending.
+        component_colors, component_styles : sequence, optional
+            Color / linestyle cycles for the per-term curves when
+            ``components=True``. Defaults to a 5-entry built-in cycle;
+            cycles wrap if there are more terms than entries.
 
         Returns
         -------
@@ -219,14 +246,33 @@ class GPPlotsMixin:
         if theta is not None:
             theta_arr = self._theta_dict_to_phys_array(theta)
             lag_fine = np.linspace(0.0, float(tlags[-1]), 300)
-            K_model = np.asarray(self.kernel_sum.k_of_lag(
-                theta_arr, jnp.asarray(lag_fine)))
-            if normalize:
-                y_full = getattr(self.data, '_y_full', self.data.y)
-                var = np.var(y_full)
-                if var > 0:
-                    K_model = K_model / var
-            ax.plot(lag_fine, K_model, color=model_color, label=model_label)
+
+            y_full = getattr(self.data, '_y_full', self.data.y)
+            var = np.var(y_full) if normalize else None
+
+            def _norm(K):
+                return K / var if (normalize and var > 0) else K
+
+            if components:
+                colors = component_colors or _COMPONENT_COLORS
+                styles = component_styles or _COMPONENT_STYLES
+                parts = self.kernel_sum.components(
+                    theta_arr, jnp.asarray(lag_fine), drop_dc=drop_dc)
+                for idx, (label, K_i) in enumerate(parts[:-1]):
+                    ax.plot(lag_fine, _norm(np.asarray(K_i)),
+                            ls=styles[idx % len(styles)],
+                            color=colors[idx % len(colors)],
+                            lw=1.5, alpha=0.8, label=label)
+                _, K_total = parts[-1]
+                ax.plot(lag_fine, _norm(np.asarray(K_total)),
+                        color=model_color, lw=2,
+                        alpha=(0.6 if len(parts) > 1 else 1.0),
+                        label=model_label)
+            else:
+                K_model = np.asarray(self.kernel_sum.k_of_lag(
+                    theta_arr, jnp.asarray(lag_fine)))
+                ax.plot(lag_fine, _norm(K_model), color=model_color,
+                        label=model_label)
 
         if xlim is not None:
             ax.set_xlim(xlim)
@@ -244,8 +290,10 @@ class GPPlotsMixin:
 
     def plot_psd(self, theta=None, n_freq=500, dt_kernel=None, ax=None,
                  data_color="k", model_color="r", show_legend=True,
-                 xlim=None, ylim=None, model_label="Analytic PSD", 
-                 data_label="Data Lomb-Scargle"):
+                 xlim=None, ylim=None, model_label="Analytic PSD",
+                 data_label="Data Lomb-Scargle",
+                 components=False, drop_dc=False,
+                 component_colors=None, component_styles=None):
         """
         Plot the empirical PSD (Lomb-Scargle) and optionally the analytic
         kernel PSD (FFT of the autocovariance function).
@@ -275,6 +323,21 @@ class GPPlotsMixin:
             Limits for the x-axis. If None, defaults to the data range.
         ylim : tuple, optional
             Limits for the y-axis. If None, defaults to the data range.
+        components : bool
+            If True and ``self.kernel_sum`` is a composite (multi-term)
+            kernel, overlay each term's PSD individually in addition to
+            the total. All curves share one normalization (derived from
+            the total's integral), so relative amplitudes between terms
+            are preserved. A single-term kernel is unaffected.
+        drop_dc : bool
+            If True, exclude the n = 0 (DC) harmonic from every spot
+            term (see ``Term.k_of_lag_no_dc``) before computing the PSD,
+            both for the total and for each component. Non-spot terms
+            are unaffected.
+        component_colors, component_styles : sequence, optional
+            Color / linestyle cycles for the per-term curves when
+            ``components=True``. Defaults to a 5-entry built-in cycle;
+            cycles wrap if there are more terms than entries.
 
         Returns
         -------
@@ -311,19 +374,43 @@ class GPPlotsMixin:
             if dt_kernel is None:
                 dt_kernel = dt_med / 5.0
             tau_grid = np.arange(0.0, baseline, dt_kernel)
-            K = np.asarray(self.kernel_sum.k_of_lag(
-                theta_arr, jnp.asarray(tau_grid)))
-            # Extend to two-sided symmetric sequence, then rfft → one-sided PSD
-            K_twosided = np.concatenate([K[::-1], K[1:]])
-            psd_model = np.abs(np.fft.rfft(K_twosided)) * dt_kernel
-            freqs_model = np.fft.rfftfreq(len(K_twosided), d=dt_kernel)
-            # Restrict to the data frequency range and skip DC
-            mask = (freqs_model > 0) & (freqs_model <= freq_max)
-            fm, pm = freqs_model[mask], psd_model[mask]
-            # Normalize so ∫PSD df = var(data)
-            pm = pm * var / np.trapezoid(pm, fm)
-            ax.semilogy(fm, pm, color=model_color, lw=1.5, label=model_label)
-            
+
+            def _kernel_psd(K):
+                # Extend to a two-sided symmetric sequence, then rfft
+                # to get a one-sided PSD.
+                K_twosided = np.concatenate([K[::-1], K[1:]])
+                psd = np.abs(np.fft.rfft(K_twosided)) * dt_kernel
+                freq = np.fft.rfftfreq(len(K_twosided), d=dt_kernel)
+                mask = (freq > 0) & (freq <= freq_max)
+                return freq[mask], psd[mask]
+
+            if components:
+                colors = component_colors or _COMPONENT_COLORS
+                styles = component_styles or _COMPONENT_STYLES
+                parts = self.kernel_sum.components(
+                    theta_arr, jnp.asarray(tau_grid), drop_dc=drop_dc)
+                raw = [(label, *_kernel_psd(np.asarray(K)))
+                       for label, K in parts]
+                _, total_freq, total_psd_raw = raw[-1]
+                norm = var / np.trapezoid(total_psd_raw, total_freq)
+                for idx, (label, freq_i, psd_i) in enumerate(raw[:-1]):
+                    ax.semilogy(freq_i, psd_i * norm,
+                                ls=styles[idx % len(styles)],
+                                color=colors[idx % len(colors)],
+                                lw=1.5, alpha=0.8, label=label)
+                ax.semilogy(total_freq, total_psd_raw * norm,
+                            color=model_color, lw=1.5,
+                            alpha=(0.8 if len(raw) > 1 else 1.0),
+                            label=model_label)
+            else:
+                K = np.asarray(self.kernel_sum.k_of_lag(
+                    theta_arr, jnp.asarray(tau_grid)))
+                fm, pm = _kernel_psd(K)
+                # Normalize so ∫PSD df = var(data)
+                pm = pm * var / np.trapezoid(pm, fm)
+                ax.semilogy(fm, pm, color=model_color, lw=1.5,
+                            label=model_label)
+
         if xlim is not None:
             ax.set_xlim(xlim)
         else:

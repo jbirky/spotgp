@@ -87,6 +87,38 @@ def _lat_weight_func_at_offset(lat_dist, lat_offset):
     return None
 
 
+def _drop_harmonic(K_per_order, harmonics, order=0):
+    """
+    Sum a per-order kernel array over all orders except ``order``.
+
+    ``harmonics`` is a static (Python/numpy) sequence, so the boolean
+    mask it produces is a compile-time constant under JIT — this is an
+    exact operation, not an approximation, since the rotation-harmonic
+    series has no cross terms between orders (``_kernel_eval`` with
+    ``per_order=True``).
+
+    Parameters
+    ----------
+    K_per_order : jnp.ndarray, shape (M, n_orders)
+        Per-order kernel values, as returned by ``_kernel_eval(...,
+        per_order=True)``.
+    harmonics : sequence of int
+        The harmonic orders aligned with ``K_per_order``'s columns.
+    order : int
+        The order to exclude (default 0, the DC term).  A no-op (full
+        sum) if ``order`` is not present in ``harmonics``.
+
+    Returns
+    -------
+    jnp.ndarray, shape (M,)
+    """
+    ns = np.asarray(harmonics)
+    if order not in ns:
+        return jnp.sum(K_per_order, axis=1)
+    mask = ns != order
+    return jnp.sum(K_per_order[:, mask], axis=1)
+
+
 def _bound_from_rows(keys, rows, name, which, fallback):
     """Look up a bound for ``name`` in a (keys, rows) pair.
 
@@ -206,6 +238,94 @@ class Term:
         K_flat : jnp.ndarray, shape (M,)
         """
         raise NotImplementedError
+
+    def k_of_lag_no_dc(self, theta_slice, lag_flat):
+        """
+        Kernel contribution with the n = 0 (DC / non-oscillating)
+        harmonic excluded, if this term has one.
+
+        The rotation-harmonic series has no cross terms between orders,
+        so dropping n = 0 is exact, not an approximation (see
+        ``_kernel_eval(..., per_order=True)``).  Terms with no harmonic
+        structure at all (``SHOTerm``, ``JitterTerm``, ``Matern32Term``,
+        ...) have nothing to drop, so the default implementation here
+        just returns :meth:`k_of_lag` unchanged; spot terms override
+        this.
+
+        Useful for isolating the rotationally modulated part of a
+        signal, e.g. when comparing against a mean-subtracted empirical
+        ACF whose own DC power has been suppressed by detrending.
+        """
+        return self.k_of_lag(theta_slice, lag_flat)
+
+    def components(self, theta_slice, lag_flat, drop_dc=False):
+        """
+        This term's contribution, as a single-entry decomposition.
+
+        Base implementation for non-composite terms: returns
+        ``[("Total", K)]``, using :meth:`k_of_lag_no_dc` when
+        ``drop_dc`` else :meth:`k_of_lag`.  :class:`KernelSum` overrides
+        this to expand into one entry per component term, so calling
+        code can treat any ``Term`` (single or composite) uniformly.
+
+        Returns
+        -------
+        list of (str, ndarray)
+        """
+        lag_flat = jnp.asarray(lag_flat)
+        K = (self.k_of_lag_no_dc(theta_slice, lag_flat) if drop_dc
+             else self.k_of_lag(theta_slice, lag_flat))
+        return [("Total", np.asarray(K))]
+
+    def sample(self, theta_slice, x, n_samples=1, seed=None, jitter=1e-12):
+        """
+        Draw one or more realizations of this term's own zero-mean
+        process, ``y_m ~ GP(0, K_m(theta_slice))``, at times ``x``.
+
+        Kernel terms compose additively (``KernelSum.k_of_lag`` sums
+        them), which corresponds to a sum of *independent* processes:
+        ``y = sum_m y_m`` with each ``y_m`` drawn independently is a
+        valid draw from ``GP(0, sum_m K_m)``. This method draws one
+        term's own ``y_m`` via a dense Cholesky factorization of its
+        covariance at ``x``; summing the results across terms (with
+        independent seeds) reproduces a draw from the full composite
+        kernel. Since ``KernelSum`` is itself a ``Term``, calling this
+        on a ``KernelSum`` draws directly from the total kernel.
+
+        Parameters
+        ----------
+        theta_slice : array_like, shape (n_params,)
+            This term's physical parameters, in ``base_keys`` order.
+        x : array_like, shape (N,)
+            Times [days] at which to draw the sample.
+        n_samples : int
+            Number of independent realizations to draw (default 1).
+        seed : int, numpy.random.Generator, or None
+            Seed for reproducibility, forwarded to
+            ``numpy.random.default_rng``. Default None draws fresh
+            entropy.
+        jitter : float
+            Diagonal term added before the Cholesky factorization for
+            numerical stability (default 1e-12) — this is not
+            measurement noise.
+
+        Returns
+        -------
+        ndarray, shape (N,) if ``n_samples == 1`` else (n_samples, N)
+            Zero-mean realizations of this term's process at ``x``.
+        """
+        x = np.asarray(x, dtype=np.float64)
+        N = len(x)
+        lag = jnp.abs(jnp.asarray(x)[:, None] - jnp.asarray(x)[None, :])
+        K = np.array(self.k_of_lag(jnp.asarray(theta_slice),
+                                   lag.ravel())).reshape(N, N)
+        K[np.diag_indices(N)] += jitter
+        L = np.linalg.cholesky(K)
+
+        rng = np.random.default_rng(seed)
+        z = rng.standard_normal((n_samples, N))
+        samples = z @ L.T
+        return samples[0] if n_samples == 1 else samples
 
     def bandwidth_support(self, param_keys, bounds_arr):
         """
@@ -379,6 +499,21 @@ class SpotTerm(Term):
             lat_weight_func=self._lat_weight_func,
             cn_sq_func=self._cn_sq_func)
 
+    def k_of_lag_no_dc(self, theta_slice, lag_flat):
+        if 0 not in self.harmonics:
+            return self.k_of_lag(theta_slice, lag_flat)
+        from .analytic_kernel import _kernel_eval
+        K_per_order = _kernel_eval(
+            theta_slice, lag_flat,
+            self.harmonics, self.n_lat, self.lat_range,
+            quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
+            r_gamma_func=self._r_gamma_func,
+            edgeon_cn_sq=self._edgeon_cn_sq,
+            lat_weight_func=self._lat_weight_func,
+            cn_sq_func=self._cn_sq_func,
+            per_order=True)
+        return _drop_harmonic(K_per_order, self.harmonics, order=0)
+
     def bandwidth_support(self, param_keys, bounds_arr):
         return self.spot_model.bandwidth_support(param_keys, bounds_arr)
 
@@ -545,31 +680,47 @@ class SharedVisibilitySpotSum(Term):
 
     # ── Kernel evaluation ───────────────────────────────────────────────
 
+    def _composite_r_gamma(self, theta_arr, lag):
+        # sigma_k^2-weighted sum of the component envelopes; callers
+        # append a trailing 1.0 to theta_slice to neutralize
+        # _kernel_eval's own sigma_k^2 factor, so V(tau) multiplies
+        # this sum directly.
+        total = 0.0
+        for env, (start, n_env, sk) in zip(
+                (m.envelope for m in self.components), self._comp_slices):
+            R = env.r_gamma_jax(theta_arr[start:start + n_env], lag)
+            total = total + theta_arr[sk] ** 2 * R
+        return total
+
     def k_of_lag(self, theta_slice, lag_flat):
         from .analytic_kernel import _kernel_eval
-
-        envs = [m.envelope for m in self.components]
-        slices = self._comp_slices
-
-        def composite_r_gamma(theta_arr, lag):
-            # sigma_k^2-weighted sum of the component envelopes; the
-            # trailing 1.0 appended below neutralizes _kernel_eval's own
-            # sigma_k^2 factor, so V(tau) multiplies this sum directly.
-            total = 0.0
-            for env, (start, n_env, sk) in zip(envs, slices):
-                R = env.r_gamma_jax(theta_arr[start:start + n_env], lag)
-                total = total + theta_arr[sk] ** 2 * R
-            return total
 
         theta_eval = jnp.append(jnp.asarray(theta_slice), 1.0)
         return _kernel_eval(
             theta_eval, lag_flat,
             self.harmonics, self.n_lat, self.lat_range,
             quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
-            r_gamma_func=composite_r_gamma,
+            r_gamma_func=self._composite_r_gamma,
             edgeon_cn_sq=self._edgeon_cn_sq,
             lat_weight_func=self._lat_weight_func,
             cn_sq_func=self._cn_sq_func)
+
+    def k_of_lag_no_dc(self, theta_slice, lag_flat):
+        if 0 not in self.harmonics:
+            return self.k_of_lag(theta_slice, lag_flat)
+        from .analytic_kernel import _kernel_eval
+
+        theta_eval = jnp.append(jnp.asarray(theta_slice), 1.0)
+        K_per_order = _kernel_eval(
+            theta_eval, lag_flat,
+            self.harmonics, self.n_lat, self.lat_range,
+            quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
+            r_gamma_func=self._composite_r_gamma,
+            edgeon_cn_sq=self._edgeon_cn_sq,
+            lat_weight_func=self._lat_weight_func,
+            cn_sq_func=self._cn_sq_func,
+            per_order=True)
+        return _drop_harmonic(K_per_order, self.harmonics, order=0)
 
     def bandwidth_support(self, param_keys, bounds_arr):
         """Max envelope support across components [days]."""
@@ -756,39 +907,55 @@ class PopulationSpotTerm(Term):
 
     # ── Kernel evaluation ───────────────────────────────────────────────
 
-    def k_of_lag(self, theta_slice, lag_flat):
-        from .analytic_kernel import _kernel_eval
-
+    def _marginalized_r_gamma(self, theta_arr, lag):
+        # Quadrature-weighted, amplitude-weighted envelope mixture;
+        # callers append a trailing 1.0 to theta_slice to neutralize
+        # _kernel_eval's own sigma_k^2 factor, so V(tau) multiplies
+        # this directly.
         rv = self.random_variables
         envelope = self.spot_model.envelope
         env_keys = self._env_keys
         off = self._hyper_offset
         n_hyper = len(rv.hyper_keys)
 
-        def marginalized_r_gamma(theta_arr, lag):
-            # Quadrature-weighted, amplitude-weighted envelope mixture;
-            # the trailing 1.0 appended below neutralizes _kernel_eval's
-            # own sigma_k^2 factor, so V(tau) multiplies this directly.
-            ns, w = rv.resolve(theta_arr[off:off + n_hyper])
-            sigma_k = rv.column(ns, "sigma_k")
-            env_nodes = jnp.stack([rv.column(ns, k) for k in env_keys],
-                                  axis=1)
+        ns, w = rv.resolve(theta_arr[off:off + n_hyper])
+        sigma_k = rv.column(ns, "sigma_k")
+        env_nodes = jnp.stack([rv.column(ns, k) for k in env_keys], axis=1)
 
-            def one_node(env_row, sk, wm):
-                return wm * sk ** 2 * envelope.r_gamma_jax(env_row, lag)
+        def one_node(env_row, sk, wm):
+            return wm * sk ** 2 * envelope.r_gamma_jax(env_row, lag)
 
-            return jnp.sum(jax.vmap(one_node)(env_nodes, sigma_k, w),
-                           axis=0)
+        return jnp.sum(jax.vmap(one_node)(env_nodes, sigma_k, w), axis=0)
+
+    def k_of_lag(self, theta_slice, lag_flat):
+        from .analytic_kernel import _kernel_eval
 
         theta_eval = jnp.append(jnp.asarray(theta_slice), 1.0)
         return _kernel_eval(
             theta_eval, lag_flat,
             self.harmonics, self.n_lat, self.lat_range,
             quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
-            r_gamma_func=marginalized_r_gamma,
+            r_gamma_func=self._marginalized_r_gamma,
             edgeon_cn_sq=self._edgeon_cn_sq,
             lat_weight_func=self._lat_weight_func,
             cn_sq_func=self._cn_sq_func)
+
+    def k_of_lag_no_dc(self, theta_slice, lag_flat):
+        if 0 not in self.harmonics:
+            return self.k_of_lag(theta_slice, lag_flat)
+        from .analytic_kernel import _kernel_eval
+
+        theta_eval = jnp.append(jnp.asarray(theta_slice), 1.0)
+        K_per_order = _kernel_eval(
+            theta_eval, lag_flat,
+            self.harmonics, self.n_lat, self.lat_range,
+            quad_nodes=self._quad_nodes, quad_weights=self._quad_weights,
+            r_gamma_func=self._marginalized_r_gamma,
+            edgeon_cn_sq=self._edgeon_cn_sq,
+            lat_weight_func=self._lat_weight_func,
+            cn_sq_func=self._cn_sq_func,
+            per_order=True)
+        return _drop_harmonic(K_per_order, self.harmonics, order=0)
 
     def bandwidth_support(self, param_keys, bounds_arr):
         """
@@ -1288,6 +1455,54 @@ class KernelSum(Term):
         out = 0.0
         for t, (i, n) in zip(self.terms, self._slices):
             out = out + t.k_of_lag(theta_slice[i:i + n], lag_flat)
+        return out
+
+    def components(self, theta_slice, lag_flat, drop_dc=False):
+        """
+        Per-term contributions to the composite kernel.
+
+        Overrides :meth:`Term.components` to expand into one entry per
+        component term (spot populations, SHO / Harvey backgrounds,
+        jitter, ...), in constructor order, followed by a final
+        ``("Total", ...)`` entry equal to their sum.  A single-term
+        ``KernelSum`` (the common non-composite case) delegates to that
+        term's own ``components`` instead, so the result is the plain
+        ``[("Total", K)]`` singleton rather than a redundant two-entry
+        list.
+
+        Parameters
+        ----------
+        theta_slice : array_like, shape (n_params,)
+            This kernel's physical parameters, in ``param_keys`` order.
+        lag_flat : array_like, shape (M,)
+            Time lags [days].
+        drop_dc : bool
+            If True, exclude the n = 0 (DC) harmonic from every spot
+            term via :meth:`Term.k_of_lag_no_dc` (non-spot terms are
+            unaffected, since they have no harmonic structure to drop).
+
+        Returns
+        -------
+        list of (str, ndarray)
+            Term labels (``term.prefix`` if set, else the class name)
+            paired with the kernel evaluated at ``lag_flat``, plus a
+            trailing ``("Total", ...)`` entry.
+        """
+        if len(self.terms) == 1:
+            t = self.terms[0]
+            return t.components(theta_slice, lag_flat, drop_dc=drop_dc)
+
+        lag_flat = jnp.asarray(lag_flat)
+        out = []
+        K_total = jnp.zeros_like(lag_flat, dtype=jnp.float64)
+        for t, (i, n) in zip(self.terms, self._slices):
+            th = theta_slice[i:i + n]
+            K_i = (t.k_of_lag_no_dc(th, lag_flat) if drop_dc
+                   else t.k_of_lag(th, lag_flat))
+            label = t.prefix or type(t).__name__
+            out.append((label, np.asarray(K_i)))
+            K_total = K_total + K_i
+        out.append(("Total", np.asarray(K_total)))
         return out
 
     def bandwidth_support(self, param_keys, bounds_arr):

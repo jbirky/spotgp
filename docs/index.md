@@ -64,6 +64,7 @@ tutorials/limb_darkening
 :caption: Kernels
 
 tutorials/composite_kernels
+tutorials/composite_kernel_plotting
 tutorials/random_variable_declarations
 tutorials/nonstationary_kernel
 ```

@@ -1446,6 +1446,103 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
             var_pred = k0 - jnp.einsum('ij,ji->i', Ks, V)
             return np.asarray(mu_pred), np.asarray(var_pred)
 
+    def predict_at(self, theta, xpred, return_cov=False):
+        """
+        Predictive distribution at new input locations, for an
+        explicitly given hyperparameter vector.
+
+        Unlike :meth:`predict`, which uses whichever hyperparameters are
+        currently baked into ``self.kernel_sum`` (updated via
+        :meth:`update_hparam`), this method takes ``theta`` directly and
+        performs a fresh, self-contained solve — it does not read or
+        write any of the solver's cached factorizations.  This is the
+        supported way to predict at, e.g., a posterior median or an
+        arbitrary posterior sample from MCMC/nested-sampling output.
+
+        It is also the *only* way to predict at a chosen ``theta`` for a
+        composite kernel: ``update_hparam`` (and therefore
+        :meth:`plot_prediction`'s ``theta=`` argument) raises for solvers
+        built from a :class:`~spotgp.terms.KernelSum` of more than one
+        term, since there is no generic way to route a flat theta vector
+        back into heterogeneous component models. ``predict_at`` needs
+        no such round-trip: it evaluates ``self.kernel_sum.k_of_lag``
+        directly from the given vector.
+
+        Performs a dense Cholesky solve, independent of whatever matrix
+        solver (dense or banded) this ``GPSolver`` was built with; this
+        is appropriate for downsampled data (N up to a few thousand) but
+        does not benefit from the banded solver's O(N) scaling. Falls
+        back to CPU if the GPU runs out of memory.
+
+        Parameters
+        ----------
+        theta : array_like, shape (n_params,)
+            Hyperparameters in sampling space (i.e. the same
+            parameterization as ``self.param_keys`` / MCMC samples —
+            log-remapped where applicable).
+        xpred : array_like, shape (M,)
+            Prediction times.
+        return_cov : bool
+            If True, return the full predictive covariance.
+
+        Returns
+        -------
+        mu_pred : ndarray, shape (M,)
+        var_pred : ndarray, shape (M,) or (M, M)
+        """
+        try:
+            return self._predict_at_impl(theta, xpred, return_cov=return_cov)
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "resource_exhausted" not in msg and "out of memory" not in msg:
+                raise
+            warnings.warn("GPU OOM during predict_at; falling back to CPU")
+            with jax.default_device(jax.devices("cpu")[0]):
+                return self._predict_at_impl(theta, xpred,
+                                             return_cov=return_cov)
+
+    def _predict_at_impl(self, theta, xpred, return_cov=False):
+        xpred = jnp.asarray(xpred, dtype=jnp.float64)
+        theta_phys = self._to_physical(jnp.asarray(theta, dtype=jnp.float64))
+        n_kernel = len(self.kernel_sum.param_keys)
+        theta_k = theta_phys[:n_kernel]
+
+        sigma_n = theta_phys[n_kernel] if self.fit_sigma_n else 0.0
+        noise_var = self.yerr ** 2 + sigma_n ** 2
+
+        x = self.x
+        N = len(x)
+        lag_train = jnp.abs(x[:, None] - x[None, :])
+        K_train = self.kernel_sum.k_of_lag(theta_k, lag_train.ravel())
+        K_train = (K_train.reshape(N, N) + jnp.diag(noise_var)
+                  + 1e-8 * jnp.eye(N))
+
+        resid = self.y - self.mean_func(x)
+        L = jla.cholesky(K_train, lower=True)
+        alpha = jla.cho_solve((L, True), resid)
+
+        M = len(xpred)
+        lag_cross = jnp.abs(xpred[:, None] - x[None, :])
+        K_cross = self.kernel_sum.k_of_lag(
+            theta_k, lag_cross.ravel()).reshape(M, N)
+
+        mu_prior = self.mean_func(xpred)
+        if jnp.isscalar(mu_prior):
+            mu_prior = jnp.full(M, mu_prior)
+        mu_pred = mu_prior + K_cross @ alpha
+
+        V = jla.cho_solve((L, True), K_cross.T)
+        if return_cov:
+            lag_pred = jnp.abs(xpred[:, None] - xpred[None, :])
+            K_ss = self.kernel_sum.k_of_lag(
+                theta_k, lag_pred.ravel()).reshape(M, M)
+            cov_pred = K_ss - K_cross @ V
+            return np.asarray(mu_pred), np.asarray(cov_pred)
+        else:
+            k0 = self.kernel_sum.k_of_lag(theta_k, jnp.zeros(1))[0]
+            var_pred = k0 - jnp.einsum('ij,ji->i', K_cross, V)
+            return np.asarray(mu_pred), np.asarray(var_pred)
+
 
     def plot_pgm(self, **kwargs):
         """Plot the probabilistic graphical model for this GP.
