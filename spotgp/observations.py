@@ -2,6 +2,8 @@
 observations.py — Time series data container with PSD and ACF computation.
 """
 
+import warnings
+
 import numpy as np
 from .psd import compute_psd
 
@@ -25,7 +27,8 @@ class TimeSeriesData:
     Parameters
     ----------
     x : array_like, shape (N,)
-        Observation times.
+        Observation times.  Need not be sorted: the data are sorted by
+        time on construction (``y`` and ``yerr`` follow).
     y : array_like, shape (N,)
         Observed values (e.g. flux).
     yerr : array_like, shape (N,) or float
@@ -33,9 +36,21 @@ class TimeSeriesData:
     normalize : bool
         If True, normalize the flux so that the median is 1
         and scale yerr accordingly.
+    shift_origin : bool
+        If True (default), shift the time axis so that it starts at 0 and
+        record the subtracted value in :attr:`x_offset`, so the original
+        times are ``x + x_offset``.  A stationary kernel is unaffected by
+        the shift.  Pass False to keep the times exactly as given, e.g.
+        when restoring a series whose times were already shifted.
+
+    Attributes
+    ----------
+    x_offset : float
+        Value subtracted from the input times (0.0 when ``shift_origin``
+        is False).
     """
 
-    def __init__(self, x, y, yerr, normalize=False):
+    def __init__(self, x, y, yerr, normalize=False, shift_origin=True):
         x = np.asarray(x, dtype=float)
         y = np.asarray(y, dtype=float)
         yerr = np.asarray(yerr, dtype=float)
@@ -50,11 +65,16 @@ class TimeSeriesData:
                 f"x and yerr must have the same shape, "
                 f"got {x.shape} and {yerr.shape}")
 
-        # Mask out non-finite values
+        # Mask out non-finite values, then sort by time: x_offset,
+        # baseline, median_dt, downsample and GPSolver all assume
+        # increasing x, and stitched light curves need not be ordered.
         mask = np.isfinite(x) & np.isfinite(y) & np.isfinite(yerr)
-        self.x = x[mask] - x[mask][0]  # shift to start at 0
-        self.y = y[mask]
-        self.yerr = yerr[mask]
+        order = np.argsort(x[mask], kind="stable")
+        x = x[mask][order]
+        self.x_offset = float(x[0]) if (shift_origin and x.size) else 0.0
+        self.x = x - self.x_offset
+        self.y = y[mask][order]
+        self.yerr = yerr[mask][order]
 
         if normalize:
             self.normalize()
@@ -81,11 +101,30 @@ class TimeSeriesData:
         Divides ``y`` and ``yerr`` by the median of ``y``.  This is
         idempotent: calling it on already-normalized data (median ~ 1)
         has negligible effect.
+
+        Raises
+        ------
+        ValueError
+            If the median is not a usable flux scale: non-positive, or
+            small compared with the scatter.  That is what a
+            mean-subtracted series looks like, and dividing by such a
+            median rescales the flux by an arbitrary factor and, when
+            the median is negative, silently flips its sign (emission
+            features then appear as dips).  Normalize before removing
+            the mean, not after.
         """
         median = np.median(self.y)
-        if median != 0:
-            self.yerr = self.yerr / np.abs(median)
-            self.y = self.y / median
+        scatter = np.std(self.y)
+        if median <= 0 or (scatter > 0 and abs(median) < 0.1 * scatter):
+            raise ValueError(
+                f"median flux ({median:.4g}) is not a usable normalization "
+                f"scale for data with scatter {scatter:.4g}: it is "
+                f"{'non-positive' if median <= 0 else 'far smaller than the scatter'}, "
+                "as happens when the mean has already been subtracted. "
+                "Normalize the flux before removing its mean, or pass "
+                "normalize=False.")
+        self.yerr = self.yerr / np.abs(median)
+        self.y = self.y / median
 
     def detrend(self, window):
         """
@@ -150,7 +189,9 @@ class TimeSeriesData:
         """
         
         dt = float(dt)
-        bin_edges = np.arange(self.x[0], self.x[-1] + dt, dt)
+        # min/max rather than x[0]/x[-1]: binning from the first element
+        # silently drops every point earlier than it
+        bin_edges = np.arange(self.x.min(), self.x.max() + dt, dt)
         bin_idx = np.digitize(self.x, bin_edges) - 1
 
         x_new, y_new, yerr_new = [], [], []
@@ -357,12 +398,32 @@ class TimeSeriesData:
             median of 1 (see ``normalize()``).  Combined with
             ``zero_mean=True`` the flux is centered near 0, so its
             median is not a meaningful scale; prefer
-            ``normalize=False`` in that case.
+            ``normalize=False`` in that case.  To get relative flux
+            with the per-sector offsets removed, normalize each sector
+            first and then subtract the mean::
+
+                lcc = lk.LightCurveCollection([q.normalize() for q in lcc])
+                ts = TimeSeriesData.from_lc_collection(
+                    lcc, zero_mean=True, normalize=False)
 
         Returns
         -------
         TimeSeriesData
+
+        Warns
+        -----
+        UserWarning
+            If ``zero_mean`` and ``normalize`` are both True, since the
+            order of the two operations makes the normalization
+            meaningless (``normalize()`` will usually raise).
         """
+        if zero_mean and normalize:
+            warnings.warn(
+                "zero_mean=True subtracts each sector's mean before "
+                "normalize=True divides by the median of the result, which "
+                "is not a flux scale; normalize each sector first "
+                "([q.normalize() for q in lc_collection]) and pass "
+                "normalize=False instead.", UserWarning, stacklevel=2)
         times, fluxes, flux_errs = [], [], []
         for lc in lc_collection:
             time, flux, flux_err = cls._extract_lc_arrays(lc)
