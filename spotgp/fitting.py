@@ -9,7 +9,7 @@ import numpy as np
 
 from .analytic_kernel import _kernel_eval
 from .validation import (
-    raise_cholesky_error, format_nan_gradient_warning,
+    warn_cholesky_failure, format_nan_gradient_warning,
 )
 
 logger = logging.getLogger("spotgp")
@@ -31,7 +31,7 @@ class FittingMixin:
         ----------
         theta0 : dict or array_like, optional
             Starting point. Can be:
-              - None: uses self.theta0 (kernel params only, no sigma_n).
+              - None: uses self.theta0 (kernel params).
               - dict: values for any subset of kernel keys set the
                 starting point. If ``keys`` is not given, the dict
                 keys that overlap with ``KERNEL_HPARAM_KEYS`` are
@@ -58,6 +58,8 @@ class FittingMixin:
             Gradient-norm convergence tolerance (default 1e-8).
         disp : bool
             If True, print optimizer convergence messages (default False).
+            Only honored by Nelder-Mead; ignored for L-BFGS-B, whose
+            ``disp`` option is deprecated in SciPy >= 1.15.
 
         nopt : int
             Number of independent optimisation trials (default 1).
@@ -96,7 +98,7 @@ class FittingMixin:
         acf_data_jax = jnp.asarray(acf_data)
 
         # --- Parse theta0 -------------------------------------------------
-        # Use envelope-aware param_keys (excludes sigma_n)
+        # Use envelope-aware param_keys
         kernel_keys = list(self.spot_model.param_keys)
         n_kernel = len(kernel_keys)
         if theta0 is None:
@@ -203,8 +205,7 @@ class FittingMixin:
             _minimize_kwargs = dict(
                 jac=True, method=method,
                 bounds=[(0.0, 1.0)] * n_free,
-                options={"maxiter": maxiter, "ftol": ftol, "gtol": gtol,
-                         "disp": disp},
+                options={"maxiter": maxiter, "ftol": ftol, "gtol": gtol},
             )
         result = minimize(objective, u0, **_minimize_kwargs)
 
@@ -503,9 +504,7 @@ class FittingMixin:
             directly.
         keys : list of str, optional
             Parameters to vary during optimization (names from
-            ``self.param_keys``).  Defaults to all kernel parameters
-            (first 6 entries of ``self.param_keys``, i.e. excluding
-            ``sigma_n`` if present).
+            ``self.param_keys``).  Defaults to all kernel parameters.
         tlags : array_like, optional
             Bin edges for the empirical ACF. If None, ``n_bins+1`` edges
             linearly spaced from 0 to half the baseline.
@@ -529,7 +528,9 @@ class FittingMixin:
         ftol, gtol : float
             Convergence tolerances forwarded to scipy.
         disp : bool
-            Print optimizer messages if True.
+            Print optimizer messages if True. Only honored by
+            Nelder-Mead; ignored for L-BFGS-B, whose ``disp`` option is
+            deprecated in SciPy >= 1.15.
 
         Returns
         -------
@@ -703,8 +704,7 @@ class FittingMixin:
             _minimize_kwargs = dict(
                 jac=True, method=method,
                 bounds=[(0.0, 1.0)] * n_free,
-                options={"maxiter": maxiter, "ftol": ftol, "gtol": gtol,
-                         "disp": disp},
+                options={"maxiter": maxiter, "ftol": ftol, "gtol": gtol},
             )
         result = minimize(objective, u0, **_minimize_kwargs)
 
@@ -790,6 +790,8 @@ class FittingMixin:
             Gradient-norm convergence tolerance (default 1e-8).
         disp : bool
             If True, print optimizer convergence messages (default False).
+            Only honored by Nelder-Mead; ignored for L-BFGS-B, whose
+            ``disp`` option is deprecated in SciPy >= 1.15.
         nopt : int
             Number of independent optimisation trials (default 1).
             When > 1, ``fit_map_parallel`` is called and the best
@@ -869,18 +871,17 @@ class FittingMixin:
 
         logger.info("Compiling MAP objective (one-time cost)...")
         _t0 = _time.time()
-        try:
-            jax.block_until_ready(
-                vg_fn(jnp.array(u0, dtype=jnp.float64))[0])
-        except Exception as e:
+        val0 = jax.block_until_ready(
+            vg_fn(jnp.array(u0, dtype=jnp.float64))[0])
+        logger.info("MAP objective compiled in %.2fs", _time.time() - _t0)
+        if not np.isfinite(float(val0)):
             theta_at_fail = blo + jnp.array(u0, dtype=jnp.float64) * brange
             theta_full_fail = self._theta_from_free(
                 theta_at_fail, free_idx, fixed_idx, fixed_vals)
-            raise_cholesky_error(
-                e, theta=theta_full_fail,
-                param_keys=self.param_keys, bounds=self.bounds,
-                context="MAP optimization (initial evaluation)")
-        logger.info("MAP objective compiled in %.2fs", _time.time() - _t0)
+            warn_cholesky_failure(
+                "MAP optimization (initial evaluation)",
+                theta=theta_full_fail, param_keys=self.param_keys,
+                bounds=self.bounds)
 
         n_free = len(free_idx)
         free_keys = [list(self.param_keys)[i] for i in free_idx]
@@ -921,8 +922,7 @@ class FittingMixin:
             _minimize_kwargs = dict(
                 jac=True, method=method,
                 bounds=[(0.0, 1.0)] * n_free,
-                options={"maxiter": maxiter, "ftol": ftol, "gtol": gtol,
-                         "disp": disp},
+                options={"maxiter": maxiter, "ftol": ftol, "gtol": gtol},
             )
         result = minimize(objective, u0, **_minimize_kwargs)
 

@@ -6,6 +6,7 @@ import os
 import jax.numpy as jnp
 import numpy as np
 
+from ..validation import warn_cholesky_failure
 from .base import MCMCSampler
 
 logger = logging.getLogger("spotgp")
@@ -57,10 +58,22 @@ class DynestySampler(MCMCSampler):
                 return lo + u * (hi - lo)
 
             self.prior_transform = _default_prior_transform
+        self._warned_cholesky = False
 
     def _log_likelihood(self, theta):
-        """Evaluate the GP log-likelihood (numpy-compatible wrapper)."""
-        return float(self.gp.log_likelihood_fn(jnp.asarray(theta)))
+        """Evaluate the GP log-likelihood (numpy-compatible wrapper).
+
+        The first non-finite value (a failed Cholesky factorization)
+        emits a ``CholeskyWarning``; later ones are not reported again.
+        """
+        ll = float(self.gp.log_likelihood_fn(jnp.asarray(theta)))
+        if not np.isfinite(ll) and not self._warned_cholesky:
+            self._warned_cholesky = True
+            warn_cholesky_failure(
+                "dynesty sampling (later failures in this run are not "
+                "reported)", theta=theta, param_keys=self.gp.param_keys,
+                bounds=self.gp.bounds)
+        return ll
 
     def run_map(self, nopt=10, keys=None, checkpoint_file=None,
                 theta0=None, **kwargs):

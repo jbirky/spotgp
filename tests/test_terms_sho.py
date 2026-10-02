@@ -160,24 +160,28 @@ class TestSpotPlusSHOComposition:
         assert bw(bounds_wide) >= bw(bounds_narrow)
         assert bw(bounds_wide) == len(x) - 1
 
-    def test_spot_plus_jitter_matches_sigma_n_diagonal(self):
-        # JitterTerm and the sigma_n noise diagonal must produce the
-        # same likelihood at equal amplitude (both add sigma^2 to the
-        # diagonal).  sigma_n is evaluated at an explicit theta because
-        # its hparam value is not carried into theta0 (it initializes
-        # at the lower bound).
+    def test_spot_plus_jitter_matches_dense_formula(self):
+        # The only white noise is yerr plus the JitterTerm: the likelihood
+        # must equal a dense Gaussian with sigma_j^2 + yerr^2 on the
+        # diagonal of the spot kernel, and nothing else added.
         x, y, yerr = _data(N=60)
         sj = 0.003
         ks = KernelSum(SpotTerm(dict(HPARAM)), JitterTerm(sigma_j=sj))
-        gp_j = GPSolver(x, y, yerr, ks, matrix_solver="cholesky_full")
-        logL_j = float(gp_j.log_likelihood_fn(gp_j.theta0))
+        gp = GPSolver(x, y, yerr, ks, matrix_solver="cholesky_full")
+        logL = float(gp.log_likelihood_fn(gp.theta0))
 
-        gp_n = GPSolver(x, y, yerr, dict(HPARAM),
-                        matrix_solver="cholesky_full", fit_sigma_n=True)
-        theta_n = jnp.asarray(
-            np.append(np.asarray(gp_j.theta0)[:6], sj))
-        logL_n = float(gp_n.log_likelihood_fn(theta_n))
-        np.testing.assert_allclose(logL_j, logL_n, rtol=1e-12)
+        gp_spot = GPSolver(x, y, yerr, dict(HPARAM),
+                           matrix_solver="cholesky_full")
+        N = len(x)
+        lag = np.abs(x[:, None] - x[None, :]).ravel()
+        K = np.asarray(gp_spot.kernel_sum.k_of_lag(
+            gp_spot.theta0, jnp.asarray(lag))).reshape(N, N)
+        C = K + np.diag(np.asarray(gp.yerr) ** 2 + sj ** 2)
+        r = np.asarray(gp.y) - float(gp.mean_val)
+        _, logdet = np.linalg.slogdet(C)
+        ref = -0.5 * (r @ np.linalg.solve(C, r) + logdet
+                      + N * np.log(2 * np.pi))
+        np.testing.assert_allclose(logL, ref, rtol=1e-10)
 
     def test_save_load_roundtrip_with_analytic_terms(self, tmp_path):
         from spotgp import load_gp, save_gp

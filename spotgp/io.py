@@ -74,11 +74,13 @@ def register_io_class(cls, name=None):
     distribution, or kernel term) must be registered here -- in the
     *loading* process too -- before :func:`load_gp` can reconstruct it.
 
-    A custom visibility may additionally expose an ``io_attrs``
-    property returning a ``{name: float}`` dict of extra constructor
-    arguments beyond ``param_dict`` (e.g. a fixed scale or a flag);
-    they are written as HDF5 attributes and passed back to the
-    constructor on load.
+    A custom visibility, envelope or kernel term may additionally
+    expose an ``io_attrs`` property returning a ``{name: float}`` dict
+    of extra constructor arguments beyond ``param_dict``/``base_keys``
+    (e.g. a fixed scale, exponent or flag); they are written as HDF5
+    attributes and passed back to the constructor on load.  Any such
+    state that is not a fit parameter needs this hook -- otherwise it
+    reverts to the class default when the file is read back.
 
     Usable as a decorator::
 
@@ -121,6 +123,7 @@ def _write_data(f, data):
     grp.create_dataset("x", data=np.asarray(data.x))
     grp.create_dataset("y", data=np.asarray(data.y))
     grp.create_dataset("yerr", data=np.asarray(data.yerr))
+    grp.attrs["x_offset"] = float(getattr(data, "x_offset", 0.0))
 
 
 def _write_model(f, model, name="model"):
@@ -195,7 +198,6 @@ def _write_config(f, gp):
     grp = _replace_group(f, "config")
     grp.attrs["kernel_type"] = gp.kernel_type
     grp.attrs["mean_val"] = float(gp.mean_val)
-    grp.attrs["fit_sigma_n"] = bool(gp.fit_sigma_n)
     grp.attrs["matrix_solver"] = gp.matrix_solver
     grp.attrs["bandwidth"] = int(gp.bandwidth) if hasattr(gp, "bandwidth") else -1
     # harmonics/n_lat/quadrature are None for spot-free composite
@@ -260,6 +262,17 @@ def _write_kernel_terms(f, gp):
             tg = grp.create_group(name)
             for k, v in zip(t.base_keys, np.asarray(t.theta0)):
                 tg.attrs[k] = float(v)
+            # Registered custom terms persist constructor state that is
+            # NOT a fit parameter -- a fixed exponent, a shape flag --
+            # through the same io_attrs hook as envelopes and
+            # visibilities.  Without it such state silently reverts to
+            # the class default on load, changing the kernel.
+            # _read_kernel_terms passes every non-class attribute back
+            # to the constructor.
+            extra = getattr(t, "io_attrs", None)
+            if extra:
+                for k, v in extra.items():
+                    tg.attrs[k] = float(v)
         tg.attrs["term_class"] = cls_name
         tg.attrs["term_prefix"] = t.prefix if t.prefix is not None else ""
 
@@ -313,8 +326,15 @@ def _write_mass_matrix(f, gp):
 def _read_data(f):
     from .observations import TimeSeriesData
     grp = f["data"]
-    return TimeSeriesData(
-        grp["x"][:], grp["y"][:], grp["yerr"][:], normalize=False)
+    # The stored times are already in the solver's frame (shifted at
+    # construction, then possibly binned so that x[0] != 0).  They must
+    # come back exactly as saved: re-shifting would displace the series
+    # by the first stored time, e.g. by half a bin after downsampling.
+    data = TimeSeriesData(
+        grp["x"][:], grp["y"][:], grp["yerr"][:], normalize=False,
+        shift_origin=False)
+    data.x_offset = float(grp.attrs.get("x_offset", 0.0))
+    return data
 
 
 def _read_model(f, name="model"):
@@ -400,6 +420,14 @@ def _read_model(f, name="model"):
 
 def _read_config(f):
     grp = f["config"]
+    # Files written before sigma_n was removed carry this attribute; only
+    # a True value changes the parameter layout.
+    if bool(grp.attrs.get("fit_sigma_n", False)):
+        raise ValueError(
+            "This file was saved with fit_sigma_n=True, which GPSolver no "
+            "longer supports (its parameter vector includes sigma_n). "
+            "Rebuild the solver with a JitterTerm in the kernel to fit "
+            "white noise.")
     param_keys = list(grp["param_keys"].asstr()[:])
     bounds_arr = grp["bounds"][:]
     bounds_dict = {k: tuple(bounds_arr[i]) for i, k in enumerate(param_keys)}
@@ -410,7 +438,6 @@ def _read_config(f):
     config = dict(
         kernel_type=str(grp.attrs["kernel_type"]),
         mean=float(grp.attrs["mean_val"]),
-        fit_sigma_n=bool(grp.attrs["fit_sigma_n"]),
         matrix_solver=str(grp.attrs["matrix_solver"]),
         bandwidth=bw if bw >= 0 else None,
         bounds=bounds_dict,

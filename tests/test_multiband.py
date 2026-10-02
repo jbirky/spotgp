@@ -5,7 +5,10 @@ import pytest
 import jax.numpy as jnp
 
 from spotgp.contrast import spot_contrast, contrast_factor
-from spotgp.multiband import MultiBandData, MultiBandGPSolver
+from spotgp.multiband import (
+    MultiBandData, MultiBandGPSolver, SpotFaculaeGPSolver,
+)
+from spotgp.validation import CholeskyWarning
 
 
 # =====================================================================
@@ -154,13 +157,28 @@ class TestMultiBandGPSolver:
         assert "T_spot" in gp.param_keys
         assert gp.n_params == 7  # 6 kernel + T_spot
 
-    def test_param_keys_with_sigma_n(self, two_band_data, hparam):
-        gp = MultiBandGPSolver(
-            two_band_data, hparam, T_phot=5800.0, T_spot_init=4000.0,
-            fit_sigma_n=True)
-        assert gp.n_params == 8
-        assert gp.param_keys[-1] == "sigma_n"
-        assert gp.param_keys[-2] == "T_spot"
+    @pytest.mark.parametrize("solver_cls",
+                             [MultiBandGPSolver, SpotFaculaeGPSolver])
+    def test_fit_sigma_n_removed(self, two_band_data, hparam, solver_cls):
+        # No white-noise parameter until the multiband jitter term exists
+        with pytest.raises(TypeError, match="not implemented yet"):
+            solver_cls(two_band_data, hparam, T_phot=5800.0,
+                       T_spot_init=4000.0, fit_sigma_n=True)
+
+    def test_cholesky_failure_warns(self, hparam):
+        # Two identical bands observed at the same times with yerr = 0
+        # duplicate every row of the covariance, so it is exactly singular
+        # (a zero pivot) and the factor fills with NaN.
+        x = np.linspace(0, 20, 20)
+        band = {"x": x, "y": 1.0 + 0.01 * np.sin(x), "yerr": np.zeros(20),
+                "wavelength": 6400.0}
+        mbd = MultiBandData({"b1": dict(band), "b2": dict(band)})
+        gp = MultiBandGPSolver(mbd, hparam, T_phot=5800.0, T_spot_init=4000.0,
+                               matrix_solver="cholesky_full")
+        with pytest.warns(CholeskyWarning, match="jitter"):
+            gp.build_jax()
+        with pytest.warns(CholeskyWarning, match="predict"):
+            gp.predict(np.linspace(0, 20, 5))
 
     def test_log_likelihood_finite(self, two_band_data, hparam):
         gp = MultiBandGPSolver(

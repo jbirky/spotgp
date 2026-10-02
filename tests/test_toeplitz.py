@@ -74,10 +74,10 @@ class TestToeplitzMatchesGeneralPath:
         theta = _theta_arr(default_hparam)
         mean = float(jnp.mean(y))
         ll_ref = _gp_log_likelihood(theta, x, y, yerr, mean,
-                                    3, 16, LAT_RANGE, False,
+                                    3, 16, LAT_RANGE,
                                     uniform_dt=None)
         ll_fast = _gp_log_likelihood(theta, x, y, yerr, mean,
-                                     3, 16, LAT_RANGE, False,
+                                     3, 16, LAT_RANGE,
                                      uniform_dt=0.5)
         assert np.isclose(float(ll_fast), float(ll_ref), rtol=1e-8)
 
@@ -87,10 +87,10 @@ class TestToeplitzMatchesGeneralPath:
         mean = float(jnp.mean(y))
         b = 12
         ll_ref = _gp_log_likelihood_banded(theta, x, y, yerr, mean,
-                                           3, 16, LAT_RANGE, False, b,
+                                           3, 16, LAT_RANGE, b,
                                            uniform_dt=None)
         ll_fast = _gp_log_likelihood_banded(theta, x, y, yerr, mean,
-                                            3, 16, LAT_RANGE, False, b,
+                                            3, 16, LAT_RANGE, b,
                                             uniform_dt=0.5)
         assert np.isclose(float(ll_fast), float(ll_ref), rtol=1e-8)
 

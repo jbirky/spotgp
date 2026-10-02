@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+import jax
 import jax.numpy as jnp
 
 from spotgp.envelope import (
@@ -12,6 +13,7 @@ from spotgp.envelope import (
     ModulatedGammaEnvelope,
     compute_R_Gamma_numerical,
     _R_Gamma_symmetric,
+    _R_Gamma_symmetric_numerical,
     _R_Gamma_asymmetric,
     _Gamma_hat,
 )
@@ -120,6 +122,121 @@ class TestTrapezoidSymmetricEnvelope:
         pd = env.param_dict
         assert "lspot" in pd
         assert "tau_spot" in pd
+
+
+# =====================================================================
+# TrapezoidSymmetricEnvelope(numerical=True)
+# =====================================================================
+
+def _brute_force_R_Gamma(ell, tau, lags, dt=2e-4):
+    """Direct Riemann-sum autocorrelation of the squared trapezoid."""
+    h = ell / 2 + tau
+    t = np.arange(-h - 1.0, h + max(lags) + 1.0, dt)
+
+    def gamma(x):
+        x = np.abs(x)
+        return np.where(x <= ell / 2, 1.0, np.where(x < h, (h - x) / tau, 0.0))
+
+    g = gamma(t) ** 2
+    return np.array([np.sum(g * gamma(t + L) ** 2) * dt for L in lags])
+
+
+class TestTrapezoidSymmetricNumerical:
+    def test_default_is_analytic(self):
+        env = TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=1.0)
+        assert env.numerical is False
+        assert env.io_attrs == {}
+
+    def test_io_attrs_round_trip_through_floats(self):
+        # save_gp writes io_attrs as floats and load_gp passes them back
+        # to the constructor.
+        env = TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=1.0,
+                                         numerical=True, n_grid=2048)
+        env2 = TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=1.0, **env.io_attrs)
+        assert env2.numerical is True
+        assert env2.n_grid == 2048
+
+    @pytest.mark.parametrize("ell,tau", [(5.0, 1.0), (100.0, 1.0),
+                                         (50.0, 5.0), (20.0, 20.0)])
+    def test_matches_closed_form_where_valid(self, ell, tau):
+        env_a = TrapezoidSymmetricEnvelope(lspot=ell, tau_spot=tau)
+        env_n = TrapezoidSymmetricEnvelope(lspot=ell, tau_spot=tau, numerical=True)
+        lags = jnp.linspace(0, ell + 2 * tau + 1.0, 500)
+        R_a = np.array(env_a.R_Gamma(lags))
+        R_n = np.array(env_n.R_Gamma(lags))
+        np.testing.assert_allclose(R_n, R_a, atol=1e-5 * R_a[0])
+
+    def test_grid_convergence(self):
+        lags = jnp.linspace(0, 12.0, 300)
+        R_cf = np.array(_R_Gamma_symmetric(lags, 10.0, 1.0))
+        err = [np.max(np.abs(np.array(_R_Gamma_symmetric_numerical(
+                   lags, 10.0, 1.0, n_grid=n)) - R_cf)) / R_cf[0]
+               for n in (512, 4096)]
+        assert err[0] < 1e-4
+        assert err[1] < err[0]
+
+    @pytest.mark.parametrize("ell,tau", [(5.0, 50.0), (1.0, 100.0), (10.0, 12.0)])
+    def test_valid_where_closed_form_is_not(self, ell, tau):
+        with pytest.raises(ValueError, match="closed form is invalid"):
+            TrapezoidSymmetricEnvelope(lspot=ell, tau_spot=tau).R_Gamma(
+                jnp.array([0.0, 1.0]))
+        env = TrapezoidSymmetricEnvelope(lspot=ell, tau_spot=tau, numerical=True)
+        lags = np.linspace(0, ell + 2 * tau + 1.0, 120)
+        R = np.array(env.R_Gamma(jnp.asarray(lags)))
+        np.testing.assert_allclose(R, _brute_force_R_Gamma(ell, tau, lags),
+                                   atol=2e-6 * R[0])
+        np.testing.assert_allclose(R[0], ell + 2 * tau / 5, rtol=1e-5)
+        assert np.all(R >= -1e-12 * R[0])
+        assert R[-1] == 0.0          # beyond the support ell + 2 tau
+
+    def test_toeplitz_positive_semidefinite_ell_lt_tau(self):
+        env = TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=50.0, numerical=True)
+        x = np.arange(0.0, 120.0, 0.5)
+        lag = np.abs(x[:, None] - x[None, :])
+        K = np.array(env.R_Gamma(jnp.asarray(lag.ravel()))).reshape(lag.shape)
+        eig = np.linalg.eigvalsh(K)
+        assert eig.min() > -1e-9 * eig.max()
+
+    def test_r_gamma_jax_traceable_and_differentiable(self):
+        env = TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=50.0, numerical=True)
+        lags = jnp.linspace(0.3, 104.0, 40)
+        theta = jnp.array([5.0, 50.0])
+        R_jit = np.array(jax.jit(env.r_gamma_jax)(theta, lags))
+        np.testing.assert_allclose(R_jit, np.array(env.R_Gamma(lags)),
+                                   rtol=1e-10, atol=1e-10)
+        J = np.array(jax.jacfwd(lambda th: env.r_gamma_jax(th, lags))(theta))
+        assert np.all(np.isfinite(J))
+        eps = 1e-3
+        for i in range(2):
+            d = np.zeros(2)
+            d[i] = eps
+            fd = (np.array(env.r_gamma_jax(theta + d, lags))
+                  - np.array(env.r_gamma_jax(theta - d, lags))) / (2 * eps)
+            np.testing.assert_allclose(J[:, i], fd, atol=1e-3 * np.max(np.abs(fd)))
+
+    def test_marginalized_distribution_uses_numerical_path(self):
+        from spotgp.distributions import UniformDistribution
+        # Quadrature nodes for lspot ~ U(2, 6) all lie below tau_spot = 8,
+        # so the analytic average is out of domain but the FFT path is not.
+        with pytest.raises(ValueError, match="closed form is invalid"):
+            TrapezoidSymmetricEnvelope(lspot=UniformDistribution(2.0, 6.0),
+                                       tau_spot=8.0).R_Gamma(jnp.array([0.0]))
+        env = TrapezoidSymmetricEnvelope(lspot=UniformDistribution(2.0, 6.0),
+                                         tau_spot=8.0, numerical=True)
+        lags = jnp.linspace(0.0, 25.0, 60)
+        R = np.array(env.R_Gamma(lags))
+        assert np.all(np.isfinite(R)) and np.all(R >= -1e-12)
+        # E[R(0)] = E[lspot] + 2 tau / 5 for a uniform lspot distribution
+        np.testing.assert_allclose(R[0], 4.0 + 2 * 8.0 / 5, rtol=1e-5)
+        assert R[-1] == 0.0          # beyond max support 6 + 16 = 22
+
+    def test_gamma_hat_and_support_unchanged(self):
+        # The closed-form Fourier transform holds for any lspot, tau_spot,
+        # so the numerical option only replaces R_Gamma.
+        env = TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=50.0, numerical=True)
+        assert float(env.Gamma_hat(jnp.array(0.0))) == pytest.approx(5.0 + 2 * 50.0 / 3)
+        assert env.kernel_support() == 5.0 + 2 * 50.0
+        assert float(env.Gamma(jnp.array(0.0))) == 1.0
 
 
 # =====================================================================

@@ -49,7 +49,6 @@ DEFAULT_TERM_BOUNDS = {
     "lat_max":   (0.0, np.pi / 2),
     "t_gap":     (0.0, 100.0),
     "sigma_k":   (1e-6, 1.0),
-    "sigma_n":   (1e-6, 0.1),
 }
 
 
@@ -1296,12 +1295,11 @@ class Matern32Term(Term):
 
 class JitterTerm(Term):
     """
-    White-noise sugar: ``k(tau) = sigma_j^2 * [tau == 0]``.
+    White noise: ``k(tau) = sigma_j^2 * [tau == 0]``.
 
-    Pure white noise is normally handled by the solver's ``sigma_n``
-    diagonal (set ``fit_sigma_n=True``); this term exists for symmetry
-    when composing kernels, e.g. an extra jitter tied to one component.
-    Prefer ``sigma_n`` when you just need a noise floor.
+    ``GPSolver`` adds only ``yerr**2`` to the covariance diagonal, so this
+    term is how to fit any additional white noise (jitter).  It also
+    regularizes a covariance matrix that fails to Cholesky-factorize.
     """
 
     _prefix_tag = "jit"
@@ -1455,6 +1453,14 @@ class KernelSum(Term):
         out = 0.0
         for t, (i, n) in zip(self.terms, self._slices):
             out = out + t.k_of_lag(theta_slice[i:i + n], lag_flat)
+        return out
+
+    def k_of_lag_no_dc(self, theta_slice, lag_flat):
+        """Sum of each term's ``k_of_lag_no_dc`` (the n = 0 harmonic
+        dropped from every spot term)."""
+        out = 0.0
+        for t, (i, n) in zip(self.terms, self._slices):
+            out = out + t.k_of_lag_no_dc(theta_slice[i:i + n], lag_flat)
         return out
 
     def components(self, theta_slice, lag_flat, drop_dc=False):

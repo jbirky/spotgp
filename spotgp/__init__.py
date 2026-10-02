@@ -52,7 +52,7 @@ from .sensitivity import sobol_indices
 from .transit import KeplerianOrbit, QuadLimbDarkLightCurve, SpotTransitModel
 from .params import (
     EnvelopeSpec, AmplitudeSpec, register_envelope, register_amplitude,
-    resolve_hparam, KERNEL_HPARAM_KEYS, HPARAM_KEYS_WITH_NOISE,
+    resolve_hparam, KERNEL_HPARAM_KEYS,
 )
 
 __all__ = [
@@ -117,5 +117,5 @@ __all__ = [
     "KeplerianOrbit", "QuadLimbDarkLightCurve", "SpotTransitModel",
     # params
     "EnvelopeSpec", "AmplitudeSpec", "register_envelope", "register_amplitude",
-    "resolve_hparam", "KERNEL_HPARAM_KEYS", "HPARAM_KEYS_WITH_NOISE",
+    "resolve_hparam", "KERNEL_HPARAM_KEYS",
 ]

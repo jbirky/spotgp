@@ -19,7 +19,7 @@ import jax.scipy.linalg as jla
 import numpy as np
 
 from .params import (
-    resolve_hparam, KERNEL_HPARAM_KEYS, HPARAM_KEYS_WITH_NOISE,
+    resolve_hparam, KERNEL_HPARAM_KEYS,
 )
 from .spot_model import SpotEvolutionModel
 from .analytic_kernel import (
@@ -34,17 +34,16 @@ from .fitting import FittingMixin
 from .gp_plots import GPPlotsMixin
 from .mass_matrix import MassMatrixMixin
 from .validation import (
-    validate_data, validate_data_vs_model, raise_cholesky_error,
+    validate_data, validate_data_vs_model, warn_cholesky_failure,
 )
 
 __all__ = ["GPSolver"]
 
 logger = logging.getLogger("spotgp")
 
-# KERNEL_HPARAM_KEYS and HPARAM_KEYS_WITH_NOISE are imported from params.
-# Re-export as lists for any callers that expect list type.
+# KERNEL_HPARAM_KEYS is imported from params.
+# Re-export as a list for any callers that expect list type.
 KERNEL_HPARAM_KEYS = list(KERNEL_HPARAM_KEYS)
-HPARAM_KEYS_WITH_NOISE = list(HPARAM_KEYS_WITH_NOISE)
 
 
 # _kernel_eval and _kernel_eval_edgeon are imported from analytic_kernel.py
@@ -53,7 +52,6 @@ HPARAM_KEYS_WITH_NOISE = list(HPARAM_KEYS_WITH_NOISE)
 
 def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
                        harmonics, n_lat, lat_range,
-                       fit_sigma_n, n_kernel=6,
                        r_gamma_func=None,
                        quad_nodes=None, quad_weights=None,
                        edgeon_cn_sq=None,
@@ -76,19 +74,19 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
     upper-triangular lags (N*(N+1)/2 instead of N^2), halving memory and
     compute relative to the naive full-matrix evaluation.
 
+    The covariance is ``K + diag(yerr**2)``: the only white noise beyond
+    the measurement uncertainties is whatever the kernel carries (a
+    ``JitterTerm``).
+
     Parameters
     ----------
-    theta_full : jnp.ndarray, shape (n_kernel,) or (n_kernel+1,)
-        Kernel params, optionally followed by sigma_n (white noise).
+    theta_full : jnp.ndarray, shape (n_kernel,)
+        Physical kernel parameters.
     x, y, yerr : jnp.ndarray
         Observations.
     mean_val : float
         Constant mean.
     harmonics, n_lat, lat_range : kernel config.
-    fit_sigma_n : bool
-        If True, last element of theta_full is sigma_n.
-    n_kernel : int
-        Number of kernel parameters (default 6 for backward compat).
     r_gamma_func : callable or None
         JAX-traceable envelope R_Gamma function (see _kernel_eval).
     quad_nodes, quad_weights : jnp.ndarray or None
@@ -119,13 +117,6 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
     """
     N = x.shape[0]
 
-    if fit_sigma_n:
-        theta_kernel = theta_full[:n_kernel]
-        sigma_n = theta_full[n_kernel]
-    else:
-        theta_kernel = theta_full
-        sigma_n = 0.0
-
     if k_of_lag is None:
         # Legacy path: assemble the kernel closure from the kwarg bundle.
         def k_of_lag(theta_k, lags):
@@ -141,28 +132,27 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
     if uniform_dt is not None:
         # Toeplitz fast path: N distinct lags instead of N*(N+1)/2.
         lag_unique = jnp.arange(N) * uniform_dt
-        K1d = k_of_lag(theta_kernel, lag_unique)
+        K1d = k_of_lag(theta_full, lag_unique)
         idx = jnp.abs(jnp.arange(N)[:, None] - jnp.arange(N)[None, :])
         K = K1d[idx]
     elif lag_table is not None:
         # Gappy-uniform fast path: distinct lags gathered by index table.
         lags_unique, inv_idx = lag_table
-        K1d = k_of_lag(theta_kernel, lags_unique)
+        K1d = k_of_lag(theta_full, lags_unique)
         K = K1d[inv_idx]
     else:
         # Upper-triangular indices (includes diagonal)
         row_idx, col_idx = jnp.triu_indices(N)
         lag_upper = jnp.abs(x[row_idx] - x[col_idx])
 
-        K_upper = k_of_lag(theta_kernel, lag_upper)
+        K_upper = k_of_lag(theta_full, lag_upper)
 
         # Reconstruct symmetric matrix from upper triangle
         K = jnp.zeros((N, N))
         K = K.at[row_idx, col_idx].set(K_upper)
         K = K + K.T - jnp.diag(jnp.diag(K))
 
-    noise_var = yerr ** 2 + sigma_n ** 2
-    K_noise = K + jnp.diag(noise_var) + 1e-8 * jnp.eye(N)
+    K_noise = K + jnp.diag(yerr ** 2)
 
     L = jla.cholesky(K_noise, lower=True)
     resid = y - mean_val
@@ -279,8 +269,7 @@ def _build_banded_kernel_jax(theta_kernel, x, bandwidth,
 
 def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                harmonics, n_lat, lat_range,
-                               fit_sigma_n, bandwidth,
-                               n_kernel=6,
+                               bandwidth,
                                r_gamma_func=None,
                                quad_nodes=None, quad_weights=None,
                                edgeon_cn_sq=None,
@@ -306,8 +295,6 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
     ----------
     bandwidth : int
         Number of sub-diagonals to retain (compile-time constant).
-    n_kernel : int
-        Number of kernel parameters (default 6 for backward compat).
     r_gamma_func : callable or None
         JAX-traceable envelope R_Gamma function (see _kernel_eval).
     uniform_dt : float or None
@@ -320,15 +307,8 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
     """
     N = x.shape[0]
 
-    if fit_sigma_n:
-        theta_kernel = theta_full[:n_kernel]
-        sigma_n = theta_full[n_kernel]
-    else:
-        theta_kernel = theta_full
-        sigma_n = 0.0
-
     # Build covariance in compact banded storage: O(N*b) instead of O(N^2)
-    cb = _build_banded_kernel_jax(theta_kernel, x, bandwidth,
+    cb = _build_banded_kernel_jax(theta_full, x, bandwidth,
                                    harmonics, n_lat, lat_range,
                                    r_gamma_func=r_gamma_func,
                                    quad_nodes=quad_nodes,
@@ -340,9 +320,8 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                    band_lag_table=band_lag_table,
                                    k_of_lag=k_of_lag)
 
-    # Add noise to diagonal (row 0 of compact storage)
-    noise_var = yerr ** 2 + sigma_n ** 2
-    cb = cb.at[0, :].add(noise_var + 1e-8)
+    # Measurement noise on the diagonal (row 0 of compact storage)
+    cb = cb.at[0, :].add(yerr ** 2)
 
     # Factorize and solve in compact storage
     Lc = banded_cholesky_compact(cb, bandwidth)
@@ -546,9 +525,6 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         Which kernel to use (default: "analytic").
     mean : float or callable or None
         Mean function.
-    fit_sigma_n : bool
-        If True, include white noise amplitude sigma_n as a free
-        parameter for optimization/sampling (default False).
     bounds : dict or None
         Parameter bounds for optimization. If None, uses defaults.
     log_prior : callable or None
@@ -572,6 +548,12 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         ``spotgp.offsets``.
     kernel_kwargs : dict
         Extra kwargs forwarded to the kernel constructor.
+
+    Notes
+    -----
+    The covariance is the kernel plus ``diag(yerr**2)``; the solver adds
+    no white noise of its own.  To fit white noise (jitter), include a
+    :class:`~spotgp.terms.JitterTerm` in a composite kernel.
     """
 
     # Single source of truth lives in terms.py (DEFAULT_TERM_BOUNDS);
@@ -580,10 +562,18 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
 
     def __init__(self, data_or_x, y=None, yerr=None, model_or_hparam=None,
                  kernel_type="analytic",
-                 mean=None, fit_sigma_n=False, bounds=None,
+                 mean=None, bounds=None,
                  log_prior=None, matrix_solver="cholesky_banded",
                  bandwidth=None, save_dir=None, offsets=None,
                  **kernel_kwargs):
+
+        if "fit_sigma_n" in kernel_kwargs:
+            raise TypeError(
+                "GPSolver no longer accepts fit_sigma_n: the solver adds "
+                "only yerr**2 to the covariance diagonal. Fit white noise "
+                "with a JitterTerm in the kernel instead, e.g. "
+                "KernelSum(SpotTerm(model, prefix='spot'), "
+                "JitterTerm(prefix='jit')).")
 
         # ── Parse data source ────────────────────────────────────────────
         from .observations import TimeSeriesData
@@ -700,18 +690,12 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                 "For a time-dependent sigma_k use "
                 "NonstationaryAnalyticKernel directly.")
 
-        # Optimization/sampling config — must be set before bounds parsing
-        # so that the log-param remapping can identify which physical keys
-        # to replace with their log-space counterparts.
-        self.fit_sigma_n = fit_sigma_n
-
         # The Term seam (self.kernel_sum, built in _build_kernel): the
         # solver reads its parameter layout, bounds, bandwidth, and kernel
         # evaluations from a KernelSum rather than from the spot model
         # directly.  With a single SpotTerm this is a transparent wrapper
         # (identical keys, theta0, and kernel values).
-        _model_keys = self.kernel_sum.param_keys  # e.g. (peq, kappa, inc, lspot, tau_spot, sigma_k)
-        _base_keys = _model_keys + ("sigma_n",) if fit_sigma_n else _model_keys
+        _base_keys = self.kernel_sum.param_keys  # e.g. (peq, kappa, inc, lspot, tau_spot, sigma_k)
 
         # Detect log-space parameters: keys prefixed with "log_" in the
         # bounds dict indicate sampling in log10 space.  The physical key
@@ -737,7 +721,7 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         # For log-space keys the supplied bounds are already in log10 units;
         # for physical keys without explicit bounds, fall back to the
         # per-term defaults (concatenated and aligned by kernel_sum),
-        # then to DEFAULT_BOUNDS (e.g. sigma_n).
+        # then to DEFAULT_BOUNDS.
         _default_bounds = {**self.DEFAULT_BOUNDS,
                            **self.kernel_sum.default_bounds}
         if bounds is None:
@@ -780,9 +764,6 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         # log10 for any log-parameterized keys.
         _phys_theta0 = dict(zip(self.kernel_sum.param_keys,
                                 self.kernel_sum.theta0))
-        if fit_sigma_n:
-            _phys_theta0["sigma_n"] = float(
-                self.hparam.get("sigma_n", self.DEFAULT_BOUNDS["sigma_n"][0]))
         self.theta0 = jnp.array([
             np.log10(float(_phys_theta0.get(self._log_param_map[k], 0.0)))
             if k in self._log_param_map
@@ -1053,19 +1034,15 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                 cb = K_flat.reshape(b + 1, N)
                 cb = jnp.where(valid, cb, 0.0)
 
-            # Add noise to diagonal (row 0)
-            cb = cb.at[0, :].add(self.yerr ** 2 + 1e-8)
+            # Measurement noise on the diagonal (row 0)
+            cb = cb.at[0, :].add(self.yerr ** 2)
 
             self.K = None
             self.K_noise = None
-            try:
-                self._Lc = banded_cholesky_compact(cb, self.bandwidth)
-            except Exception as e:
-                raise_cholesky_error(
-                    e, theta=self.theta0 if hasattr(self, 'theta0') else None,
-                    param_keys=self.param_keys if hasattr(self, 'param_keys') else None,
-                    bounds=self.bounds if hasattr(self, 'bounds') else None,
-                    context="initial covariance build (banded solver)")
+            self._Lc = banded_cholesky_compact(cb, self.bandwidth)
+            if not bool(jnp.all(jnp.isfinite(self._Lc[0, :]))):
+                self._warn_cholesky_at_kernel(
+                    "the covariance build (banded solver)")
             self._L = None
             self._alpha = banded_solve_compact(
                 self._Lc, self._resid, self.bandwidth)
@@ -1090,18 +1067,26 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                 K = K.at[row_idx, col_idx].set(K_upper)
                 K = K + K.T - jnp.diag(jnp.diag(K))
             self.K = K
-            self.K_noise = K + jnp.diag(self.yerr ** 2) + 1e-8 * jnp.eye(N)
+            self.K_noise = K + jnp.diag(self.yerr ** 2)
 
             self._Lc = None
-            try:
-                self._L = jla.cholesky(self.K_noise, lower=True)
-            except Exception as e:
-                raise_cholesky_error(
-                    e, theta=self.theta0 if hasattr(self, 'theta0') else None,
-                    param_keys=self.param_keys if hasattr(self, 'param_keys') else None,
-                    bounds=self.bounds if hasattr(self, 'bounds') else None,
-                    context="initial covariance build (dense solver)")
+            self._L = jla.cholesky(self.K_noise, lower=True)
+            if not bool(jnp.all(jnp.isfinite(jnp.diag(self._L)))):
+                self._warn_cholesky_at_kernel(
+                    "the covariance build (dense solver)")
             self._alpha = jla.cho_solve((self._L, True), self._resid)
+
+    def _warn_cholesky_at_kernel(self, context):
+        """Cholesky-failure warning at the kernel's current parameters.
+
+        The cached covariance is built from ``self.kernel_sum``'s own
+        values (physical units), which ``update_hparam`` can move away
+        from ``theta0``, so those are what the message reports.
+        """
+        # stacklevel 5: the user's GPSolver(...) or update_hparam(...) call
+        warn_cholesky_failure(
+            context, theta=np.asarray(self.kernel_sum.theta0),
+            param_keys=self.kernel_sum.param_keys, stacklevel=5)
 
     def _resolve_offsets(self, offsets):
         """
@@ -1194,15 +1179,7 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         if theta is None:
             theta = (self.map_estimate if self.map_estimate is not None
                      else self.theta0)
-        theta_full = self._to_physical(jnp.asarray(theta, dtype=jnp.float64))
-
-        if self.fit_sigma_n:
-            theta_kernel = theta_full[:len(self.kernel_sum.param_keys)]
-            sigma_n = theta_full[len(self.kernel_sum.param_keys)]
-        else:
-            theta_kernel, sigma_n = theta_full, 0.0
-
-        noise_var = self.yerr ** 2 + sigma_n ** 2
+        theta_kernel = self._to_physical(jnp.asarray(theta, dtype=jnp.float64))
         resid = self.y - self.mean_val
 
         if self.matrix_solver == "cholesky_banded":
@@ -1213,8 +1190,9 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                 uniform_dt=self.uniform_dt,
                 band_lag_table=self._band_lag_table(),
                 k_of_lag=self.kernel_sum.k_of_lag)
-            cb = cb.at[0, :].add(noise_var + 1e-8)
+            cb = cb.at[0, :].add(self.yerr ** 2)
             Lc = banded_cholesky_compact(cb, b)
+            factor_ok = bool(jnp.all(jnp.isfinite(Lc[0, :])))
             alpha = banded_solve_compact(Lc, resid, b)
             Z = banded_solve_compact(Lc, self.design, b)
         else:
@@ -1223,10 +1201,15 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
             lag = jnp.abs(self.x[:, None] - self.x[None, :]).ravel()
             K = self.kernel_sum.k_of_lag(theta_kernel, lag).reshape(self.N,
                                                                     self.N)
-            K = K + jnp.diag(noise_var) + 1e-8 * jnp.eye(self.N)
+            K = K + jnp.diag(self.yerr ** 2)
             L = jla.cholesky(K, lower=True)
+            factor_ok = bool(jnp.all(jnp.isfinite(jnp.diag(L))))
             alpha = jla.cho_solve((L, True), resid)
             Z = jla.cho_solve((L, True), self.design)
+        if not factor_ok:
+            warn_cholesky_failure("offset_estimates", theta=theta,
+                                  param_keys=self.param_keys,
+                                  bounds=self.bounds)
 
         a_hat, a_cov = offset_posterior(alpha, self.design, Z)
         if return_cov:
@@ -1251,7 +1234,6 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         mean_val = self.mean_val
         n_h, n_l, lr = self.harmonics, self.n_lat, self.lat_range
         custom_prior = self._custom_log_prior
-        fit_sn = self.fit_sigma_n
         to_phys = self._to_physical  # sampling theta → physical theta
         u_dt = self.uniform_dt       # Toeplitz fast path (None = disabled)
         # Gappy-uniform lag tables (None on strictly-uniform or irregular
@@ -1265,8 +1247,6 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         # R_Gamma, latitude weights, visibility coefficients, edge-on fast
         # path) live inside the terms; the solver only sees k_of_lag.
         k_of_lag_fn = self.kernel_sum.k_of_lag
-        # Number of kernel params (excludes sigma_n)
-        n_kernel = len(self.kernel_sum.param_keys)
         # Per-segment offset design matrix (None disables the correction).
         # Captured as a constant: it depends on x only, never on theta.
         design = self.design
@@ -1279,8 +1259,7 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
             def _log_likelihood_raw(theta_arr):
                 return _gp_log_likelihood_banded(
                     to_phys(theta_arr), x, y, yerr, mean_val,
-                    n_h, n_l, lr, fit_sn, b,
-                    n_kernel=n_kernel,
+                    n_h, n_l, lr, b,
                     uniform_dt=u_dt,
                     band_lag_table=band_tab,
                     k_of_lag=k_of_lag_fn,
@@ -1289,8 +1268,7 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
             def _log_likelihood_raw(theta_arr):
                 return _gp_log_likelihood(
                     to_phys(theta_arr), x, y, yerr, mean_val,
-                    n_h, n_l, lr, fit_sn,
-                    n_kernel=n_kernel,
+                    n_h, n_l, lr,
                     uniform_dt=u_dt,
                     lag_table=full_tab,
                     k_of_lag=k_of_lag_fn,
@@ -1359,16 +1337,14 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
 
         logger.info("Compiling JAX functions (one-time cost)...")
         t0 = time.time()
-        try:
-            jax.block_until_ready(self.log_posterior(theta0))
-            jax.block_until_ready(self.value_and_grad_log_posterior(theta0))
-        except Exception as e:
-            raise_cholesky_error(
-                e, theta=theta0, param_keys=self.param_keys,
-                bounds=self.bounds,
-                context="JIT compilation of log-posterior")
+        logpost0 = jax.block_until_ready(self.log_posterior(theta0))
+        jax.block_until_ready(self.value_and_grad_log_posterior(theta0))
         elapsed = time.time() - t0
         logger.info("JAX GP solver compiled in %.2fs", elapsed)
+        if not bool(jnp.isfinite(logpost0)):
+            warn_cholesky_failure(
+                "build_jax (log-posterior at theta0)", theta=theta0,
+                param_keys=self.param_keys, bounds=self.bounds)
 
         if recompute:
             t0 = time.time()
@@ -1503,22 +1479,21 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
 
     def _predict_at_impl(self, theta, xpred, return_cov=False):
         xpred = jnp.asarray(xpred, dtype=jnp.float64)
-        theta_phys = self._to_physical(jnp.asarray(theta, dtype=jnp.float64))
-        n_kernel = len(self.kernel_sum.param_keys)
-        theta_k = theta_phys[:n_kernel]
-
-        sigma_n = theta_phys[n_kernel] if self.fit_sigma_n else 0.0
-        noise_var = self.yerr ** 2 + sigma_n ** 2
+        theta_k = self._to_physical(jnp.asarray(theta, dtype=jnp.float64))
 
         x = self.x
         N = len(x)
         lag_train = jnp.abs(x[:, None] - x[None, :])
         K_train = self.kernel_sum.k_of_lag(theta_k, lag_train.ravel())
-        K_train = (K_train.reshape(N, N) + jnp.diag(noise_var)
-                  + 1e-8 * jnp.eye(N))
+        K_train = K_train.reshape(N, N) + jnp.diag(self.yerr ** 2)
 
         resid = self.y - self.mean_func(x)
         L = jla.cholesky(K_train, lower=True)
+        if not bool(jnp.all(jnp.isfinite(jnp.diag(L)))):
+            # stacklevel 4: the user's predict_at(...) call
+            warn_cholesky_failure("predict_at", theta=theta,
+                                  param_keys=self.param_keys,
+                                  bounds=self.bounds, stacklevel=4)
         alpha = jla.cho_solve((L, True), resid)
 
         M = len(xpred)
@@ -1711,6 +1686,108 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         tlags = jnp.asarray(tlags, dtype=jnp.float64)
         return np.asarray(self._eval_kernel(jnp.abs(tlags)))
 
+    def compute_kernel_samples(self, samples, kind="kernel", tlags=None,
+                               drop_dc=False, batch_size=256):
+        """
+        Evaluate the kernel (or its PSD) for every row of a sample array.
+
+        Each row is mapped to physical parameters with the same
+        transform the likelihood uses, so posterior samples from any of
+        the samplers can be passed straight in.  Evaluation is
+        JIT-compiled once and mapped over the samples in chunks of
+        ``batch_size``.
+
+        Parameters
+        ----------
+        samples : array_like, shape (..., n_params)
+            Hyperparameters in sampling space, columns ordered as
+            ``self.param_keys`` (log-remapped where applicable), i.e. the
+            layout of ``sampler.samples``.  Any leading shape (a single
+            vector, flat samples, or ``(n_chains, n_steps, n_params)``)
+            is preserved in the output.
+        kind : {"kernel", "psd"}
+            Return the autocovariance ``K(tau)`` or its one-sided power
+            spectral density.
+        tlags : array_like, shape (M,), optional
+            Time lags [days] at which to evaluate the kernel.  For
+            ``kind="psd"`` this must be a uniform grid starting at 0: its
+            spacing sets the Nyquist frequency ``1 / (2 dt)`` and its
+            extent the frequency resolution ``1 / (2 tau_max)``.  Defaults
+            to the median data cadence out to half the baseline.
+        drop_dc : bool
+            If True, exclude the n = 0 (DC) harmonic of every spot term
+            (see ``Term.k_of_lag_no_dc``).  Non-spot terms are unaffected.
+        batch_size : int
+            Number of samples evaluated together per vectorized chunk.
+            Lower it if the latitude quadrature at ``M`` lags runs out of
+            memory.
+
+        Returns
+        -------
+        grid : ndarray
+            ``tlags`` [days] for ``kind="kernel"``, or frequencies
+            [1/day], excluding zero, for ``kind="psd"``.
+        values : ndarray, shape (..., len(grid))
+            Kernel values, or the one-sided PSD normalized so that
+            ``sum(values * df)`` plus the dropped zero-frequency bin equals
+            ``K(0)`` (the process variance).  Unlike :meth:`plot_psd`, it
+            is not rescaled to the data variance, so amplitudes are
+            comparable across samples.
+        """
+        if kind not in ("kernel", "psd"):
+            raise ValueError(f"kind must be 'kernel' or 'psd', got {kind!r}")
+
+        samples = np.asarray(samples, dtype=np.float64)
+        if samples.shape[-1] != self.n_params:
+            raise ValueError(
+                f"samples must have last dimension n_params={self.n_params} "
+                f"(ordered as {self.param_keys}), got shape {samples.shape}")
+        lead_shape = samples.shape[:-1]
+        flat = jnp.asarray(samples.reshape(-1, self.n_params))
+
+        if tlags is None:
+            x = np.asarray(self.x)
+            dt = float(np.median(np.diff(x)))
+            n_lag = int((x[-1] - x[0]) / 2.0 / dt) + 1
+            tlags = np.arange(n_lag) * dt
+        tlags = np.abs(np.asarray(tlags, dtype=np.float64))
+
+        if kind == "psd":
+            steps = np.diff(tlags)
+            if (len(tlags) < 3 or tlags[0] != 0.0
+                    or not np.allclose(steps, steps[0], rtol=1e-6)):
+                raise ValueError(
+                    "kind='psd' needs tlags on a uniform grid starting at "
+                    "0 with at least 3 points")
+            dt = float(steps[0])
+
+        k_fn = (self.kernel_sum.k_of_lag_no_dc if drop_dc
+                else self.kernel_sum.k_of_lag)
+        to_phys = self._to_physical
+        lags = jnp.asarray(tlags)
+
+        def _one(theta):
+            K = k_fn(to_phys(theta), lags)
+            if kind == "kernel":
+                return K
+            # Even extension of period 2(M-1); its DFT is real, and dt
+            # times it is the two-sided PSD.  Double it for one-sided,
+            # except at the zero and Nyquist bins.
+            K_even = jnp.concatenate([K, K[-2:0:-1]])
+            S = jnp.fft.rfft(K_even).real * dt
+            return S.at[1:-1].multiply(2.0)
+
+        out = jax.jit(lambda th: jax.lax.map(
+            _one, th, batch_size=batch_size))(flat)
+        out = np.asarray(out)
+
+        if kind == "kernel":
+            grid = tlags
+        else:
+            grid = np.fft.rfftfreq(2 * (len(tlags) - 1), d=dt)[1:]
+            out = out[:, 1:]
+        return grid, out.reshape(lead_shape + (len(grid),))
+
     def get_theta(self):
         """
         Return the current kernel hyperparameters as a dictionary.
@@ -1790,6 +1867,10 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
             env_params = dict(model.envelope.param_dict)
             env_params.update({k: float(theta_dict[k])
                                for k in env_params if k in theta_dict})
+            # Carry over constructor state that is not a fitted parameter
+            # (e.g. TrapezoidSymmetricEnvelope(numerical=True)) through the
+            # same io_attrs hook save_gp/load_gp use.
+            env_params.update(getattr(model.envelope, "io_attrs", None) or {})
             model.envelope = type(model.envelope)(**env_params)
         # Latitude distribution: reconstruct with updated values
         lat = model.latitude_distribution

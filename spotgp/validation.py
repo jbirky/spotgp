@@ -10,16 +10,18 @@ logger = logging.getLogger("spotgp")
 __all__ = [
     "validate_data",
     "validate_data_vs_model",
-    "CholeskyError",
+    "CholeskyWarning",
+    "warn_cholesky_failure",
     "format_nan_gradient_warning",
 ]
 
 
-class CholeskyError(np.linalg.LinAlgError):
-    """Cholesky decomposition failed on the GP covariance matrix.
+class CholeskyWarning(UserWarning):
+    """The GP covariance matrix could not be Cholesky-factorized.
 
-    This wraps the raw linear algebra error with a diagnosis of what
-    likely went wrong and concrete suggestions for fixing it.
+    JAX does not raise on a matrix that is not positive definite: the
+    factor fills with NaN, and so do the log-likelihood and its
+    gradient.  The solver emits this warning when it detects that.
     """
     pass
 
@@ -66,7 +68,7 @@ def validate_data(x, y, yerr):
                 "covariance matrix will have no noise term on the "
                 "diagonal, which almost always causes a Cholesky failure. "
                 "Set yerr to realistic measurement uncertainties, or add "
-                "white noise via fit_sigma_n=True.",
+                "a JitterTerm to the kernel to fit white noise.",
                 stacklevel=3,
             )
         else:
@@ -186,42 +188,46 @@ def validate_data_vs_model(x, bounds, param_keys):
         )
 
 
-# ── Cholesky error formatting ───────────────────────────────────────────
+# ── Cholesky failure warning ────────────────────────────────────────────
 
-def raise_cholesky_error(original_error, theta=None, param_keys=None,
-                         bounds=None, context="covariance build"):
-    """Re-raise a Cholesky failure with an actionable diagnosis.
+_JITTER_SUGGESTION = (
+    "The solver adds only yerr**2 to the diagonal. To fit white noise and "
+    "regularize the matrix, add a JitterTerm to the kernel, e.g.\n\n"
+    "    KernelSum(SpotTerm(model, prefix='spot'), JitterTerm(prefix='jit'))")
+
+
+def warn_cholesky_failure(context, theta=None, param_keys=None, bounds=None,
+                          stacklevel=3, suggestion=None):
+    """Warn that the covariance matrix failed to Cholesky-factorize.
+
+    The solver adds nothing to the covariance diagonal except ``yerr**2``
+    and any :class:`~spotgp.terms.JitterTerm` in the kernel, so a smooth
+    kernel sampled densely with small uncertainties can be numerically
+    singular.  By default the message suggests a ``JitterTerm`` as the
+    regularizer.
 
     Parameters
     ----------
-    original_error : Exception
-        The raw error from JAX or scipy.
+    context : str
+        Where the failure occurred (for the message).
     theta : array_like or None
         Parameter values at the time of failure.
     param_keys : tuple of str or None
         Parameter names.
     bounds : array_like or None
-        Parameter bounds.
-    context : str
-        Where the failure occurred (for the message).
+        Parameter bounds, aligned with ``param_keys``.
+    stacklevel : int
+        Forwarded to :func:`warnings.warn`.
+    suggestion : str or None
+        What to try, for solvers that cannot take a ``JitterTerm``.
+        Defaults to the ``JitterTerm`` suggestion.
     """
     lines = [
-        f"Cholesky decomposition failed during {context}.",
+        f"Cholesky factorization failed during {context}: the covariance "
+        "matrix is not positive definite at these parameters, so the "
+        "log-likelihood is NaN.",
         "",
-        "The covariance matrix is not positive definite at the current "
-        "parameters. Common causes:",
-        "",
-        "  1. sigma_k is too large relative to the noise — the kernel "
-        "     amplitude overwhelms the diagonal noise term. Try lowering "
-        "     the sigma_k upper bound.",
-        "  2. All yerr values are zero or very small — add realistic "
-        "     measurement noise, or set fit_sigma_n=True to let the GP "
-        "     estimate white noise.",
-        "  3. The rotation period is shorter than the data cadence — "
-        "     the kernel oscillates faster than the sampling can resolve.",
-        "  4. Numerical precision limits — for very large datasets "
-        "     (N > 5000), try the banded solver "
-        "     (matrix_solver='cholesky_banded') which is more stable.",
+        _JITTER_SUGGESTION if suggestion is None else suggestion,
     ]
 
     if theta is not None and param_keys is not None:
@@ -242,8 +248,7 @@ def raise_cholesky_error(original_error, theta=None, param_keys=None,
                             at_bound = "  [AT UPPER BOUND]"
                 lines.append(f"  {k:>12s} = {val:.6g}{at_bound}")
 
-    msg = "\n".join(lines)
-    raise CholeskyError(msg) from original_error
+    warnings.warn("\n".join(lines), CholeskyWarning, stacklevel=stacklevel)
 
 
 # ── NaN gradient formatting ─────────────────────────────────────────────
@@ -304,6 +309,7 @@ def format_nan_gradient_warning(theta, grad, param_keys, bounds):
     )
     lines.append("  - Narrowing the parameter bounds")
     lines.append("  - Using a different starting point (nopt > 1)")
-    lines.append("  - Checking that yerr is not all zeros")
+    lines.append("  - Adding a JitterTerm to the kernel (the solver adds "
+                 "only yerr**2 to the covariance diagonal)")
 
     return "\n".join(lines)

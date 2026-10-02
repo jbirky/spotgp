@@ -158,7 +158,7 @@ class TestAgainstDenseReference:
         lag = np.abs(x[:, None] - x[None, :]).ravel()
         K = np.asarray(gp.kernel_sum.k_of_lag(
             jnp.asarray(gp.theta0), jnp.asarray(lag))).reshape(N, N)
-        C = K + np.diag(yerr ** 2) + 1e-8 * np.eye(N)
+        C = K + np.diag(yerr ** 2)
 
         r = y - float(gp.mean_val)
         Cinv = np.linalg.inv(C)
@@ -190,7 +190,7 @@ class TestAgainstDenseReference:
         lag = np.abs(x[:, None] - x[None, :]).ravel()
         K = np.asarray(gp.kernel_sum.k_of_lag(
             jnp.asarray(gp.theta0), jnp.asarray(lag))).reshape(N, N)
-        C = K + np.diag(np.asarray(gp.yerr) ** 2) + 1e-8 * np.eye(N)
+        C = K + np.diag(np.asarray(gp.yerr) ** 2)
         r = np.asarray(gp.y) - float(gp.mean_val)
         _, logdetC = np.linalg.slogdet(C)
         ref = -0.5 * (r @ np.linalg.solve(C, r) + logdetC

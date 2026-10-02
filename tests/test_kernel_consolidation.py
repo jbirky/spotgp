@@ -253,8 +253,34 @@ class TestSupportFromBounds:
 
     def test_skewed_gaussian(self):
         env = SkewedGaussianEnvelope(sigma_sn=2.0, n_sn=-1.5)
+        # Scale family in sigma_sn: with the skewness fixed, the 99.8%-mass
+        # support scales linearly with the sigma_sn upper bound.
         upper_fn = lambda key, fallback: {"sigma_sn": 10.0}.get(key, fallback)
-        assert env.support_from_bounds(upper_fn) == 12.0 * 10.0
+        np.testing.assert_allclose(
+            env.support_from_bounds(upper_fn),
+            env.kernel_support() * 10.0 / 2.0, rtol=1e-10)
+        # Nothing bounded: the instance's own support.
+        assert env.support_from_bounds(lambda k, f: f) == env.kernel_support()
+
+    def test_skewed_gaussian_n_sn_bounds(self):
+        env = SkewedGaussianEnvelope(sigma_sn=2.0, n_sn=-1.5)
+        # n_sn free with a non-negative upper bound: the prior may reach the
+        # Gaussian case n_sn = 0, which has the widest support.
+        gauss = SkewedGaussianEnvelope(sigma_sn=2.0, n_sn=0.0).kernel_support()
+        assert gauss > env.kernel_support()
+        upper_fn = lambda key, fallback: {"n_sn": 10.0}.get(key, fallback)
+        np.testing.assert_allclose(
+            env.support_from_bounds(upper_fn), gauss, rtol=1e-10)
+        # Negative upper bound: the least-skewed reachable value is the bound.
+        ref = SkewedGaussianEnvelope(sigma_sn=2.0, n_sn=-0.5).kernel_support()
+        upper_fn = lambda key, fallback: {"n_sn": -0.5}.get(key, fallback)
+        np.testing.assert_allclose(
+            env.support_from_bounds(upper_fn), ref, rtol=1e-10)
+        # Both bounded: sigma scaling and skewness worst case combine.
+        upper_fn = lambda key, fallback: {"sigma_sn": 5.0, "n_sn": 1.0}.get(
+            key, fallback)
+        np.testing.assert_allclose(
+            env.support_from_bounds(upper_fn), gauss * 5.0 / 2.0, rtol=1e-10)
 
 
 class TestDispatchIntegration:

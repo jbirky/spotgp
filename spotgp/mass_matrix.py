@@ -23,15 +23,12 @@ class MassMatrixMixin:
         x, y, yerr = self.x, self.y, self.yerr
         mean_val = self.mean_val
         n_h, n_l, lr = self.harmonics, self.n_lat, self.lat_range
-        fit_sn = self.fit_sigma_n
         to_phys = self._to_physical
         u_dt = self.uniform_dt
         # Kernel evaluation through the Term seam — the same closure the
         # log-posterior uses, so the curvature sees the exact kernel
-        # (custom envelopes / visibility included) and the correct
-        # parameter count for any layout.
+        # (custom envelopes / visibility included) for any layout.
         k_fn = self.kernel_sum.k_of_lag
-        n_kernel = len(self.kernel_sum.param_keys)
 
         if self.matrix_solver == "cholesky_banded" and not force_dense:
             b = self.bandwidth
@@ -41,8 +38,7 @@ class MassMatrixMixin:
             def neg_log_lik(theta_arr):
                 return -_gp_log_likelihood_banded(
                     to_phys(theta_arr), x, y, yerr, mean_val,
-                    n_h, n_l, lr, fit_sn, b,
-                    n_kernel=n_kernel,
+                    n_h, n_l, lr, b,
                     uniform_dt=u_dt,
                     band_lag_table=band_tab,
                     k_of_lag=k_fn)
@@ -53,8 +49,7 @@ class MassMatrixMixin:
             def neg_log_lik(theta_arr):
                 return -_gp_log_likelihood(
                     to_phys(theta_arr), x, y, yerr, mean_val,
-                    n_h, n_l, lr, fit_sn,
-                    n_kernel=n_kernel,
+                    n_h, n_l, lr,
                     uniform_dt=u_dt,
                     lag_table=full_tab,
                     k_of_lag=k_fn)
@@ -109,7 +104,7 @@ class MassMatrixMixin:
     # =================================================================
 
 
-    def mass_matrix_fisher(self, theta_map=None, eigval_clip=1e-6, white_noise=1e-8):
+    def mass_matrix_fisher(self, theta_map=None, eigval_clip=1e-6):
         """
         Estimate the inverse mass matrix from the Fisher information.
 
@@ -165,26 +160,14 @@ class MassMatrixMixin:
             self._lag_flat = jnp.abs(
                 self.x[:, None] - self.x[None, :]).ravel()
         lag_flat = self._lag_flat
-        fit_sn = self.fit_sigma_n
 
         to_phys = self._to_physical
         k_fn = self.kernel_sum.k_of_lag
-        n_kernel = len(self.kernel_sum.param_keys)
 
         def K_noise_flat_from_theta(theta_arr):
             """Return the full K_noise matrix as a flat vector."""
-            theta_arr = to_phys(theta_arr)
-            if fit_sn:
-                theta_kernel = theta_arr[:n_kernel]
-                sigma_n = theta_arr[n_kernel]
-            else:
-                theta_kernel = theta_arr
-                sigma_n = 0.0
-
-            K_flat = k_fn(theta_kernel, lag_flat)
-            K = K_flat.reshape(N, N)
-            noise_var = self.yerr ** 2 + sigma_n ** 2
-            K_noise = K + jnp.diag(noise_var) + white_noise * jnp.eye(N)
+            K = k_fn(to_phys(theta_arr), lag_flat).reshape(N, N)
+            K_noise = K + jnp.diag(self.yerr ** 2)
             return K_noise.ravel()
 
         jacfwd_fn = jax.jit(jax.jacfwd(K_noise_flat_from_theta))

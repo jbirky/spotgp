@@ -300,6 +300,13 @@ class LightcurveModel(AnimationMixin):
         kappa (float): Differential rotation shear.
         inc (float): Inclination of the star.
         nspot (int): Number of spots.
+        nspot_rate (float, optional): Spot emergence rate [spots/day], used
+            instead of ``nspot``.  Spots emerge uniformly over the window
+            ``(-(lspot/2 + tdec), tsim + lspot/2 + tem)`` that holds every spot
+            visible during ``[0, tsim]``, so
+            ``nspot = round(nspot_rate * (tsim + lspot + tem + tdec))`` and the
+            light curve has emergence rate ``nspot_rate`` throughout, matching
+            ``sigma_k = sqrt(nspot_rate) (1 - fspot) alpha_max^2``.
         tau_spot (float, optional): Timescale for both emergence and decay of the spots. Defaults to None.
         tem (float, optional): Emergence timescale of the spots. Defaults to 2.
         tdec (float, optional): Decay timescale of the spots. Defaults to 2.
@@ -329,17 +336,6 @@ class LightcurveModel(AnimationMixin):
         self.inc = inc
         self.inc_deg = inc * 180/np.pi
 
-        # resolve nspot from nspot_rate if needed
-        if nspot_rate is not None:
-            self.nspot_rate = float(nspot_rate)
-            self.nspot = max(1, int(nspot_rate * tsim))
-        elif nspot is not None:
-            self.nspot_rate = None
-            self.nspot = int(nspot)
-        else:
-            self.nspot_rate = None
-            self.nspot = 10
-
         # spot properties (scalars)
         if tau_spot is not None:
             self.tem = tau_spot
@@ -351,6 +347,22 @@ class LightcurveModel(AnimationMixin):
         self.fspot = fspot
         self.lspot = lspot
         self.tlifetime = self.lspot + self.tem + self.tdec
+
+        # resolve nspot from nspot_rate if needed.  The rate applies over the
+        # whole emergence window, not just [0, tsim]: spots emerging before 0
+        # or after tsim still overlap the light curve, and counting only
+        # rate * tsim of them spread over the longer window dilutes the
+        # effective rate by tsim / (tsim + tlifetime).
+        if nspot_rate is not None:
+            self.nspot_rate = float(nspot_rate)
+            lo, hi = self._tmax_window()
+            self.nspot = max(1, int(round(nspot_rate * (hi - lo))))
+        elif nspot is not None:
+            self.nspot_rate = None
+            self.nspot = int(nspot)
+        else:
+            self.nspot_rate = None
+            self.nspot = 10
 
         # keep the raw specifications so the spots can be redrawn later
         self._long_spec = long
@@ -385,7 +397,8 @@ class LightcurveModel(AnimationMixin):
             Total number of spots to simulate.
         nspot_rate : float, optional
             Spot emergence rate [spots/day]. The actual number of spots is
-            ``max(1, int(nspot_rate * tsim))``. Exactly one of ``nspot`` or
+            ``max(1, round(nspot_rate * (tsim + lspot + tem + tdec)))``, the
+            rate over the emergence window. Exactly one of ``nspot`` or
             ``nspot_rate`` must be provided.
         **kwargs
             Forwarded to LightcurveModel.__init__ (e.g. tsim, tsamp, lat, long).
@@ -418,7 +431,7 @@ class LightcurveModel(AnimationMixin):
         if "lat" not in kwargs:
             kwargs["lat"] = list(spot_model.latitude_distribution.lat_range)
         vis = spot_model.visibility
-        return cls(
+        lc = cls(
             peq=vis.peq if vis is not None else kwargs.pop("peq", 4.0),
             kappa=vis.kappa if vis is not None else kwargs.pop("kappa", 0.0),
             inc=vis.inc if vis is not None else kwargs.pop("inc", np.pi / 2),
@@ -433,6 +446,25 @@ class LightcurveModel(AnimationMixin):
             grow=(spot_model.envelope is not None),
             **kwargs,
         )
+
+        # The simulated amplitude comes from (rate, fspot, alpha_max), never
+        # from spot_model.sigma_k.  A model built from sigma_k silently gets
+        # the default alpha_max = 0.1 above, so flag any disagreement.
+        lo, hi = lc._tmax_window()
+        rate = lc.nspot_rate if lc.nspot_rate is not None else lc.nspot / (hi - lo)
+        sigma_k_sim = np.sqrt(rate) * (1.0 - lc.fspot) * lc.alpha_max ** 2
+        sigma_k_model = np.sqrt(spot_model.sigma_k_sq_expected)
+        if not np.isclose(sigma_k_sim, sigma_k_model, rtol=1e-6):
+            warnings.warn(
+                f"LightcurveModel.from_spot_model: the simulated spots have "
+                f"sqrt(nspot_rate) (1 - fspot) alpha_max^2 = {sigma_k_sim:.4g} "
+                f"(nspot_rate={rate:.4g}, fspot={lc.fspot}, "
+                f"alpha_max={lc.alpha_max}), but spot_model.sigma_k = "
+                f"{sigma_k_model:.4g}.  The simulation does not use sigma_k; "
+                f"build the SpotEvolutionModel from (nspot_rate, fspot, "
+                f"alpha_max) and pass the same nspot_rate here.",
+                stacklevel=2)
+        return lc
 
     @classmethod
     def from_hparam(cls, hparam: dict, nspot: int = None, *,
@@ -488,12 +520,14 @@ class LightcurveModel(AnimationMixin):
             raise TypeError("Invalid datatype for model parameter. "
                             "Valid types: int, float, list, np.ndarray")
 
+    def _tmax_window(self):
+        """Emergence-time range whose spots overlap ``[0, tsim]``."""
+        return (-(self.lspot/2 + self.tdec), self.tsim + self.lspot/2 + self.tem)
+
     def _assign_tmax(self, tmax, rng=None):
         rng = np.random if rng is None else rng
         if tmax is None:
-            return rng.uniform(-(self.lspot/2 + self.tdec),
-                               self.tsim + self.lspot/2 + self.tem,
-                               self.nspot)
+            return rng.uniform(*self._tmax_window(), self.nspot)
         elif isinstance(tmax, float):
             return np.full(self.nspot, tmax)
         else:

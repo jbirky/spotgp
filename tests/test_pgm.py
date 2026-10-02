@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from spotgp import GPSolver
+from spotgp import GPSolver, JitterTerm, KernelSum, SpotTerm
 from spotgp.pgm import (
     PGModelVis, _strip_log_prefix,
     ROTATION_KEYS, ENVELOPE_KEYS, LATITUDE_KEYS, AMPLITUDE_KEYS,
@@ -16,6 +16,14 @@ from spotgp.pgm import (
 def solver(default_hparam, synthetic_data):
     x, y, yerr = synthetic_data
     return GPSolver(x, y, yerr, default_hparam, n_lat=8)
+
+
+def _jitter_solver(default_hparam, synthetic_data):
+    """Spot term plus a JitterTerm, the solver's only white-noise parameter."""
+    x, y, yerr = synthetic_data
+    kernel = KernelSum(SpotTerm(default_hparam, prefix="spot", n_lat=8),
+                       JitterTerm(prefix="jit"))
+    return GPSolver(x, y, yerr, kernel)
 
 
 class TestStripLogPrefix:
@@ -69,10 +77,9 @@ class TestCategorization:
     def test_no_noise_param_when_not_fit(self, solver):
         assert PGModelVis(solver).noise_params == []
 
-    def test_noise_param_when_fit_sigma_n(self, default_hparam, synthetic_data):
-        x, y, yerr = synthetic_data
-        gp = GPSolver(x, y, yerr, default_hparam, n_lat=8, fit_sigma_n=True)
-        assert PGModelVis(gp).noise_params == ["sigma_n"]
+    def test_noise_param_with_jitter_term(self, default_hparam, synthetic_data):
+        gp = _jitter_solver(default_hparam, synthetic_data)
+        assert PGModelVis(gp).noise_params == ["sigma_j"]
 
     def test_categorization_covers_all_param_keys(self, solver):
         """No free parameter should be silently dropped from the diagram."""
@@ -111,8 +118,7 @@ class TestGroups:
         assert groups["rotation"]["intermediate"] == "V"
 
     def test_noise_group_targets_data(self, default_hparam, synthetic_data):
-        x, y, yerr = synthetic_data
-        gp = GPSolver(x, y, yerr, default_hparam, n_lat=8, fit_sigma_n=True)
+        gp = _jitter_solver(default_hparam, synthetic_data)
         groups = {g["name"]: g for g in PGModelVis(gp)._build_groups()}
         assert groups["noise"]["target"] == "y_i"
 
@@ -189,13 +195,12 @@ class TestRender:
         fig = PGModelVis(solver).render(dpi=200)
         assert fig.dpi == pytest.approx(200)
 
-    def test_render_with_sigma_n(self, default_hparam, synthetic_data):
+    def test_render_with_jitter_term(self, default_hparam, synthetic_data):
         pytest.importorskip("daft")
         import matplotlib
         matplotlib.use("Agg")
         from matplotlib.figure import Figure
-        x, y, yerr = synthetic_data
-        gp = GPSolver(x, y, yerr, default_hparam, n_lat=8, fit_sigma_n=True)
+        gp = _jitter_solver(default_hparam, synthetic_data)
         assert isinstance(PGModelVis(gp).render(), Figure)
 
 

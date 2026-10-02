@@ -21,7 +21,7 @@ import pytest
 from spotgp import AnalyticKernel, GPSolver, SpotEvolutionModel
 from spotgp.analytic_kernel import _kernel_eval
 from spotgp.gp_solver import _gp_log_likelihood, _gp_log_likelihood_banded
-from spotgp.terms import DEFAULT_TERM_BOUNDS, KernelSum, SpotTerm
+from spotgp.terms import DEFAULT_TERM_BOUNDS, JitterTerm, KernelSum, SpotTerm
 
 HPARAM = dict(peq=10.0, kappa=0.2, inc=np.pi / 4, lspot=5.0,
               tau_spot=1.0, sigma_k=0.01)
@@ -45,60 +45,68 @@ RTOL = 1e-12
 # bit-identical across that commit (R_Gamma, |c_n|^2, k_of_lag), and
 # feeding median-normalized data to the new code reproduces the previous
 # pins to ~1 ulp; only the data preprocessing moved.
+#
+# Re-captured again when the solver stopped adding a fixed 1e-8 to the
+# covariance diagonal (white noise now enters only through yerr and a
+# JitterTerm), and the logspace case moved from fit_sigma_n to a
+# JitterTerm.  Feeding yerr**2 + 1e-8 to the new code reproduces the
+# previous pins to <= 2.2e-16 relative (logspace: 8.9e-15 on logL_fn,
+# logpost and grad0; its logL_init now includes the jitter's initial
+# 1e-12), so only the removed constant moved.
 PINS = {
     "uniform/cholesky_banded": {
-        "logL_fn": 537.1860296386888,
-        "logL_init": 537.1860296386886,
-        "logpost": 526.5461357664908,
-        "grad0": 0.5237665446488494,
+        "logL_fn": 537.2150059076002,
+        "logL_init": 537.2150059076002,
+        "logpost": 526.5751120354023,
+        "grad0": 0.5237582439107449,
     },
     "uniform/cholesky_full": {
-        "logL_fn": 537.1860296386886,
-        "logL_init": 537.1860296386886,
-        "logpost": 526.5461357664907,
-        "grad0": 0.5237665446488572,
+        "logL_fn": 537.2150059076002,
+        "logL_init": 537.2150059076002,
+        "logpost": 526.5751120354023,
+        "grad0": 0.5237582439107419,
     },
     "irregular/cholesky_banded": {
-        "logL_fn": 532.1959798323368,
-        "logL_init": 532.1959798323368,
-        "logpost": 521.5560859601388,
-        "grad0": 0.4818934523316618,
+        "logL_fn": 532.1971730200656,
+        "logL_init": 532.1971730200657,
+        "logpost": 521.5572791478677,
+        "grad0": 0.4819720143582926,
     },
     "irregular/cholesky_full": {
-        "logL_fn": 532.1959798323365,
-        "logL_init": 532.1959798323367,
-        "logpost": 521.5560859601386,
-        "grad0": 0.4818934523316629,
+        "logL_fn": 532.1971730200656,
+        "logL_init": 532.1971730200656,
+        "logpost": 521.5572791478677,
+        "grad0": 0.4819720143582936,
     },
     "gappy/cholesky_banded": {
-        "logL_fn": 538.311925689684,
-        "logL_init": 538.311925689684,
-        "logpost": 527.6720318174861,
-        "grad0": 0.47621264579436473,
+        "logL_fn": 538.3426373340722,
+        "logL_init": 538.3426373340722,
+        "logpost": 527.7027434618742,
+        "grad0": 0.47622845636241506,
     },
     "gappy/cholesky_full": {
-        "logL_fn": 538.3119256896839,
-        "logL_init": 538.3119256896838,
-        "logpost": 527.672031817486,
-        "grad0": 0.47621264579436773,
+        "logL_fn": 538.3426373340723,
+        "logL_init": 538.3426373340722,
+        "logpost": 527.7027434618743,
+        "grad0": 0.4762284563624155,
     },
     "uniform/banded/logspace": {
-        "logL_fn": 537.1860267366094,
-        "logL_init": 537.1860296386886,
-        "logpost": 522.7650758848323,
-        "grad0": 0.5237665454471901,
+        "logL_fn": 537.2150030144428,
+        "logL_init": 537.2150030144429,
+        "logpost": 522.7940521626657,
+        "grad0": 0.5237582447726381,
     },
     "uniform/banded/gl": {
-        "logL_fn": 537.2047375380822,
-        "logL_init": 537.2047375380822,
-        "logpost": 526.5648436658843,
-        "grad0": 0.5296000004897113,
+        "logL_fn": 537.2337325379357,
+        "logL_init": 537.2337325379357,
+        "logpost": 526.5938386657377,
+        "grad0": 0.5295923172904206,
     },
     "uniform/banded/b40": {
-        "logL_fn": 548.026479643483,
-        "logL_init": 548.026479643483,
-        "logpost": 537.386585771285,
-        "grad0": 0.5471215519469179,
+        "logL_fn": 548.0732093378223,
+        "logL_init": 548.0732093378224,
+        "logpost": 537.4333154656243,
+        "grad0": 0.5472313056963278,
     },
 }
 
@@ -162,14 +170,17 @@ class TestPinnedRegression:
         np.testing.assert_allclose(np.asarray(gp.theta0), EXPECTED_THETA0)
         _check_case(gp, PINS[f"{grid}/{solver}"])
 
-    def test_pinned_logspace_sigma_n(self):
+    def test_pinned_logspace_jitter(self):
         x, y = _capture_grids()["uniform"]
-        bounds = {"log_sigma_k": (-6.0, 0.0), "log_sigma_n": (-6.0, -1.0)}
-        gp = GPSolver(x, y, 0.002 * np.ones_like(x), dict(HPARAM),
-                      matrix_solver="cholesky_banded",
-                      fit_sigma_n=True, bounds=bounds)
-        assert tuple(gp.param_keys) == EXPECTED_KEYS[:5] + (
-            "log_sigma_k", "log_sigma_n")
+        bounds = {"spot.log_sigma_k": (-6.0, 0.0),
+                  "jit.log_sigma_j": (-6.0, -1.0)}
+        kernel = KernelSum(SpotTerm(dict(HPARAM), prefix="spot"),
+                           JitterTerm(sigma_j=1e-6, prefix="jit"))
+        gp = GPSolver(x, y, 0.002 * np.ones_like(x), kernel,
+                      matrix_solver="cholesky_banded", bounds=bounds)
+        assert tuple(gp.param_keys) == tuple(
+            f"spot.{k}" for k in EXPECTED_KEYS[:5]) + (
+            "spot.log_sigma_k", "jit.log_sigma_j")
         np.testing.assert_allclose(
             np.asarray(gp.theta0), EXPECTED_THETA0[:5] + [-2.0, -6.0])
         _check_case(gp, PINS["uniform/banded/logspace"])
@@ -213,9 +224,8 @@ class TestSeamMatchesLegacyClosure:
                 0.0, gp.n_harmonics))
         else:
             eo_cn = None
-        n_kernel = len(model.param_keys)
         common = dict(
-            n_kernel=n_kernel, r_gamma_func=r_gamma_fn,
+            r_gamma_func=r_gamma_fn,
             quad_nodes=gp._quad_nodes, quad_weights=gp._quad_weights,
             edgeon_cn_sq=eo_cn, lat_weight_func=lat_wt_fn,
             cn_sq_func=cn_sq_fn, uniform_dt=gp.uniform_dt)
@@ -226,7 +236,7 @@ class TestSeamMatchesLegacyClosure:
                 return _gp_log_likelihood_banded(
                     gp._to_physical(theta_arr), gp.x, gp.y, gp.yerr,
                     gp.mean_val, gp.n_harmonics, gp.n_lat, gp.lat_range,
-                    gp.fit_sigma_n, gp.bandwidth,
+                    gp.bandwidth,
                     band_lag_table=band_tab, **common)
         else:
             full_tab = gp._full_lag_table()
@@ -235,7 +245,7 @@ class TestSeamMatchesLegacyClosure:
                 return _gp_log_likelihood(
                     gp._to_physical(theta_arr), gp.x, gp.y, gp.yerr,
                     gp.mean_val, gp.n_harmonics, gp.n_lat, gp.lat_range,
-                    gp.fit_sigma_n, lag_table=full_tab, **common)
+                    lag_table=full_tab, **common)
 
         return float(jax.jit(raw)(gp.theta0))
 

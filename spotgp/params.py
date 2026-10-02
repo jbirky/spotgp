@@ -70,7 +70,6 @@ __all__ = [
     # Constants
     "BASE_REQUIRED_KEYS",
     "KERNEL_HPARAM_KEYS",
-    "HPARAM_KEYS_WITH_NOISE",
     # Backward-compat aliases (used by existing imports in analytic_kernel / gp_solver)
     "_REQUIRED_KEYS",
     "_AMPLITUDE_KEYS_SIGMA",
@@ -87,9 +86,6 @@ BASE_REQUIRED_KEYS: FrozenSet[str] = frozenset({"peq", "kappa", "inc", "lspot"})
 # Canonical ordered tuple for theta vectors, corner-plot labels, etc.
 # GPSolver and MCMCSampler use this to map array positions to param names.
 KERNEL_HPARAM_KEYS: tuple[str, ...] = ("peq", "kappa", "inc", "lspot", "tau_spot", "sigma_k")
-
-# Extended version that includes the optional white-noise term
-HPARAM_KEYS_WITH_NOISE: tuple[str, ...] = KERNEL_HPARAM_KEYS + ("sigma_n",)
 
 # Backward-compat aliases — existing modules import these by name
 _REQUIRED_KEYS: FrozenSet[str] = BASE_REQUIRED_KEYS | {"tau_spot"}

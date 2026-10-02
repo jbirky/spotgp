@@ -13,6 +13,16 @@ the single-band analysis.
 The factorized structure means the multi-band covariance matrix is a
 rank-1 Kronecker product in band space, preserving the banded temporal
 structure and O(Nb²) scaling of the single-band solver.
+
+The covariance is the chromatic kernel plus ``diag(yerr**2)``; the solvers
+add nothing else to the diagonal.
+
+TODO: implement a white-noise (jitter) term for ``MultiBandGPSolver`` and
+``SpotFaculaeGPSolver``, the counterpart of ``JitterTerm`` in ``GPSolver``
+(consider one amplitude per band, since photometric noise differs between
+instruments).  Until then these solvers cannot fit white noise beyond
+``yerr``, and nothing regularizes a covariance that fails to
+Cholesky-factorize.
 """
 import os
 import jax
@@ -34,8 +44,26 @@ from .gp_solver import (
     _gp_log_likelihood, GPSolver,
 )
 from .banded_cholesky import banded_cholesky_compact, banded_solve_compact
+from .validation import warn_cholesky_failure
 
 __all__ = ["MultiBandData", "MultiBandGPSolver", "SpotFaculaeGPSolver"]
+
+# What a Cholesky-failure warning suggests until these solvers support a
+# jitter term (see the TODO in the module docstring).
+_NO_JITTER_SUGGESTION = (
+    "The multiband solvers add only yerr**2 to the covariance diagonal and "
+    "have no white-noise (jitter) term yet (see the TODO in "
+    "spotgp/multiband.py); check yerr and the kernel parameters.")
+
+
+def _reject_fit_sigma_n(kernel_kwargs, solver_name):
+    """Fail loudly instead of forwarding the removed flag to the kernel."""
+    if "fit_sigma_n" in kernel_kwargs:
+        raise TypeError(
+            f"{solver_name} no longer accepts fit_sigma_n: it adds only "
+            "yerr**2 to the covariance diagonal. A white-noise (jitter) "
+            "term for the multiband solvers is not implemented yet (see the "
+            "TODO in spotgp/multiband.py).")
 
 
 class MultiBandData:
@@ -113,7 +141,7 @@ def _multiband_log_likelihood_banded(
         theta_full, x, y, yerr, mean_val,
         band_indices, band_wavelengths, T_phot,
         harmonics, n_lat, lat_range,
-        fit_sigma_n, bandwidth, n_kernel,
+        bandwidth, n_kernel,
         r_gamma_func=None,
         quad_nodes=None, quad_weights=None,
         edgeon_cn_sq=None,
@@ -123,19 +151,16 @@ def _multiband_log_likelihood_banded(
     Multi-band GP log-likelihood using banded Cholesky.
 
     Builds the geometric kernel in compact banded storage, scales each
-    entry by the per-observation contrast factors, adds noise, and solves.
+    entry by the per-observation contrast factors, adds the measurement
+    noise, and solves.
     """
     if contrast_fn is None:
         contrast_fn = _default_contrast_factor
     N = x.shape[0]
 
-    # Split theta: [kernel_params..., T_spot, (sigma_n)]
+    # Split theta: [kernel_params..., T_spot]
     theta_kernel = theta_full[:n_kernel]
     T_spot = theta_full[n_kernel]
-    if fit_sigma_n:
-        sigma_n = theta_full[n_kernel + 1]
-    else:
-        sigma_n = 0.0
 
     # Contrast factors per band → per observation
     c_bands = contrast_fn(band_wavelengths, T_spot, T_phot)
@@ -158,9 +183,8 @@ def _multiband_log_likelihood_banded(
     contrast_scale = c_obs[j_idx] * c_obs[i_idx]
     cb = cb * contrast_scale
 
-    # Add noise to diagonal (row 0 of compact storage)
-    noise_var = yerr ** 2 + sigma_n ** 2
-    cb = cb.at[0, :].add(noise_var + 1e-8)
+    # Measurement noise on the diagonal (row 0 of compact storage)
+    cb = cb.at[0, :].add(yerr ** 2)
 
     # Cholesky factorize and solve
     Lc = banded_cholesky_compact(cb, bandwidth)
@@ -177,7 +201,7 @@ def _multiband_log_likelihood_full(
         theta_full, x, y, yerr, mean_val,
         band_indices, band_wavelengths, T_phot,
         harmonics, n_lat, lat_range,
-        fit_sigma_n, n_kernel,
+        n_kernel,
         r_gamma_func=None,
         quad_nodes=None, quad_weights=None,
         edgeon_cn_sq=None,
@@ -192,10 +216,6 @@ def _multiband_log_likelihood_full(
 
     theta_kernel = theta_full[:n_kernel]
     T_spot = theta_full[n_kernel]
-    if fit_sigma_n:
-        sigma_n = theta_full[n_kernel + 1]
-    else:
-        sigma_n = 0.0
 
     c_bands = contrast_fn(band_wavelengths, T_spot, T_phot)
     c_obs = c_bands[band_indices]
@@ -219,8 +239,7 @@ def _multiband_log_likelihood_full(
     K = K.at[row_idx, col_idx].set(K_upper)
     K = K + K.T - jnp.diag(jnp.diag(K))
 
-    noise_var = yerr ** 2 + sigma_n ** 2
-    K_noise = K + jnp.diag(noise_var) + 1e-8 * jnp.eye(N)
+    K_noise = K + jnp.diag(yerr ** 2)
 
     L = jax.scipy.linalg.cholesky(K_noise, lower=True)
     resid = y - mean_val
@@ -256,8 +275,6 @@ class MultiBandGPSolver:
         Photospheric effective temperature [K].  Assumed known.
     T_spot_init : float
         Initial spot temperature [K] for optimization/sampling.
-    fit_sigma_n : bool
-        Whether to include white noise sigma_n as a free parameter.
     bounds : dict or None
         Parameter bounds.  Keys are the same as single-band GPSolver,
         plus ``"T_spot"`` (and optionally ``"log_T_spot"`` for log-space).
@@ -269,6 +286,11 @@ class MultiBandGPSolver:
         Banded solver bandwidth (auto-computed from bounds if None).
     kernel_kwargs : dict
         Extra kwargs forwarded to AnalyticKernel.
+
+    Notes
+    -----
+    The covariance is the chromatic kernel plus ``diag(yerr**2)``; there is
+    no white-noise parameter yet (see the TODO in the module docstring).
     """
 
     DEFAULT_BOUNDS = {
@@ -277,11 +299,12 @@ class MultiBandGPSolver:
     }
 
     def __init__(self, data, model_or_hparam, T_phot, T_spot_init=None,
-                 fit_sigma_n=False, bounds=None, log_prior=None,
+                 bounds=None, log_prior=None,
                  matrix_solver="cholesky_banded", bandwidth=None,
                  contrast_model=None,
                  **kernel_kwargs):
 
+        _reject_fit_sigma_n(kernel_kwargs, "MultiBandGPSolver")
         if not isinstance(data, MultiBandData):
             raise TypeError("data must be a MultiBandData instance")
 
@@ -324,17 +347,14 @@ class MultiBandGPSolver:
 
         # Matrix solver
         self.matrix_solver = matrix_solver
-        self.fit_sigma_n = fit_sigma_n
 
         # Build kernel (for config: harmonics, n_lat, lat_range, etc.)
         self.kernel = AnalyticKernel(self.spot_model, **kernel_kwargs)
 
-        # Parameter keys: standard kernel + T_spot + optional sigma_n
+        # Parameter keys: standard kernel + T_spot
         _model_keys = self.spot_model.param_keys
         self._n_kernel = len(_model_keys)
         _base_keys = _model_keys + ("T_spot",)
-        if fit_sigma_n:
-            _base_keys = _base_keys + ("sigma_n",)
 
         # Log-space parameter detection
         self._log_param_map = {}
@@ -403,10 +423,6 @@ class MultiBandGPSolver:
         _phys_theta0 = dict(
             zip(self.spot_model.param_keys, self.spot_model.theta0))
         _phys_theta0["T_spot"] = self.T_spot_init
-        if fit_sigma_n:
-            _phys_theta0["sigma_n"] = float(
-                self.hparam.get("sigma_n",
-                                self.DEFAULT_BOUNDS["sigma_n"][0]))
         self.theta0 = jnp.array([
             np.log10(float(_phys_theta0.get(self._log_param_map[k], 0.0)))
             if k in self._log_param_map
@@ -464,7 +480,6 @@ class MultiBandGPSolver:
         mean_val = self.mean_val
         n_h, n_l, lr = self.harmonics, self.n_lat, self.lat_range
         custom_prior = self._custom_log_prior
-        fit_sn = self.fit_sigma_n
         qn, qw = self._quad_nodes, self._quad_weights
         to_phys = self._to_physical
         n_kernel = self._n_kernel
@@ -496,7 +511,7 @@ class MultiBandGPSolver:
                 ll = _multiband_log_likelihood_banded(
                     theta_phys, x, y, yerr, mean_val,
                     bi, bw, T_phot,
-                    n_h, n_l, lr, fit_sn, b, n_kernel,
+                    n_h, n_l, lr, b, n_kernel,
                     r_gamma_func=r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
@@ -512,7 +527,7 @@ class MultiBandGPSolver:
                 ll = _multiband_log_likelihood_full(
                     theta_phys, x, y, yerr, mean_val,
                     bi, bw, T_phot,
-                    n_h, n_l, lr, fit_sn, n_kernel,
+                    n_h, n_l, lr, n_kernel,
                     r_gamma_func=r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
@@ -543,7 +558,7 @@ class MultiBandGPSolver:
                 return _multiband_log_likelihood_banded(
                     to_phys(theta_arr), x, y, yerr, mean_val,
                     bi, bw, T_phot,
-                    n_h, n_l, lr, fit_sn, b, n_kernel,
+                    n_h, n_l, lr, b, n_kernel,
                     r_gamma_func=r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
@@ -555,7 +570,7 @@ class MultiBandGPSolver:
                 return _multiband_log_likelihood_full(
                     to_phys(theta_arr), x, y, yerr, mean_val,
                     bi, bw, T_phot,
-                    n_h, n_l, lr, fit_sn, n_kernel,
+                    n_h, n_l, lr, n_kernel,
                     r_gamma_func=r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
@@ -567,8 +582,13 @@ class MultiBandGPSolver:
 
     def build_jax(self):
         """Pre-compile and warm up JIT functions."""
-        _ = self.log_posterior(self.theta0).block_until_ready()
+        logpost0 = self.log_posterior(self.theta0).block_until_ready()
         _ = self.grad_log_posterior(self.theta0).block_until_ready()
+        if not bool(jnp.isfinite(logpost0)):
+            warn_cholesky_failure(
+                "build_jax (log-posterior at theta0)", theta=self.theta0,
+                param_keys=self.param_keys, bounds=self.bounds,
+                suggestion=_NO_JITTER_SUGGESTION)
         return self
 
     def log_likelihood_at(self, theta_arr):
@@ -602,9 +622,9 @@ class MultiBandGPSolver:
                     float(theta.get(k, 0.0)) for k in self.param_keys])
             else:
                 theta_arr = jnp.asarray(theta)
-            theta_phys = self._to_physical(theta_arr)
         else:
-            theta_phys = self._to_physical(self.theta0)
+            theta_arr = self.theta0
+        theta_phys = self._to_physical(theta_arr)
 
         theta_kernel = theta_phys[:self._n_kernel]
         T_spot = float(theta_phys[self._n_kernel])
@@ -635,13 +655,13 @@ class MultiBandGPSolver:
         K = K.at[row_idx, col_idx].set(K_upper)
         K = K + K.T - jnp.diag(jnp.diag(K))
 
-        sigma_n = 0.0
-        if self.fit_sigma_n:
-            sigma_n = float(theta_phys[self._n_kernel + 1])
-        noise_var = self.yerr ** 2 + sigma_n ** 2
-        K_noise = K + jnp.diag(noise_var) + 1e-8 * jnp.eye(N)
+        K_noise = K + jnp.diag(self.yerr ** 2)
 
         L = jax.scipy.linalg.cholesky(K_noise, lower=True)
+        if not bool(jnp.all(jnp.isfinite(jnp.diag(L)))):
+            warn_cholesky_failure(
+                "predict", theta=theta_arr, param_keys=self.param_keys,
+                bounds=self.bounds, suggestion=_NO_JITTER_SUGGESTION)
         resid = self.y - self.mean_val
         alpha = jax.scipy.linalg.cho_solve((L, True), resid)
 
@@ -718,7 +738,7 @@ def _spotfac_log_likelihood_banded(
         theta_full, x, y, yerr, mean_val,
         band_indices, band_wavelengths, T_phot,
         harmonics, n_lat, lat_range,
-        fit_sigma_n, bandwidth, n_kernel,
+        bandwidth, n_kernel,
         r_gamma_func=None,
         quad_nodes=None, quad_weights=None,
         edgeon_cn_sq=None,
@@ -731,7 +751,7 @@ def _spotfac_log_likelihood_banded(
         C(lambda_i, lambda_j) = c_s(lambda_i)*c_s(lambda_j)
                               + w_fac * c_f(lambda_i)*c_f(lambda_j)
 
-    theta_full layout: [kernel_params..., T_spot, T_fac, w_fac, (sigma_n)]
+    theta_full layout: [kernel_params..., T_spot, T_fac, w_fac]
     """
     if contrast_fn is None:
         contrast_fn = _default_contrast_factor
@@ -741,10 +761,6 @@ def _spotfac_log_likelihood_banded(
     T_spot = theta_full[n_kernel]
     T_fac = theta_full[n_kernel + 1]
     w_fac = theta_full[n_kernel + 2]
-    if fit_sigma_n:
-        sigma_n = theta_full[n_kernel + 3]
-    else:
-        sigma_n = 0.0
 
     c_spot_bands = contrast_fn(band_wavelengths, T_spot, T_phot)
     c_fac_bands = contrast_fn(band_wavelengths, T_fac, T_phot)
@@ -767,8 +783,7 @@ def _spotfac_log_likelihood_banded(
                       + w_fac * c_fac_obs[j_idx] * c_fac_obs[i_idx])
     cb = cb * contrast_scale
 
-    noise_var = yerr ** 2 + sigma_n ** 2
-    cb = cb.at[0, :].add(noise_var + 1e-8)
+    cb = cb.at[0, :].add(yerr ** 2)
 
     Lc = banded_cholesky_compact(cb, bandwidth)
     resid = y - mean_val
@@ -784,7 +799,7 @@ def _spotfac_log_likelihood_full(
         theta_full, x, y, yerr, mean_val,
         band_indices, band_wavelengths, T_phot,
         harmonics, n_lat, lat_range,
-        fit_sigma_n, n_kernel,
+        n_kernel,
         r_gamma_func=None,
         quad_nodes=None, quad_weights=None,
         edgeon_cn_sq=None,
@@ -793,7 +808,7 @@ def _spotfac_log_likelihood_full(
     """
     Spots + faculae GP log-likelihood using full Cholesky.
 
-    theta_full layout: [kernel_params..., T_spot, T_fac, w_fac, (sigma_n)]
+    theta_full layout: [kernel_params..., T_spot, T_fac, w_fac]
     """
     if contrast_fn is None:
         contrast_fn = _default_contrast_factor
@@ -803,10 +818,6 @@ def _spotfac_log_likelihood_full(
     T_spot = theta_full[n_kernel]
     T_fac = theta_full[n_kernel + 1]
     w_fac = theta_full[n_kernel + 2]
-    if fit_sigma_n:
-        sigma_n = theta_full[n_kernel + 3]
-    else:
-        sigma_n = 0.0
 
     c_spot_bands = contrast_fn(band_wavelengths, T_spot, T_phot)
     c_fac_bands = contrast_fn(band_wavelengths, T_fac, T_phot)
@@ -830,8 +841,7 @@ def _spotfac_log_likelihood_full(
     K = K.at[row_idx, col_idx].set(K_upper)
     K = K + K.T - jnp.diag(jnp.diag(K))
 
-    noise_var = yerr ** 2 + sigma_n ** 2
-    K_noise = K + jnp.diag(noise_var) + 1e-8 * jnp.eye(N)
+    K_noise = K + jnp.diag(yerr ** 2)
 
     L = jax.scipy.linalg.cholesky(K_noise, lower=True)
     resid = y - mean_val
@@ -877,8 +887,6 @@ class SpotFaculaeGPSolver:
         Initial facular temperature [K].  Default: T_phot + 300.
     w_fac_init : float
         Initial facular weight.  Default: 0.5.
-    fit_sigma_n : bool
-        Whether to include white noise sigma_n as a free parameter.
     bounds : dict or None
         Parameter bounds.  Standard keys plus ``"T_spot"``, ``"T_fac"``,
         ``"w_fac"`` (and log-space variants).
@@ -891,6 +899,11 @@ class SpotFaculaeGPSolver:
     contrast_model : object or None
         Custom contrast model with ``.contrast_factor(lam, T, T_phot)``
         and ``.make_contrast_fn(band_wavelengths)`` methods.
+
+    Notes
+    -----
+    The covariance is the chromatic kernel plus ``diag(yerr**2)``; there is
+    no white-noise parameter yet (see the TODO in the module docstring).
     """
 
     DEFAULT_BOUNDS = {
@@ -902,11 +915,12 @@ class SpotFaculaeGPSolver:
 
     def __init__(self, data, model_or_hparam, T_phot, T_spot_init=None,
                  T_fac_init=None, w_fac_init=0.5,
-                 fit_sigma_n=False, bounds=None, log_prior=None,
+                 bounds=None, log_prior=None,
                  matrix_solver="cholesky_banded", bandwidth=None,
                  contrast_model=None,
                  **kernel_kwargs):
 
+        _reject_fit_sigma_n(kernel_kwargs, "SpotFaculaeGPSolver")
         if not isinstance(data, MultiBandData):
             raise TypeError("data must be a MultiBandData instance")
 
@@ -948,15 +962,12 @@ class SpotFaculaeGPSolver:
 
         self.mean_val = float(jnp.mean(self.y))
         self.matrix_solver = matrix_solver
-        self.fit_sigma_n = fit_sigma_n
 
         self.kernel = AnalyticKernel(self.spot_model, **kernel_kwargs)
 
         _model_keys = self.spot_model.param_keys
         self._n_kernel = len(_model_keys)
         _base_keys = _model_keys + ("T_spot", "T_fac", "w_fac")
-        if fit_sigma_n:
-            _base_keys = _base_keys + ("sigma_n",)
 
         self._log_param_map = {}
         if isinstance(bounds, dict):
@@ -1021,10 +1032,6 @@ class SpotFaculaeGPSolver:
         _phys_theta0["T_spot"] = self.T_spot_init
         _phys_theta0["T_fac"] = self.T_fac_init
         _phys_theta0["w_fac"] = self.w_fac_init
-        if fit_sigma_n:
-            _phys_theta0["sigma_n"] = float(
-                self.hparam.get("sigma_n",
-                                self.DEFAULT_BOUNDS["sigma_n"][0]))
         self.theta0 = jnp.array([
             np.log10(float(_phys_theta0.get(self._log_param_map[k], 0.0)))
             if k in self._log_param_map
@@ -1074,7 +1081,6 @@ class SpotFaculaeGPSolver:
         mean_val = self.mean_val
         n_h, n_l, lr = self.harmonics, self.n_lat, self.lat_range
         custom_prior = self._custom_log_prior
-        fit_sn = self.fit_sigma_n
         qn, qw = self._quad_nodes, self._quad_weights
         to_phys = self._to_physical
         n_kernel = self._n_kernel
@@ -1106,7 +1112,7 @@ class SpotFaculaeGPSolver:
                 ll = _spotfac_log_likelihood_banded(
                     theta_phys, x, y, yerr, mean_val,
                     bi, bw, T_phot,
-                    n_h, n_l, lr, fit_sn, b, n_kernel,
+                    n_h, n_l, lr, b, n_kernel,
                     r_gamma_func=r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
@@ -1122,7 +1128,7 @@ class SpotFaculaeGPSolver:
                 ll = _spotfac_log_likelihood_full(
                     theta_phys, x, y, yerr, mean_val,
                     bi, bw, T_phot,
-                    n_h, n_l, lr, fit_sn, n_kernel,
+                    n_h, n_l, lr, n_kernel,
                     r_gamma_func=r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
@@ -1152,7 +1158,7 @@ class SpotFaculaeGPSolver:
                 return _spotfac_log_likelihood_banded(
                     to_phys(theta_arr), x, y, yerr, mean_val,
                     bi, bw, T_phot,
-                    n_h, n_l, lr, fit_sn, b, n_kernel,
+                    n_h, n_l, lr, b, n_kernel,
                     r_gamma_func=r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
@@ -1164,7 +1170,7 @@ class SpotFaculaeGPSolver:
                 return _spotfac_log_likelihood_full(
                     to_phys(theta_arr), x, y, yerr, mean_val,
                     bi, bw, T_phot,
-                    n_h, n_l, lr, fit_sn, n_kernel,
+                    n_h, n_l, lr, n_kernel,
                     r_gamma_func=r_gamma_fn,
                     quad_nodes=qn, quad_weights=qw,
                     edgeon_cn_sq=eo_cn,
@@ -1175,8 +1181,13 @@ class SpotFaculaeGPSolver:
         self.log_likelihood_fn = _log_likelihood_fn
 
     def build_jax(self):
-        _ = self.log_posterior(self.theta0).block_until_ready()
+        logpost0 = self.log_posterior(self.theta0).block_until_ready()
         _ = self.grad_log_posterior(self.theta0).block_until_ready()
+        if not bool(jnp.isfinite(logpost0)):
+            warn_cholesky_failure(
+                "build_jax (log-posterior at theta0)", theta=self.theta0,
+                param_keys=self.param_keys, bounds=self.bounds,
+                suggestion=_NO_JITTER_SUGGESTION)
         return self
 
     def log_likelihood_at(self, theta_arr):
@@ -1209,9 +1220,9 @@ class SpotFaculaeGPSolver:
                     float(theta.get(k, 0.0)) for k in self.param_keys])
             else:
                 theta_arr = jnp.asarray(theta)
-            theta_phys = self._to_physical(theta_arr)
         else:
-            theta_phys = self._to_physical(self.theta0)
+            theta_arr = self.theta0
+        theta_phys = self._to_physical(theta_arr)
 
         theta_kernel = theta_phys[:self._n_kernel]
         T_spot = float(theta_phys[self._n_kernel])
@@ -1250,13 +1261,13 @@ class SpotFaculaeGPSolver:
         K = K.at[row_idx, col_idx].set(K_upper)
         K = K + K.T - jnp.diag(jnp.diag(K))
 
-        sigma_n = 0.0
-        if self.fit_sigma_n:
-            sigma_n = float(theta_phys[self._n_kernel + 3])
-        noise_var = self.yerr ** 2 + sigma_n ** 2
-        K_noise = K + jnp.diag(noise_var) + 1e-8 * jnp.eye(N)
+        K_noise = K + jnp.diag(self.yerr ** 2)
 
         L = jax.scipy.linalg.cholesky(K_noise, lower=True)
+        if not bool(jnp.all(jnp.isfinite(jnp.diag(L)))):
+            warn_cholesky_failure(
+                "predict", theta=theta_arr, param_keys=self.param_keys,
+                bounds=self.bounds, suggestion=_NO_JITTER_SUGGESTION)
         resid = self.y - self.mean_val
         alpha = jax.scipy.linalg.cho_solve((L, True), resid)
 

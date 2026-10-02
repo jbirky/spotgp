@@ -19,7 +19,7 @@ ENVELOPE_KEYS = {"lspot", "tau_spot", "tau_em", "tau_dec", "sigma_sn", "n_sn"}
 LATITUDE_KEYS = {"lat_min", "lat_max"}
 AMPLITUDE_KEYS = {"sigma_k", "nspot_rate", "fspot", "alpha_max", "nspot"}
 MULTIBAND_KEYS = {"T_spot"}
-NOISE_KEYS = {"sigma_n"}
+NOISE_KEYS = {"sigma_j"}
 
 # ---------------------------------------------------------------------------
 # LaTeX labels
@@ -36,7 +36,7 @@ PARAM_LABELS = {
     "sigma_sn":   r"$\sigma_{\rm sn}$",
     "n_sn":       r"$n_{\rm sn}$",
     "sigma_k":    r"$\sigma_k$",
-    "sigma_n":    r"$\sigma_n$",
+    "sigma_j":    r"$\sigma_j$",
     "lat_min":    r"$\phi_{\rm min}$",
     "lat_max":    r"$\phi_{\rm max}$",
     "T_spot":     r"$T_{\rm spot}$",
@@ -59,7 +59,7 @@ PARAM_DESCRIPTIONS = {
     "sigma_sn":   "skew-normal width [days]",
     "n_sn":       "skew-normal skewness",
     "sigma_k":    "kernel amplitude",
-    "sigma_n":    "white noise std. dev.",
+    "sigma_j":    "white noise (jitter) std. dev.",
     "lat_min":    "minimum active latitude [rad]",
     "lat_max":    "maximum active latitude [rad]",
     "T_spot":     "spot temperature [K]",

@@ -58,3 +58,30 @@ class TestGPSolverTimeSeriesData:
         _, acf_unnorm = gp.compute_acf(n_bins=20, normalize=False)
         # Unnormalized should have larger absolute values
         assert np.max(np.abs(acf_unnorm)) != np.max(np.abs(acf_norm))
+
+
+class TestSaveLoadPreservesTimes:
+    """Reloading a solver must not shift the stored time axis again."""
+
+    def test_binned_times_survive_roundtrip(self, tmp_path):
+        from spotgp import load_gp, save_gp
+
+        rng = np.random.default_rng(0)
+        x = np.linspace(0.0, 30.0, 301)
+        y = 1.0 + 0.01 * np.sin(2 * np.pi * x / 10.0) + 0.002 * rng.standard_normal(x.size)
+        ts = TimeSeriesData(x, y, 0.002)
+        ts.downsample(dt=1.0)            # bin centers: first one at ~0.5 d, not 0
+        assert ts.x[0] > 0.0
+
+        hparam = dict(peq=10.0, kappa=0.2, inc=np.pi / 4, lspot=5.0,
+                      tau_spot=1.0, sigma_k=0.01)
+        gp = GPSolver(ts, hparam, matrix_solver="cholesky_full")
+        path = str(tmp_path / "binned.h5")
+        save_gp(path, gp)
+        gp2 = load_gp(path)
+
+        np.testing.assert_array_equal(np.asarray(gp2.x), np.asarray(gp.x))
+        assert gp2.data.x_offset == gp.data.x_offset
+        np.testing.assert_allclose(
+            float(gp2.log_likelihood_fn(gp2.theta0)),
+            float(gp.log_likelihood_fn(gp.theta0)), rtol=1e-12)

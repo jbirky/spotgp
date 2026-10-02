@@ -6,7 +6,6 @@ from spotgp.params import (
     resolve_hparam,
     BASE_REQUIRED_KEYS,
     KERNEL_HPARAM_KEYS,
-    HPARAM_KEYS_WITH_NOISE,
 )
 
 
@@ -62,9 +61,6 @@ class TestResolveHparam:
 class TestConstants:
     def test_kernel_hparam_keys_order(self):
         assert KERNEL_HPARAM_KEYS == ("peq", "kappa", "inc", "lspot", "tau_spot", "sigma_k")
-
-    def test_hparam_keys_with_noise(self):
-        assert HPARAM_KEYS_WITH_NOISE == KERNEL_HPARAM_KEYS + ("sigma_n",)
 
     def test_base_required_keys(self):
         assert BASE_REQUIRED_KEYS == frozenset({"peq", "kappa", "inc", "lspot"})
