@@ -66,7 +66,7 @@ Built-in envelopes:
 
 | Class | Parameters | Notes |
 |---|---|---|
-| `TrapezoidSymmetricEnvelope` | `lspot`, `tau_spot` | Analytic `Gamma_hat` and `R_Gamma` |
+| `TrapezoidSymmetricEnvelope` | `lspot`, `tau_spot` | Analytic `Gamma_hat` and `R_Gamma` (closed-form `R_Gamma` requires `lspot >= tau_spot`); `numerical=True` evaluates `R_Gamma` by FFT for any `lspot`, `tau_spot` |
 | `TrapezoidAsymmetricEnvelope` | `lspot`, `tau_em`, `tau_dec` | Analytic `R_Gamma`; rise ≠ decay |
 | `SkewedGaussianEnvelope` | `sigma_sn`, `n_sn` | Skew-normal shape |
 | `ExponentialEnvelope` | `tau_spot` | Analytic `Gamma_hat`, `R_Gamma` |
@@ -167,7 +167,7 @@ Built-in terms:
 | `SharedVisibilitySpotSum` | N spot populations sharing one star's geometry: K(τ) = V(τ) Σᵢ σ²ₖ,ᵢ R_Γ,ᵢ(τ). The latitude quadrature V(τ) is evaluated once per kernel call instead of once per population. | shared `peq`, `kappa`, `inc`, ⟨latitude⟩ + per-population `pop<i>.`⟨envelope⟩, `pop<i>.sigma_k` |
 | `SHOTerm` | Stochastically-driven damped harmonic oscillator (celerite); granulation / quasi-periodic noise floor. Closed-form covariance across all damping regimes. | `S0`, `Q`, `w0` |
 | `Matern32Term` | Matérn-3/2: σ²(1 + √3τ/ρ) exp(−√3τ/ρ) | `sigma`, `rho` |
-| `JitterTerm` | White noise k(τ) = σ_j² δ(τ). Exists for symmetry when composing; prefer the solver's `sigma_n` diagonal for a plain noise floor. | `sigma_j` |
+| `JitterTerm` | White noise k(τ) = σ_j² δ(τ). The solver adds only `yerr**2` to the diagonal, so this is how to fit white noise, and the regularizer to add if the covariance fails to Cholesky-factorize. | `sigma_j` |
 
 ```python
 kernel = KernelSum(

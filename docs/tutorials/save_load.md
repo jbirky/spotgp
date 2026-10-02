@@ -186,7 +186,7 @@ star.h5
 │   └── latitude/               # latitude distribution class + parameters
 │
 ├── config/                     # solver configuration
-│   ├── attrs: kernel_type, mean_val, fit_sigma_n, ...
+│   ├── attrs: kernel_type, mean_val, matrix_solver, ...
 │   ├── param_keys              # ordered parameter names
 │   ├── bounds                  # parameter bounds (n_params × 2)
 │   └── lat_range               # latitude integration range

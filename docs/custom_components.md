@@ -233,8 +233,9 @@ gp = GPSolver(x, y, yerr, kernel, bounds=bounds).build_jax()
 
 Available terms include `SpotTerm` (wrapping any `SpotEvolutionModel`, including
 custom envelopes, visibilities, and latitude distributions defined above), the
-`celerite`-style `SHOTerm`, and `Matern32Term`; pure white noise is handled more
-cheaply by the solver's diagonal $\sigma_n$ term.
+`celerite`-style `SHOTerm`, `Matern32Term`, and `JitterTerm`. The solver adds only
+$\sigma_{\rm err}^2$ (`yerr**2`) to the covariance diagonal, so fit white noise with a
+`JitterTerm`.
 
 When multiple spot populations live on the same star, the rotation and viewing
 geometry should be shared rather than duplicated. `SharedVisibilitySpotSum`

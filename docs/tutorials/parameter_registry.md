@@ -63,8 +63,7 @@ Internally, `resolve_hparam` does three things in order:
    Calls the spec's `formula()` function and injects the computed `sigma_k`.
 
 The returned dict contains all original keys plus any keys injected by the
-resolvers. Extra keys you include (e.g., `sigma_n` for white noise) are
-passed through untouched.
+resolvers. Extra keys you include are passed through untouched.
 
 ---
 
@@ -332,7 +331,6 @@ not a dict, `ValueError` if required keys are missing or no spec matches.
 |---|---|
 | `BASE_REQUIRED_KEYS` | `frozenset({"peq", "kappa", "inc", "lspot"})` |
 | `KERNEL_HPARAM_KEYS` | `("peq", "kappa", "inc", "lspot", "tau_spot", "sigma_k")` |
-| `HPARAM_KEYS_WITH_NOISE` | `KERNEL_HPARAM_KEYS + ("sigma_n",)` |
 
 ---
 
