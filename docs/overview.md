@@ -70,6 +70,7 @@ Built-in envelopes:
 | `TrapezoidAsymmetricEnvelope` | `lspot`, `tau_em`, `tau_dec` | Analytic `R_Gamma`; rise ≠ decay |
 | `SkewedGaussianEnvelope` | `sigma_sn`, `n_sn` | Skew-normal shape |
 | `ExponentialEnvelope` | `tau_spot` | Analytic `Gamma_hat`, `R_Gamma` |
+| `ExponentialPlateauEnvelope` | `tau_em`, `tau_plat`, `tau_dec` | Exponential rise, plateau and exponential decay of the spot radius (Birky et al. three-parameter profile); analytic `Gamma_hat` and `R_Gamma` |
 
 #### `visibility.py` — Stellar visibility function
 

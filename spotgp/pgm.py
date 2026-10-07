@@ -15,7 +15,7 @@ __all__ = ["PGModelVis"]
 # ---------------------------------------------------------------------------
 
 ROTATION_KEYS = {"peq", "kappa", "inc"}
-ENVELOPE_KEYS = {"lspot", "tau_spot", "tau_em", "tau_dec", "sigma_sn", "n_sn"}
+ENVELOPE_KEYS = {"lspot", "tau_spot", "tau_em", "tau_dec", "tau_plat", "sigma_sn", "n_sn"}
 LATITUDE_KEYS = {"lat_min", "lat_max"}
 AMPLITUDE_KEYS = {"sigma_k", "nspot_rate", "fspot", "alpha_max", "nspot"}
 MULTIBAND_KEYS = {"T_spot"}
@@ -33,6 +33,7 @@ PARAM_LABELS = {
     "tau_spot":   r"$\tau_{\rm spot}$",
     "tau_em":     r"$\tau_{\rm em}$",
     "tau_dec":    r"$\tau_{\rm dec}$",
+    "tau_plat":   r"$\tau_{\rm plat}$",
     "sigma_sn":   r"$\sigma_{\rm sn}$",
     "n_sn":       r"$n_{\rm sn}$",
     "sigma_k":    r"$\sigma_k$",
@@ -56,6 +57,7 @@ PARAM_DESCRIPTIONS = {
     "tau_spot":   "spot rise/decay timescale [days]",
     "tau_em":     "spot emergence timescale [days]",
     "tau_dec":    "spot decay timescale [days]",
+    "tau_plat":   "spot plateau duration (exponential envelope) [days]",
     "sigma_sn":   "skew-normal width [days]",
     "n_sn":       "skew-normal skewness",
     "sigma_k":    "kernel amplitude",

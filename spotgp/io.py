@@ -28,7 +28,7 @@ def _get_class_registry():
     from .envelope import (
         TrapezoidSymmetricEnvelope, TrapezoidAsymmetricEnvelope,
         SkewedGaussianEnvelope, ExponentialEnvelope,
-        ExponentialAsymmetricEnvelope,
+        ExponentialAsymmetricEnvelope, ExponentialPlateauEnvelope,
         LogisticPlateauEnvelope, DoubleTrapezoidEnvelope,
         DoubleTrapezoidAsymmetricEnvelope,
         TripleTrapezoidAsymmetricEnvelope,
@@ -49,6 +49,7 @@ def _get_class_registry():
         "SkewedGaussianEnvelope": SkewedGaussianEnvelope,
         "ExponentialEnvelope": ExponentialEnvelope,
         "ExponentialAsymmetricEnvelope": ExponentialAsymmetricEnvelope,
+        "ExponentialPlateauEnvelope": ExponentialPlateauEnvelope,
         "LogisticPlateauEnvelope": LogisticPlateauEnvelope,
         "DoubleTrapezoidEnvelope": DoubleTrapezoidEnvelope,
         "DoubleTrapezoidAsymmetricEnvelope": DoubleTrapezoidAsymmetricEnvelope,

@@ -31,6 +31,7 @@ __all__ = [
     "SkewedGaussianEnvelope",
     "ExponentialEnvelope",
     "ExponentialAsymmetricEnvelope",
+    "ExponentialPlateauEnvelope",
     "LogisticPlateauEnvelope",
     "ModulatedGammaEnvelope",
     # low-level helpers (re-exported for backward compat with analytic_kernel)
@@ -1500,6 +1501,225 @@ class ExponentialAsymmetricEnvelope(EnvelopeFunction):
 
     def kernel_support(self) -> float:
         return 6.0 * (self._tau_em + self._tau_dec)
+
+
+# ── Exponential envelope with a plateau (JAX helpers) ───────────────────────
+#
+# The three-parameter exponential profile of Birky et al. (eq:alpha_exp), in the
+# paper's convention: the plateau runs over [0, tau_plat], and tau_em, tau_dec are
+# the e-folding times of the spot radius alpha, so the normalized squared envelope
+# Gamma = alpha^2 / alpha_max^2 rises and decays at twice those rates.
+
+@jax.jit
+def _exp_plateau_gamma(t, tau_em, tau_plat, tau_dec):
+    """Gamma(t) with the plateau on [0, tau_plat] (Birky et al., eq:Gamma_exp)."""
+    t = jnp.asarray(t, dtype=float)
+    # exponents clamped so the branch not taken cannot overflow; the plateau owns
+    # t = 0 and t = tau_plat, as in the paper's cases (and so do the derivatives)
+    rise = jnp.exp(2.0 * jnp.minimum(t, 0.0) / tau_em)
+    decay = jnp.exp(-2.0 * jnp.maximum(t - tau_plat, 0.0) / tau_dec)
+    return jnp.where(t < 0.0, rise, jnp.where(t > tau_plat, decay, 1.0))
+
+
+@jax.jit
+def _exp_plateau_Gamma_hat_re(omega, tau_em, tau_plat, tau_dec):
+    """
+    Real part of Gamma_hat(omega) = Gamma_hat_R - i Gamma_hat_I for the plateau
+    on [0, tau_plat] (Birky et al., eq:Gamma_hat_exp_R).
+    """
+    w = jnp.asarray(omega, dtype=float)
+    ce = 4.0 + (w * tau_em) ** 2
+    cd = 4.0 + (w * tau_dec) ** 2
+    s, c = jnp.sin(w * tau_plat), jnp.cos(w * tau_plat)
+    sin_over_w = tau_plat * jnp.sinc(w * tau_plat / jnp.pi)  # sin(w tau_plat) / w
+    return (2.0 * tau_em / ce + sin_over_w
+            + (2.0 * tau_dec * c - w * tau_dec ** 2 * s) / cd)
+
+
+@jax.jit
+def _exp_plateau_Gamma_hat_im(omega, tau_em, tau_plat, tau_dec):
+    """
+    Gamma_hat_I(omega) = int Gamma(t) sin(omega t) dt for the plateau on
+    [0, tau_plat] (Birky et al., eq:Gamma_hat_exp_I).
+    """
+    w = jnp.asarray(omega, dtype=float)
+    ce = 4.0 + (w * tau_em) ** 2
+    cd = 4.0 + (w * tau_dec) ** 2
+    s, c = jnp.sin(w * tau_plat), jnp.cos(w * tau_plat)
+    # (1 - cos(w tau_plat)) / w = 2 sin^2(w tau_plat / 2) / w, without cancellation
+    one_minus_cos_over_w = 0.5 * w * tau_plat ** 2 * jnp.sinc(w * tau_plat / (2.0 * jnp.pi)) ** 2
+    return (-w * tau_em ** 2 / ce + one_minus_cos_over_w
+            + (w * tau_dec ** 2 * c + 2.0 * tau_dec * s) / cd)
+
+
+def _one_minus_exp_over(z):
+    """(1 - exp(-z)) / z for z >= 0, smooth (and differentiable) through z = 0."""
+    small = jnp.abs(z) < 1e-4
+    z_safe = jnp.where(small, 1.0, z)
+    return jnp.where(small, 1.0 - z / 2.0 + z ** 2 / 6.0, -jnp.expm1(-z_safe) / z_safe)
+
+
+@jax.jit
+def _exp_plateau_R_Gamma(lag, tau_em, tau_plat, tau_dec):
+    """
+    Autocorrelation R_Gamma(lag) = int Gamma(t) Gamma(t + lag) dt of the
+    three-parameter exponential envelope.
+
+    With h_em = tau_em / 2 and h_dec = tau_dec / 2 the e-folding times of Gamma:
+
+      lag <= tau_plat:  tau_plat - lag + h_em + h_dec
+                        - (h_em / 2) e^{-lag/h_em} - (h_dec / 2) e^{-lag/h_dec}
+      lag >  tau_plat:  h_em e^{-x/h_em} + h_dec e^{-x/h_dec} + C(x)
+                        - (h_em / 2) e^{-lag/h_em} - (h_dec / 2) e^{-lag/h_dec},
+
+    where x = lag - tau_plat and C(x) = (e^{-x/h_dec} - e^{-x/h_em}) / (1/h_em - 1/h_dec)
+    is the overlap of the rise with the decay (x e^{-x/h} when h_em = h_dec).
+    R_Gamma(0) = tau_plat + (tau_em + tau_dec) / 4.
+    """
+    lag = jnp.abs(jnp.asarray(lag, dtype=float))
+    h_em, h_dec = tau_em / 2.0, tau_dec / 2.0
+    tails = -0.5 * h_em * jnp.exp(-lag / h_em) - 0.5 * h_dec * jnp.exp(-lag / h_dec)
+    inner = tau_plat - lag + h_em + h_dec
+    x = jnp.maximum(lag - tau_plat, 0.0)
+    # C(x) factored on the slower e-folding so that nothing overflows at large x
+    h_lo, h_hi = jnp.minimum(h_em, h_dec), jnp.maximum(h_em, h_dec)
+    cross = jnp.exp(-x / h_hi) * x * _one_minus_exp_over((1.0 / h_lo - 1.0 / h_hi) * x)
+    outer = h_em * jnp.exp(-x / h_em) + h_dec * jnp.exp(-x / h_dec) + cross
+    return jnp.where(lag <= tau_plat, inner, outer) + tails
+
+
+class ExponentialPlateauEnvelope(EnvelopeFunction):
+    r"""
+    Three-parameter exponential envelope: exponential emergence, a plateau, and
+    exponential decay (Birky et al., eq:alpha_exp; cf. Aigrain et al. 2015).
+
+    The spot radius is
+
+        alpha(t) / alpha_max = exp((t - t1) / tau_em)    t < t1
+                             = 1                          t1 <= t <= t1 + tau_plat
+                             = exp(-(t - t2) / tau_dec)   t > t2 = t1 + tau_plat
+
+    and the normalized squared envelope Gamma = alpha^2 / alpha_max^2 rises and
+    decays at twice those rates.  ``Gamma(t)`` centres the plateau on t = 0; the
+    kernel depends only on R_Gamma and ``|Gamma_hat|``, which do not depend on
+    where the envelope sits.
+
+    Timescale convention: tau_em and tau_dec are e-folding times of alpha, as in
+    the paper.  ``ExponentialAsymmetricEnvelope`` takes e-folding times of Gamma,
+    so for tau_plat = 0 this envelope equals
+    ``ExponentialAsymmetricEnvelope(tau_em / 2, tau_dec / 2)``.
+
+    Analytic results:
+      Gamma_hat = Gamma_hat_R - i Gamma_hat_I with the plateau on [0, tau_plat]
+        (eq:Gamma_hat_exp_R, eq:Gamma_hat_exp_I), so that
+        ``|Gamma_hat|^2 = Gamma_hat_R^2 + Gamma_hat_I^2``
+      R_Gamma, piecewise in lag (see ``_exp_plateau_R_Gamma``), with
+        R_Gamma(0) = tau_plat + (tau_em + tau_dec) / 4
+
+    Parameters
+    ----------
+    tau_em : float
+        Emergence e-folding time of the spot radius [days], > 0.
+    tau_plat : float
+        Plateau duration [days], >= 0.
+    tau_dec : float
+        Decay e-folding time of the spot radius [days], > 0.
+    """
+
+    def __init__(self, tau_em: float, tau_plat: float, tau_dec: float):
+        if not (tau_em > 0 and tau_dec > 0 and tau_plat >= 0):
+            raise ValueError(
+                "ExponentialPlateauEnvelope needs tau_em > 0, tau_dec > 0 and "
+                f"tau_plat >= 0; got tau_em={tau_em}, tau_plat={tau_plat}, tau_dec={tau_dec}")
+        self._tau_em = float(tau_em)
+        self._tau_plat = float(tau_plat)
+        self._tau_dec = float(tau_dec)
+
+    @property
+    def tau_spot(self) -> float:
+        """Effective timescale: the slower of the two e-folding times."""
+        return max(self._tau_em, self._tau_dec)
+
+    @property
+    def tau_em(self) -> float:
+        return self._tau_em
+
+    @property
+    def tau_plat(self) -> float:
+        return self._tau_plat
+
+    @property
+    def tau_dec(self) -> float:
+        return self._tau_dec
+
+    @property
+    def lspot(self) -> float:
+        """Plateau duration [days] (tau_plat)."""
+        return self._tau_plat
+
+    @property
+    def param_dict(self) -> dict:
+        return {"tau_em": self._tau_em, "tau_plat": self._tau_plat,
+                "tau_dec": self._tau_dec}
+
+    def Gamma(self, t):
+        t = jnp.asarray(t, dtype=float)
+        return _exp_plateau_gamma(t + self._tau_plat / 2.0,
+                                  self._tau_em, self._tau_plat, self._tau_dec)
+
+    def Gamma_hat_sq(self, omega):
+        """``|Gamma_hat|^2 = Gamma_hat_R^2 + Gamma_hat_I^2``."""
+        args = (self._tau_em, self._tau_plat, self._tau_dec)
+        omega = jnp.asarray(omega, dtype=float)
+        return (_exp_plateau_Gamma_hat_re(omega, *args) ** 2
+                + _exp_plateau_Gamma_hat_im(omega, *args) ** 2)
+
+    def Gamma_hat(self, omega):
+        """``|FT[Gamma]|(omega)`` (the transform is complex unless the envelope is even)."""
+        return jnp.sqrt(self.Gamma_hat_sq(omega))
+
+    def R_Gamma(self, lag):
+        return _exp_plateau_R_Gamma(jnp.asarray(lag, dtype=float),
+                                    self._tau_em, self._tau_plat, self._tau_dec)
+
+    def r_gamma_jax(self, theta_env, lag):
+        return _exp_plateau_R_Gamma(lag, theta_env[0], theta_env[1], theta_env[2])
+
+    def support_from_bounds(self, upper_fn):
+        return (upper_fn("tau_plat", self._tau_plat)
+                + 3.0 * max(upper_fn("tau_em", self._tau_em),
+                            upper_fn("tau_dec", self._tau_dec)))
+
+    def kernel_support(self) -> float:
+        """Plateau plus six e-folding times of Gamma on the slower side."""
+        return self._tau_plat + 3.0 * max(self._tau_em, self._tau_dec)
+
+    def sympy_Gamma(self):
+        import sympy as sp
+        t  = sp.Symbol('t', real=True)
+        te = sp.Symbol(r'\tau_{\rm em}', positive=True)
+        tp = sp.Symbol(r'\tau_{\rm plat}', nonnegative=True)
+        td = sp.Symbol(r'\tau_{\rm dec}', positive=True)
+        return sp.Piecewise(
+            (sp.exp(2 * (t + tp / 2) / te),  t < -tp / 2),
+            (sp.Integer(1),                  t <= tp / 2),
+            (sp.exp(-2 * (t - tp / 2) / td), True),
+        )
+
+    def sympy_R_Gamma(self):
+        import sympy as sp
+        lag = sp.Symbol(r'\tau', nonnegative=True)
+        te = sp.Symbol(r'\tau_{\rm em}', positive=True)
+        tp = sp.Symbol(r'\tau_{\rm plat}', nonnegative=True)
+        td = sp.Symbol(r'\tau_{\rm dec}', positive=True)
+        he, hd = te / 2, td / 2
+        x = lag - tp
+        tails = -he / 2 * sp.exp(-lag / he) - hd / 2 * sp.exp(-lag / hd)
+        cross = (sp.exp(-x / hd) - sp.exp(-x / he)) / (1 / he - 1 / hd)
+        return sp.Piecewise(
+            (tp - lag + he + hd + tails, lag <= tp),
+            (he * sp.exp(-x / he) + hd * sp.exp(-x / hd) + cross + tails, True),
+        )
 
 
 # ── Logistic plateau JAX helper ──────────────────────────────────────────────

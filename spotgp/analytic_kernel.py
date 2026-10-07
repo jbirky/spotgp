@@ -11,6 +11,7 @@ from .envelope import (
     TrapezoidAsymmetricEnvelope,
     SkewedGaussianEnvelope,
     ExponentialEnvelope,
+    ExponentialPlateauEnvelope,
     compute_R_Gamma_numerical,
     _R_Gamma_symmetric,
 )
@@ -281,6 +282,12 @@ class AnalyticKernel:
             self.tau_dec = self.envelope.tau_dec
             self._te = min(self.tau_em, self.tau_dec)
             self._td = max(self.tau_em, self.tau_dec)
+
+        elif isinstance(self.envelope, ExponentialPlateauEnvelope):
+            self.envelope_type = "exponential_plateau"
+            self.tau_em  = self.envelope.tau_em
+            self.tau_dec = self.envelope.tau_dec
+            self.asymmetric = self.tau_em != self.tau_dec
 
         elif isinstance(self.envelope, ExponentialEnvelope):
             self.envelope_type = "exponential"

@@ -43,6 +43,7 @@ DEFAULT_TERM_BOUNDS = {
     "tau_spot":  (0.05, 10.0),
     "tau_em":    (0.05, 10.0),
     "tau_dec":   (0.05, 10.0),
+    "tau_plat":  (0.0, 20.0),
     "sigma_sn":  (0.05, 10.0),
     "n_sn":      (-10.0, 10.0),
     "lat_min":   (0.0, np.pi / 2),

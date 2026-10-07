@@ -10,7 +10,7 @@ from .distributions import (
 from .envelope import (
     EnvelopeFunction, TrapezoidSymmetricEnvelope, TrapezoidAsymmetricEnvelope,
     SkewedGaussianEnvelope, ExponentialEnvelope, ExponentialAsymmetricEnvelope,
-    LogisticPlateauEnvelope, ModulatedGammaEnvelope, DoubleTrapezoidEnvelope,
+    ExponentialPlateauEnvelope, LogisticPlateauEnvelope, ModulatedGammaEnvelope, DoubleTrapezoidEnvelope,
     DoubleTrapezoidAsymmetricEnvelope, TripleTrapezoidAsymmetricEnvelope,
     compute_R_Gamma_numerical,
 )
@@ -63,7 +63,7 @@ __all__ = [
     # envelope
     "EnvelopeFunction", "TrapezoidSymmetricEnvelope", "TrapezoidAsymmetricEnvelope",
     "SkewedGaussianEnvelope", "ExponentialEnvelope", "ExponentialAsymmetricEnvelope",
-    "LogisticPlateauEnvelope", "ModulatedGammaEnvelope", "DoubleTrapezoidEnvelope",
+    "ExponentialPlateauEnvelope", "LogisticPlateauEnvelope", "ModulatedGammaEnvelope", "DoubleTrapezoidEnvelope",
     "DoubleTrapezoidAsymmetricEnvelope", "TripleTrapezoidAsymmetricEnvelope",
     "compute_R_Gamma_numerical",
     # latitude
