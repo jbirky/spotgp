@@ -137,7 +137,8 @@ number of latitude points. Call `build_jax()` once after construction to
 pre-compile the XLA kernels.
 
 Key parameters: `n_harmonics` (default 3), `n_lat` (default 64),
-`quadrature` (`"trapezoid"` or `"gauss-legendre"`).
+`quadrature` (`"gauss-legendre"`, the default, or `"trapezoid"`, which uses
+equally spaced nodes with the endpoints at half weight).
 
 #### `numerical_kernel.py` — `NumericalKernel`
 
