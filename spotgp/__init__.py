@@ -1,6 +1,12 @@
 """spotgp — Gaussian Process kernels for stellar variability from starspot models."""
 
-__version__ = "1.3.0"
+import importlib.metadata as _metadata
+
+# Single source of truth for the version is pyproject.toml
+try:
+    __version__ = _metadata.version("spotgp")
+except _metadata.PackageNotFoundError:  # source tree that hasn't been pip-installed
+    __version__ = "unknown"
 
 from .distributions import (
     ParameterDistribution, DeltaDistribution, UniformDistribution,

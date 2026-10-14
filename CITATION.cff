@@ -4,7 +4,6 @@ message: >-
   companion papers listed under "preferred-citation" and "references".
 title: "spotgp: Gaussian Process kernels for stellar variability from starspot models"
 type: software
-version: 1.3.0
 license: MIT
 repository-code: "https://github.com/jbirky/spotgp"
 url: "https://spotgp.readthedocs.io"

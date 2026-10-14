@@ -16,6 +16,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Check release tag matches pyproject.toml version
+        run: |
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "::error::Release tag $GITHUB_REF_NAME does not match pyproject.toml version $version"
+            exit 1
+          fi
+
       - name: Install build tools
         run: pip install build
 

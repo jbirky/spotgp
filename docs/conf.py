@@ -1,5 +1,6 @@
 """Sphinx configuration for spotgp documentation."""
 
+import importlib.metadata
 import os
 import sys
 
@@ -14,8 +15,12 @@ autodoc_mock_imports = ["jax", "jaxopt", "blackjax"]
 project = "spotgp"
 copyright = "2026, Jessica Birky"
 author = "Jessica Birky"
-version = "0.1.0"
-release = "0.1.0"
+# Read from the installed package metadata (pyproject.toml), so it never needs editing here
+try:
+    release = importlib.metadata.version("spotgp")
+except importlib.metadata.PackageNotFoundError:
+    release = "unknown"
+version = release
 
 # -- General configuration ---------------------------------------------------
 
