@@ -1,0 +1,58 @@
+cff-version: 1.2.0
+message: >-
+  If you use spotgp in your research, please cite the software release and the
+  companion papers listed under "preferred-citation" and "references".
+title: "spotgp: Gaussian Process kernels for stellar variability from starspot models"
+type: software
+version: 1.3.0
+license: MIT
+repository-code: "https://github.com/jbirky/spotgp"
+url: "https://spotgp.readthedocs.io"
+abstract: >-
+  spotgp provides a Gaussian process kernel for stellar photometric variability
+  that is derived analytically from a model of starspots on a differentially
+  rotating star, so that every kernel hyperparameter (equatorial rotation
+  period, differential rotation shear, inclination, spot lifetime and
+  emergence/decay timescale, and amplitude) is a physical quantity. It is
+  implemented in JAX with a banded Cholesky solver, a matched forward
+  light-curve simulator, and interfaces to gradient-based and nested samplers.
+keywords:
+  - astronomy
+  - Gaussian processes
+  - stellar rotation
+  - starspots
+  - differential rotation
+  - JAX
+authors:
+  - family-names: Birky
+    given-names: Jessica
+    orcid: "https://orcid.org/0000-0002-7961-6881"
+    affiliation: "Department of Astronomy, University of Washington"
+  - family-names: Agol
+    given-names: Eric
+    orcid: "https://orcid.org/0000-0002-0802-9145"
+    affiliation: "Department of Astronomy, University of Washington"
+  - family-names: Barnes
+    given-names: Rory
+    orcid: "https://orcid.org/0000-0001-6487-5445"
+    affiliation: "Department of Astronomy, University of Washington"
+  - family-names: Davenport
+    given-names: James R. A.
+    orcid: "https://orcid.org/0000-0002-0637-835X"
+    affiliation: "Department of Astronomy, University of Washington"
+# Once the JOSS paper is accepted, replace this block with the JOSS entry
+# (type: article, journal: Journal of Open Source Software, doi: 10.21105/joss.XXXXX).
+preferred-citation:
+  type: article
+  title: "Physically Motivated Gaussian Processes for Stellar Variability I: A Starspot Kernel with Differential Rotation"
+  authors:
+    - family-names: Birky
+      given-names: Jessica
+    - family-names: Agol
+      given-names: Eric
+    - family-names: Barnes
+      given-names: Rory
+    - family-names: Davenport
+      given-names: James R. A.
+  year: 2026
+  notes: "in preparation"
