@@ -31,7 +31,7 @@ affiliations:
     index: 1
   - name: Homer L. Dodge Department of Physics and Astronomy, University of Oklahoma, Norman, OK 73019, USA
     index: 2
-date: 21 August 2026
+date: 14 October 2026
 bibliography: paper.bib
 ---
 

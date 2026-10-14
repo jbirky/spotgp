@@ -4,6 +4,7 @@
 [![Tests](https://github.com/jbirky/spotgp/actions/workflows/tests.yml/badge.svg)](https://github.com/jbirky/spotgp/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/jbirky/spotgp/branch/main/graph/badge.svg)](https://codecov.io/gh/jbirky/spotgp)
 [![Documentation Status](https://readthedocs.org/projects/spotgp/badge/?version=latest)](https://spotgp.readthedocs.io/en/latest/?badge=latest)
+[![JOSS draft](https://img.shields.io/badge/JOSS-draft%20PDF-orange)](https://github.com/jbirky/spotgp/blob/joss-paper/paper.pdf)
 [![Python](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12-blue)](https://pypi.org/project/spotgp/)
 [![Platform](https://img.shields.io/badge/platform-linux%20|%20macOS-lightgrey)](https://github.com/jbirky/spotgp/actions/workflows/tests.yml)
 

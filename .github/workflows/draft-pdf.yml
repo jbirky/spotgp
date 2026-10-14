@@ -1,7 +1,10 @@
 name: Draft PDF
 
 # Build the JOSS paper (paper/paper.md) with the Open Journals renderer whenever
-# the paper or this workflow changes. The PDF is attached to the run as an artifact.
+# the paper or this workflow changes. The PDF is attached to the run as an artifact,
+# and builds from main also replace the PDF on the `joss-paper` branch (a single
+# commit, rewritten each build) so the README badge has a stable link to the latest draft:
+# https://github.com/jbirky/spotgp/blob/joss-paper/paper.pdf
 on:
   push:
     paths:
@@ -13,6 +16,12 @@ jobs:
   paper:
     runs-on: ubuntu-latest
     name: Paper Draft
+    permissions:
+      contents: write
+    # Queue rather than overlap, so two quick pushes don't race on the joss-paper branch
+    concurrency:
+      group: draft-pdf-${{ github.ref }}
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -31,3 +40,21 @@ jobs:
           # The PDF is written next to the input paper.md
           path: paper/paper.pdf
           archive: false
+
+      - name: Publish to joss-paper branch
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          out="$RUNNER_TEMP/joss-paper"
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          # Build a fresh single-commit branch holding only the new PDF
+          git init -q -b joss-paper "$out"
+          cp paper/paper.pdf "$out/paper.pdf"
+          cd "$out"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add paper.pdf
+          git commit -q -m "JOSS draft PDF built from ${GITHUB_SHA::7}"
+          # Force-push to replace the previous PDF, so old versions don't pile up in history
+          git push -q --force "$remote" joss-paper
