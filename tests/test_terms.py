@@ -53,48 +53,58 @@ RTOL = 1e-12
 # previous pins to <= 2.2e-16 relative (logspace: 8.9e-15 on logL_fn,
 # logpost and grad0; its logL_init now includes the jitter's initial
 # 1e-12), so only the removed constant moved.
+#
+# Re-captured again when the latitude quadrature default moved from the
+# trapezoid rule to Gauss-Legendre and the trapezoid rule began weighting
+# its two endpoints by 1/2 (the old rule gave them full weight, so the
+# latitude average came out low by about 1/n_lat).  Every default case
+# below equals the same case run with an explicit quadrature="gauss-legendre"
+# exactly, and uniform/cholesky_banded agrees with the existing
+# uniform/banded/gl pin to 6e-14 relative; the old pins moved by ~1%.  The
+# corrected trapezoid rule is pinned separately (uniform/banded/trapezoid);
+# it agrees with Gauss-Legendre to 5e-8 on logL.
 PINS = {
     "uniform/cholesky_banded": {
-        "logL_fn": 537.2150059076002,
-        "logL_init": 537.2150059076002,
-        "logpost": 526.5751120354023,
-        "grad0": 0.5237582439107449,
+        "logL_fn": 537.233732537941,
+        "logL_init": 537.2337325379409,
+        "logpost": 526.5938386657431,
+        "grad0": 0.5295923172903878,
     },
     "uniform/cholesky_full": {
-        "logL_fn": 537.2150059076002,
-        "logL_init": 537.2150059076002,
-        "logpost": 526.5751120354023,
-        "grad0": 0.5237582439107419,
+        "logL_fn": 537.233732537941,
+        "logL_init": 537.2337325379409,
+        "logpost": 526.5938386657431,
+        "grad0": 0.5295923172903876,
     },
     "irregular/cholesky_banded": {
-        "logL_fn": 532.1971730200656,
-        "logL_init": 532.1971730200657,
-        "logpost": 521.5572791478677,
-        "grad0": 0.4819720143582926,
+        "logL_fn": 532.2176295866188,
+        "logL_init": 532.2176295866188,
+        "logpost": 521.5777357144209,
+        "grad0": 0.4877174523952407,
     },
     "irregular/cholesky_full": {
-        "logL_fn": 532.1971730200656,
-        "logL_init": 532.1971730200656,
-        "logpost": 521.5572791478677,
-        "grad0": 0.4819720143582936,
+        "logL_fn": 532.2176295866188,
+        "logL_init": 532.217629586619,
+        "logpost": 521.5777357144209,
+        "grad0": 0.48771745239523845,
     },
     "gappy/cholesky_banded": {
-        "logL_fn": 538.3426373340722,
-        "logL_init": 538.3426373340722,
-        "logpost": 527.7027434618742,
-        "grad0": 0.47622845636241506,
+        "logL_fn": 538.3620998117088,
+        "logL_init": 538.3620998117088,
+        "logpost": 527.7222059395109,
+        "grad0": 0.4819325340305518,
     },
     "gappy/cholesky_full": {
-        "logL_fn": 538.3426373340723,
-        "logL_init": 538.3426373340722,
-        "logpost": 527.7027434618743,
-        "grad0": 0.4762284563624155,
+        "logL_fn": 538.3620998117088,
+        "logL_init": 538.3620998117088,
+        "logpost": 527.7222059395109,
+        "grad0": 0.48193253403054687,
     },
     "uniform/banded/logspace": {
-        "logL_fn": 537.2150030144428,
-        "logL_init": 537.2150030144429,
-        "logpost": 522.7940521626657,
-        "grad0": 0.5237582447726381,
+        "logL_fn": 537.2337296429079,
+        "logL_init": 537.233729642908,
+        "logpost": 522.8127787911308,
+        "grad0": 0.5295923180907663,
     },
     "uniform/banded/gl": {
         "logL_fn": 537.2337325379357,
@@ -102,11 +112,17 @@ PINS = {
         "logpost": 526.5938386657377,
         "grad0": 0.5295923172904206,
     },
+    "uniform/banded/trapezoid": {
+        "logL_fn": 537.2337569072203,
+        "logL_init": 537.2337569072203,
+        "logpost": 526.5938630350223,
+        "grad0": 0.5295863118674007,
+    },
     "uniform/banded/b40": {
-        "logL_fn": 548.0732093378223,
-        "logL_init": 548.0732093378224,
-        "logpost": 537.4333154656243,
-        "grad0": 0.5472313056963278,
+        "logL_fn": 548.0951337865267,
+        "logL_init": 548.0951337865267,
+        "logpost": 537.4552399143288,
+        "grad0": 0.5530596640200832,
     },
 }
 
@@ -192,6 +208,12 @@ class TestPinnedRegression:
                       matrix_solver="cholesky_banded",
                       quadrature="gauss-legendre")
         _check_case(gp, PINS["uniform/banded/gl"])
+
+    def test_pinned_trapezoid(self):
+        x, y = _capture_grids()["uniform"]
+        gp = GPSolver(x, y, 0.002 * np.ones_like(x), dict(HPARAM),
+                      matrix_solver="cholesky_banded", quadrature="trapezoid")
+        _check_case(gp, PINS["uniform/banded/trapezoid"])
 
     def test_pinned_narrow_band(self):
         x, y = _b40_data()

@@ -142,6 +142,22 @@ def _gauss_legendre_grid(n, a, b):
     return jnp.array(nodes), jnp.array(weights)
 
 
+def _trapezoid_grid(n, a, b):
+    """
+    Trapezoid-rule nodes and weights on [a, b]: ``n`` equally spaced nodes
+    including both endpoints, which get half weight, so the weights sum to
+    ``b - a``.
+
+    Returns
+    -------
+    nodes : jnp.ndarray, shape (n,)
+    weights : jnp.ndarray, shape (n,)
+    """
+    nodes = jnp.linspace(a, b, n)
+    weights = jnp.full(n, (b - a) / (n - 1)).at[0].multiply(0.5).at[-1].multiply(0.5)
+    return nodes, weights
+
+
 # ── VisibilityFunction ──────────────────────────────────────────────────────
 
 class VisibilityFunction:

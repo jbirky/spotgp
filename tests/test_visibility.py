@@ -94,19 +94,22 @@ class TestHarmonicOrders:
         orders, peq, kappa, sig = [0, 2, 4], 4.0, 0.1, 0.01
         vis = VisibilityFunction(peq, kappa, self.INC, harmonics=orders)
         model = self._model(vis)
-        ak = AnalyticKernel(model, n_lat=32)
+        ak = AnalyticKernel(model, n_lat=32, quadrature="trapezoid")
         lag = np.linspace(0.0, 8.0, 9)
 
+        # trapezoid rule over latitude: endpoints at half weight
         phi = np.linspace(-np.pi / 2, np.pi / 2, 32)
+        wts = np.ones_like(phi)
+        wts[[0, -1]] = 0.5
         R = np.asarray(model.envelope.R_Gamma(jnp.asarray(lag)))
         acc = np.zeros_like(lag)
-        for p in phi:
+        for p, wt in zip(phi, wts):
             w0 = 2 * np.pi * (1 - kappa * np.sin(p) ** 2) / peq
             for n in orders:
                 c_sq = float(_cn_general_jax(n, self.INC, p)) ** 2
-                acc += (1.0 if n == 0 else 2.0) * c_sq * np.cos(n * w0 * lag)
+                acc += wt * (1.0 if n == 0 else 2.0) * c_sq * np.cos(n * w0 * lag)
         np.testing.assert_allclose(
-            ak.kernel(lag), sig ** 2 * R * acc / len(phi), rtol=1e-12)
+            ak.kernel(lag), sig ** 2 * R * acc / wts.sum(), rtol=1e-12)
 
     def test_dropping_orders_changes_the_likelihood(self):
         """The order set must reach the GP log-likelihood, not just kernel()."""

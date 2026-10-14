@@ -17,7 +17,7 @@ from .envelope import (
 )
 from .spot_model import (
     VisibilityFunction, EdgeOnVisibilityFunction, SpotEvolutionModel,
-    _cn_squared_coefficients_jax, _cn_general_jax, _gauss_legendre_grid,
+    _cn_squared_coefficients_jax, _cn_general_jax, _gauss_legendre_grid, _trapezoid_grid,
 )
 from .visibility import _as_harmonic_orders
 
@@ -125,8 +125,9 @@ def _kernel_eval(theta_arr, lag_flat, harmonics, n_lat, lat_range,
         so ``[0, 2, 4]`` keeps only the even harmonics.
     n_lat, lat_range : kernel config (static).
     quad_nodes, quad_weights : jnp.ndarray or None
-        Quadrature nodes and weights. If None, uses trapezoid rule on a
-        linspace grid.
+        Quadrature nodes and weights. If None, uses the trapezoid rule on
+        ``n_lat`` equally spaced nodes over ``lat_range`` (endpoints at half
+        weight).
     r_gamma_func : callable or None
         JAX-traceable function ``f(theta_arr, lag) -> R_Gamma``.
         If None, uses the symmetric-trapezoid closed-form (backward compat).
@@ -174,10 +175,7 @@ def _kernel_eval(theta_arr, lag_flat, harmonics, n_lat, lat_range,
         phi_grid = quad_nodes
         weights = quad_weights
     else:
-        phi_min, phi_max = lat_range
-        phi_grid = jnp.linspace(phi_min, phi_max, n_lat)
-        dphi = phi_grid[1] - phi_grid[0]
-        weights = jnp.ones_like(phi_grid) * dphi
+        phi_grid, weights = _trapezoid_grid(n_lat, *lat_range)
 
     if lat_weight_func is not None:
         lat_w = lat_weight_func(theta_arr, phi_grid)
@@ -229,7 +227,8 @@ class AnalyticKernel:
     lat_range : tuple
         (min, max) latitude in radians (default (-pi/2, pi/2)).
     quadrature : str
-        Latitude integration method: "trapezoid" or "gauss-legendre".
+        Latitude integration method: "gauss-legendre" (default) or
+        "trapezoid" (equally spaced nodes, endpoints at half weight).
 
     Attributes
     ----------
@@ -239,7 +238,7 @@ class AnalyticKernel:
     """
 
     def __init__(self, model_or_hparam, n_harmonics=None, n_lat=64,
-                 lat_range=None, quadrature="trapezoid"):
+                 lat_range=None, quadrature="gauss-legendre"):
 
         # ── Accept SpotEvolutionModel or legacy hparam dict ────────────────
         if isinstance(model_or_hparam, SpotEvolutionModel):
@@ -319,8 +318,8 @@ class AnalyticKernel:
             self._quad_nodes, self._quad_weights = _gauss_legendre_grid(
                 n_lat, self.lat_range[0], self.lat_range[1])
         elif quadrature == "trapezoid":
-            self._quad_nodes   = None
-            self._quad_weights = None
+            self._quad_nodes, self._quad_weights = _trapezoid_grid(
+                n_lat, self.lat_range[0], self.lat_range[1])
         else:
             raise ValueError(
                 f"Unknown quadrature method: {quadrature!r}. "
@@ -395,14 +394,8 @@ class AnalyticKernel:
         if lat_dist is None:
             lat_dist = self.spot_model.latitude_distribution
 
-        if self.quadrature == "gauss-legendre":
-            phi_grid = self._quad_nodes
-            raw_weights = self._quad_weights
-        else:
-            phi_min, phi_max = self.lat_range
-            phi_grid = jnp.linspace(phi_min, phi_max, self.n_lat)
-            dphi = phi_grid[1] - phi_grid[0]
-            raw_weights = jnp.ones_like(phi_grid) * dphi
+        phi_grid = self._quad_nodes
+        raw_weights = self._quad_weights
 
         user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
         weights = user_weights * raw_weights
@@ -501,29 +494,16 @@ class AnalyticKernel:
         if lat_dist is None:
             lat_dist = self.spot_model.latitude_distribution
 
-        if self.quadrature == "gauss-legendre":
-            phi_grid   = self._quad_nodes
-            quad_weights = self._quad_weights
-            all_cn_sq  = jax.vmap(
-                lambda phi: _cn_squared_coefficients_jax(
-                    self.inc, phi, self.harmonics))(phi_grid)
-            user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
-            norm = jnp.sum(user_weights * quad_weights)
-            cn_sq_avg = jnp.sum(
-                user_weights[:, None] * quad_weights[:, None] * all_cn_sq,
-                axis=0) / norm
-        else:
-            phi_min, phi_max = self.lat_range
-            phi_grid = jnp.linspace(phi_min, phi_max, self.n_lat)
-            dphi = phi_grid[1] - phi_grid[0]
-            user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
-            weights = user_weights * dphi
-            norm = jnp.sum(weights)
-            all_cn_sq = jax.vmap(
-                lambda phi: _cn_squared_coefficients_jax(
-                    self.inc, phi, self.harmonics))(phi_grid)
-            cn_sq_avg = jnp.sum(
-                user_weights[:, None] * all_cn_sq, axis=0) * dphi / norm
+        phi_grid   = self._quad_nodes
+        quad_weights = self._quad_weights
+        all_cn_sq  = jax.vmap(
+            lambda phi: _cn_squared_coefficients_jax(
+                self.inc, phi, self.harmonics))(phi_grid)
+        user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
+        norm = jnp.sum(user_weights * quad_weights)
+        cn_sq_avg = jnp.sum(
+            user_weights[:, None] * quad_weights[:, None] * all_cn_sq,
+            axis=0) / norm
 
         w0 = 2 * jnp.pi / self.peq
         R  = self.R_Gamma(lag)
@@ -585,25 +565,14 @@ class AnalyticKernel:
 
         # all_contribs carries a harmonic axis now, so the latitude weights
         # need one more trailing axis than in the collapsed form.
-        if self.quadrature == "gauss-legendre":
-            phi_grid    = self._quad_nodes
-            quad_weights = self._quad_weights
-            all_contribs = jax.vmap(_psd_at_lat)(phi_grid)
-            user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
-            norm = jnp.sum(user_weights * quad_weights)
-            psd  = jnp.sum(
-                user_weights[:, None, None] * quad_weights[:, None, None]
-                * all_contribs, axis=0) / norm
-        else:
-            phi_min, phi_max = self.lat_range
-            phi_grid = jnp.linspace(phi_min, phi_max, self.n_lat)
-            dphi = phi_grid[1] - phi_grid[0]
-            user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
-            weights = user_weights * dphi
-            norm = jnp.sum(weights)
-            all_contribs = jax.vmap(_psd_at_lat)(phi_grid)
-            psd = jnp.sum(
-                user_weights[:, None, None] * all_contribs, axis=0) * dphi / norm
+        phi_grid    = self._quad_nodes
+        quad_weights = self._quad_weights
+        all_contribs = jax.vmap(_psd_at_lat)(phi_grid)
+        user_weights = jnp.array([lat_dist(float(p)) for p in phi_grid])
+        norm = jnp.sum(user_weights * quad_weights)
+        psd  = jnp.sum(
+            user_weights[:, None, None] * quad_weights[:, None, None]
+            * all_contribs, axis=0) / norm
 
         return psd * self.sigma_k ** 2
 

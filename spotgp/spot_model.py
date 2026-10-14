@@ -38,6 +38,7 @@ try:
         _cn_general_jax,
         _cn_squared_coefficients_jax,
         _gauss_legendre_grid,
+        _trapezoid_grid,
     )
 except ImportError:
     from envelope import (
@@ -58,6 +59,7 @@ except ImportError:
         _cn_general_jax,
         _cn_squared_coefficients_jax,
         _gauss_legendre_grid,
+        _trapezoid_grid,
     )
 
 __all__ = [
@@ -70,6 +72,7 @@ __all__ = [
     "_cn_general_jax",
     "_cn_squared_coefficients_jax",
     "_gauss_legendre_grid",
+    "_trapezoid_grid",
     # Defined here
     "SpotEvolutionModel",
 ]

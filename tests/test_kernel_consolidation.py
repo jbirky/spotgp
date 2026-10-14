@@ -115,7 +115,8 @@ class TestNormalizationFix:
         vis = VisibilityFunction(peq=10.0, kappa=0.2, inc=np.pi / 4)
         model = SpotEvolutionModel(envelope=env, visibility=vis, sigma_k=0.01)
 
-        ak = AnalyticKernel(model, n_lat=64)
+        # _kernel_eval without quadrature nodes uses the trapezoid rule
+        ak = AnalyticKernel(model, n_lat=64, quadrature="trapezoid")
         lags = jnp.linspace(0, 6, 30)  # stay within kernel support
         K_class = np.array(ak.kernel(lags))
 
@@ -128,6 +129,30 @@ class TestNormalizationFix:
 
         np.testing.assert_allclose(K_class, K_func, rtol=1e-10,
                                    err_msg="Normalization discrepancy detected")
+
+    @pytest.mark.parametrize("quadrature", ["gauss-legendre", "trapezoid"])
+    def test_edge_on_latitude_average_is_exact(self, quadrature):
+        """Both rules reproduce the closed-form edge-on kernel (Birky et al.,
+        eq:kernel_edgeon_closed).  The trapezoid rule used to give its two
+        endpoints full weight, which made this 1/n_lat (1.6% at 64) low."""
+        env = TrapezoidSymmetricEnvelope(lspot=15.0, tau_spot=3.0)
+        vis = VisibilityFunction(peq=5.0, kappa=0.0, inc=np.pi / 2)
+        model = SpotEvolutionModel(envelope=env, visibility=vis, sigma_k=0.01)
+        ak = AnalyticKernel(model, n_harmonics=2, n_lat=64, quadrature=quadrature)
+        lags = jnp.linspace(0, 20, 41)
+        w0 = 2 * np.pi / 5.0
+        R = np.asarray(env.R_Gamma(lags))
+        lags = np.asarray(lags)
+        exact = 0.01 ** 2 * R * (1 / (2 * np.pi ** 2) + np.cos(w0 * lags) / 16
+                                 + np.cos(2 * w0 * lags) / (9 * np.pi ** 2))
+        np.testing.assert_allclose(np.asarray(ak.kernel(lags)), exact,
+                                   rtol=1e-12, atol=1e-20)
+
+    def test_default_quadrature_is_gauss_legendre(self):
+        env = TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=1.0)
+        vis = VisibilityFunction(peq=10.0, kappa=0.2, inc=np.pi / 4)
+        model = SpotEvolutionModel(envelope=env, visibility=vis, sigma_k=0.01)
+        assert AnalyticKernel(model).quadrature == "gauss-legendre"
 
 
 # =====================================================================
