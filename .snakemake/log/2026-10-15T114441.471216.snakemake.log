@@ -1,0 +1,8 @@
+TemplateNotFoundin line 20 of /home/jbirky/anaconda3/envs/syw/lib/python3.10/site-packages/showyourwork/workflow/prep.smk:
+'showyourwork.yml' not found in search path: '.'
+  File "/home/jbirky/anaconda3/envs/syw/lib/python3.10/site-packages/showyourwork/workflow/prep.smk", line 20, in <module>
+  File "/home/jbirky/anaconda3/envs/syw/lib/python3.10/site-packages/showyourwork/config.py", line 63, in render_config
+  File "/home/jbirky/anaconda3/envs/syw/lib/python3.10/site-packages/jinja2/environment.py", line 1016, in get_template
+  File "/home/jbirky/anaconda3/envs/syw/lib/python3.10/site-packages/jinja2/environment.py", line 975, in _load_template
+  File "/home/jbirky/anaconda3/envs/syw/lib/python3.10/site-packages/jinja2/loaders.py", line 126, in load
+  File "/home/jbirky/anaconda3/envs/syw/lib/python3.10/site-packages/jinja2/loaders.py", line 209, in get_source
