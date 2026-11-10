@@ -710,9 +710,13 @@ class LimbDarkenedVisibilityFunction(VisibilityFunction):
         if self.law == "quadratic":
             u1, u2 = self.u
             return 1.0 - u1 * (1.0 - mu) - u2 * (1.0 - mu) ** 2
+        # mu**(k/2) for k = 1..4 as products of sqrt(mu): a float power is
+        # exp(log), and in the full-geometry cap quadrature it doubled the
+        # cost of a likelihood call (58 vs 28 ms on Kepler-45, same result)
+        s = jnp.sqrt(mu)
         total = 1.0
-        for k, ck in enumerate(self.u, start=1):
-            total = total - ck * (1.0 - mu ** (k / 2.0))
+        for ck, mu_k2 in zip(self.u, (s, mu, mu * s, mu * mu)):
+            total = total - ck * (1.0 - mu_k2)
         return total
 
     @property
