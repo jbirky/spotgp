@@ -61,7 +61,7 @@ The closest relative is `starry_process` [@luger_mapping_2021-1], an interpretab
 
 # Software design
 
-`spotgp` is designed to be modular and flexible, allowing users to easily customize their model for different physical assumptions, while also being optimized for computational speed. Figure \autoref{fig:arch} shows an overview of the architecture: a model layer (yellow) where the physical parameters (purple) and assumptions of the model are defined, a simulation layer (orange) containing the framework to generate sythetic light curves, a kernel layer (blue) containing the tools to compute the GP kernel matrix, a data layer (green) for processing the lightcurve data, and finally, an inference layer implementing the GP solver and interface with the MCMC samplers.
+`spotgp` is designed to be modular and flexible, allowing users to easily customize their model for different physical assumptions, while also being optimized for computational speed. \autoref{fig:arch} shows an overview of the architecture: a model layer (yellow) where the physical parameters (purple) and assumptions of the model are defined, a simulation layer (orange) containing the framework to generate sythetic light curves, a kernel layer (blue) containing the tools to compute the GP kernel matrix, a data layer (green) for processing the lightcurve data, and finally, an inference layer implementing the GP solver and interface with the MCMC samplers.
 
 The kernel function describes the autocorrelation of the flux as a function of time lag $\tau$, which factorizes as
 $$
@@ -80,7 +80,7 @@ The same `SpotEvolutionModel` can be used for the time series forward model (`Li
 
 ![Architecture of the `spotgp` package. \label{fig:arch}](figures/architecture.png)
 
-All modules are implemented `JAX` so that the whole pipeline (latitude quadrature, harmonic sum, covariance assembly, Cholesky factorization, and log-likelihood) is one JIT-compiled, differentiable function. It can be sampled with the No-U-Turn Sampler [@hoffman_no-u-turn_2014] through `BlackJAX` [@cabezas_blackjax_2024] or with nested sampling through `dynesty` [@speagle_dynesty_2020]. 
+All modules are implemented in `JAX` so that the whole pipeline (latitude quadrature, harmonic sum, covariance assembly, Cholesky factorization, and log-likelihood) is one JIT-compiled, differentiable function. It can be sampled with the No-U-Turn Sampler [@hoffman_no-u-turn_2014] through `BlackJAX` [@cabezas_blackjax_2024] or with nested sampling through `dynesty` [@speagle_dynesty_2020]. 
 
 Naive GP solvers perform poorly with the number of datapoints $N$, scaling as $\mathcal{O}(N^3)$ [@rasmussen_gaussian_2006]. However, for finite-lived spots our covariance matrix becomes banded with a bandwidth $b$ set by the spot lifetimes and cadence. Our package exploits this structure to save memory and computation time implement a blocked banded Cholesky factorization [@golub_matrix_2013] written with `jax.lax.scan` which runs in $\mathcal{O}(Nb^2)$ time.
 
