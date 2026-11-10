@@ -20,9 +20,6 @@ authors:
   - name: Rory Barnes
     orcid: 0000-0001-6487-5445
     affiliation: 1
-  - name: James R. A. Davenport
-    orcid: 0000-0002-0637-835X
-    affiliation: 1
   - name: Sean Matt
     orcid: 0000-0001-9590-2274
     affiliation: 2
@@ -96,6 +93,7 @@ Generative AI tools (Anthropic's Claude, via the Claude Code assistant) were use
 
 # Acknowledgements
 
+The authors would like to acknowledge James Davenport and Tyler Gordon for their feedback in the development of this project.
 E.A. was supported by the National Aeronautics and Space Administration Exoplanet Research Program (NASA XRP) grant 80NSSC21K1111. This work was performed in part by the Virtual Planetary Laboratory Team, which is a member of the NASA Nexus for Exoplanet System Science, and funded via the NASA Astrobiology Program ICAR Grant 80NSSC23K1398. 
 
 # References
