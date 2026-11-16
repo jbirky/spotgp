@@ -20,9 +20,6 @@ authors:
   - name: Rory Barnes
     orcid: 0000-0001-6487-5445
     affiliation: 1
-  - name: Sean Matt
-    orcid: 0000-0001-9590-2274
-    affiliation: 2
 affiliations:
   - name: Department of Astronomy, University of Washington, Seattle, WA, USA
     index: 1
