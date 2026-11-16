@@ -29,7 +29,8 @@ from .banded_cholesky import (banded_cholesky, banded_solve,
                                banded_cholesky_compact, banded_solve_compact)
 from .terms import Term, KernelSum, SpotTerm, DEFAULT_TERM_BOUNDS
 from .offsets import (segment_labels, offset_design,
-                      apply_offset_marginalization, offset_posterior)
+                      apply_offset_marginalization, offset_posterior,
+                      resolve_offset_prior, offset_prior_constants)
 from .fitting import FittingMixin
 from .gp_plots import GPPlotsMixin
 from .mass_matrix import MassMatrixMixin
@@ -60,7 +61,9 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
                        uniform_dt=None,
                        lag_table=None,
                        k_of_lag=None,
-                       design=None):
+                       design=None,
+                       prior_precision=None,
+                       prior_logdet=0.0):
     """
     Pure-functional GP marginal log-likelihood.
 
@@ -106,10 +109,16 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
         ``_kernel_eval`` closure kwargs above; when None, the legacy
         closure-kwarg path is used (backward compat).
     design : jnp.ndarray, shape (N, S) or None
-        Design matrix of per-segment nuisance functions (sector/quarter
-        offsets).  When given, those linear parameters are marginalized
-        analytically under a flat prior; see ``offsets.py``.  None
-        disables the correction entirely.
+        Design matrix of linear nuisance functions (sector/quarter
+        offsets, ramps, CBVs).  When given, those linear parameters are
+        marginalized analytically; see ``offsets.py``.  None disables the
+        correction entirely.
+    prior_precision : jnp.ndarray, shape (S,) or None
+        Gaussian prior precision ``1/sigma**2`` per design column, 0 for a
+        flat column; None means every column is flat.  A nonzero prior
+        mean is applied by passing ``y - design @ mu`` as ``y``.
+    prior_logdet : float
+        ``log|Lambda|`` of the Gaussian columns' prior covariance.
 
     Returns
     -------
@@ -163,11 +172,12 @@ def _gp_log_likelihood(theta_full, x, y, yerr, mean_val,
 
     n_free = N
     if design is not None:
-        # Marginalize the per-segment offsets (see offsets.py).
+        # Marginalize the linear nuisance terms (see offsets.py).
         Z = jla.cho_solve((L, True), design)
         data_fit, log_det = apply_offset_marginalization(
-            data_fit, log_det, alpha, design, Z)
-        n_free = N - design.shape[1]
+            data_fit, log_det, alpha, design, Z,
+            prior_precision=prior_precision, prior_logdet=prior_logdet)
+        n_free = N - _n_flat(design, prior_precision)
 
     return -0.5 * (data_fit + log_det + n_free * jnp.log(2 * jnp.pi))
 
@@ -278,7 +288,9 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
                                uniform_dt=None,
                                band_lag_table=None,
                                k_of_lag=None,
-                               design=None):
+                               design=None,
+                               prior_precision=None,
+                               prior_logdet=0.0):
     """
     Pure-functional GP marginal log-likelihood using banded Cholesky.
 
@@ -333,15 +345,23 @@ def _gp_log_likelihood_banded(theta_full, x, y, yerr, mean_val,
 
     n_free = N
     if design is not None:
-        # Marginalize the per-segment offsets.  banded_solve_compact vmaps
+        # Marginalize the linear nuisance terms.  banded_solve_compact vmaps
         # over the columns of a matrix RHS, so this stays in compact
         # storage and the bandwidth is preserved (see offsets.py).
         Z = banded_solve_compact(Lc, design, bandwidth)
         data_fit, log_det = apply_offset_marginalization(
-            data_fit, log_det, alpha, design, Z)
-        n_free = N - design.shape[1]
+            data_fit, log_det, alpha, design, Z,
+            prior_precision=prior_precision, prior_logdet=prior_logdet)
+        n_free = N - _n_flat(design, prior_precision)
 
     return -0.5 * (data_fit + log_det + n_free * jnp.log(2 * jnp.pi))
+
+
+def _n_flat(design, prior_precision):
+    """Number of flat-prior design columns (all of them if no prior)."""
+    if prior_precision is None:
+        return design.shape[1]
+    return jnp.sum(prior_precision == 0)
 
 
 def _default_log_prior(theta_arr, bounds):
@@ -546,6 +566,16 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         means the unknown zero points inflate the ``tau_spot``
         uncertainty instead of biasing its point estimate.  See
         ``spotgp.offsets``.
+    offset_prior : None, float, array_like, tuple, or dict
+        Gaussian prior on the ``offsets`` design columns (requires
+        ``offsets``).  ``None`` (default) keeps every column flat.  A float
+        is a shared width ``sigma`` (mean 0); an array of shape (S,) gives
+        per-column widths with ``np.inf`` marking flat columns; ``(mu,
+        sigma)`` or ``dict(mu=..., sigma=...)`` also sets the means.  Use
+        it for nuisance columns that should be shrunk rather than fitted
+        freely, e.g. Kepler CBVs next to flat quarter offsets.  The
+        Gaussian columns are integrated out with the Woodbury identity, so
+        the banded solve is preserved.
     kernel_kwargs : dict
         Extra kwargs forwarded to the kernel constructor.
 
@@ -565,7 +595,7 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                  mean=None, bounds=None,
                  log_prior=None, matrix_solver="cholesky_banded",
                  bandwidth=None, save_dir=None, offsets=None,
-                 **kernel_kwargs):
+                 offset_prior=None, **kernel_kwargs):
 
         if "fit_sigma_n" in kernel_kwargs:
             raise TypeError(
@@ -607,6 +637,7 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         self.offset_labels = None
         self.design = self._resolve_offsets(offsets)
         self.n_offsets = 0 if self.design is None else self.design.shape[1]
+        self._set_offset_prior(offset_prior)
 
         # Detect uniform sampling.  On a uniform grid the covariance is
         # Toeplitz, so the kernel needs evaluating only once per distinct
@@ -827,6 +858,18 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         single number rather than the full order set.
         """
         return None if self.harmonics is None else max(self.harmonics)
+
+    @property
+    def x_offset(self):
+        """Value subtracted from the input times to give :attr:`x`.
+
+        ``TimeSeriesData`` shifts the time axis to start at 0 by default,
+        so :attr:`x` is ``input_times - x_offset``.  Every method that
+        takes times (:meth:`predict`, :meth:`predict_at`,
+        :meth:`sample_posterior`, :meth:`sample_lightcurves`) expects them
+        in the input frame and applies this shift itself.
+        """
+        return float(getattr(self.data, "x_offset", 0.0))
 
     def _autosave(self, filename, **arrays):
         """Save ``arrays`` to ``save_dir/filename`` if ``save_dir`` is set."""
@@ -1148,6 +1191,36 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
 
         return jnp.asarray(design, dtype=jnp.float64)
 
+    def _set_offset_prior(self, offset_prior):
+        """Resolve ``offset_prior`` into the constants the likelihood needs."""
+        if self.design is None:
+            if offset_prior is not None:
+                raise ValueError("offset_prior requires offsets= (a design "
+                                 "matrix, labels, or a gap threshold).")
+            self.offset_prior_mean = self.offset_prior_sigma = None
+            self._offset_precision, self._offset_prior_logdet = None, 0.0
+            self._y_nuisance = self.y
+            return
+        mu, sigma = resolve_offset_prior(offset_prior, self.n_offsets)
+        precision, logdet, n_flat = offset_prior_constants(sigma)
+        self.offset_prior_mean, self.offset_prior_sigma = mu, sigma
+        # All columns flat: pass no precision, so the original flat-prior
+        # code path runs unchanged.
+        self._offset_precision = (None if n_flat == self.n_offsets
+                                  else jnp.asarray(precision, dtype=jnp.float64))
+        self._offset_prior_logdet = logdet
+        # A prior mean enters the likelihood only through y - M mu.
+        self._y_nuisance = self.y - self.design @ jnp.asarray(mu, dtype=jnp.float64)
+        if n_flat < self.n_offsets:
+            logger.info("Offset prior: %d Gaussian column(s), %d flat",
+                        self.n_offsets - n_flat, n_flat)
+
+    def _nuisance_kwargs(self):
+        """Design matrix and prior constants for the likelihood functions."""
+        return dict(design=getattr(self, "design", None),
+                    prior_precision=getattr(self, "_offset_precision", None),
+                    prior_logdet=getattr(self, "_offset_prior_logdet", 0.0))
+
     def offset_estimates(self, theta=None, return_cov=False):
         """
         Posterior mean of the marginalized per-segment offsets.
@@ -1156,7 +1229,8 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         conditional posterior at a given ``theta`` is Gaussian with mean
         ``A^-1 b`` and covariance ``A^-1``; this returns it, which is what
         you need to plot the fitted trend or to remove the offsets from
-        the data for display.
+        the data for display.  With ``offset_prior`` set, ``A`` includes
+        the prior precision and the mean includes the prior mean.
 
         Parameters
         ----------
@@ -1180,7 +1254,7 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
             theta = (self.map_estimate if self.map_estimate is not None
                      else self.theta0)
         theta_kernel = self._to_physical(jnp.asarray(theta, dtype=jnp.float64))
-        resid = self.y - self.mean_val
+        resid = self._y_nuisance - self.mean_val
 
         if self.matrix_solver == "cholesky_banded":
             b = self.bandwidth
@@ -1211,7 +1285,9 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                                   param_keys=self.param_keys,
                                   bounds=self.bounds)
 
-        a_hat, a_cov = offset_posterior(alpha, self.design, Z)
+        a_hat, a_cov = offset_posterior(alpha, self.design, Z,
+                                        prior_precision=self._offset_precision)
+        a_hat = a_hat + jnp.asarray(self.offset_prior_mean)
         if return_cov:
             return np.asarray(a_hat), np.asarray(a_cov)
         return np.asarray(a_hat)
@@ -1230,7 +1306,9 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         compilation, quadrupling warm-up time).
         """
         bounds = self.bounds
-        x, y, yerr = self.x, self.y, self.yerr
+        # y minus the nuisance prior mean (equal to y unless offset_prior
+        # sets a nonzero mean); the design and prior enter via ``nuis``.
+        x, y, yerr = self.x, self._y_nuisance, self.yerr
         mean_val = self.mean_val
         n_h, n_l, lr = self.harmonics, self.n_lat, self.lat_range
         custom_prior = self._custom_log_prior
@@ -1247,9 +1325,9 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         # R_Gamma, latitude weights, visibility coefficients, edge-on fast
         # path) live inside the terms; the solver only sees k_of_lag.
         k_of_lag_fn = self.kernel_sum.k_of_lag
-        # Per-segment offset design matrix (None disables the correction).
-        # Captured as a constant: it depends on x only, never on theta.
-        design = self.design
+        # Linear nuisance design matrix and its prior (design None disables
+        # the correction).  Captured as constants: they never depend on theta.
+        nuis = self._nuisance_kwargs()
 
         if self.matrix_solver == "cholesky_banded":
             # Capture bandwidth as a Python int in the closure so that
@@ -1263,7 +1341,7 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                     uniform_dt=u_dt,
                     band_lag_table=band_tab,
                     k_of_lag=k_of_lag_fn,
-                    design=design)
+                    **nuis)
         else:
             def _log_likelihood_raw(theta_arr):
                 return _gp_log_likelihood(
@@ -1272,7 +1350,7 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                     uniform_dt=u_dt,
                     lag_table=full_tab,
                     k_of_lag=k_of_lag_fn,
-                    design=design)
+                    **nuis)
 
         def _log_prior_raw(theta_arr):
             return (custom_prior(theta_arr) if custom_prior is not None
@@ -1386,7 +1464,8 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         Parameters
         ----------
         xpred : array_like, shape (M,)
-            Prediction times.
+            Prediction times, in the same frame as the times given to the
+            solver (not the shifted :attr:`x`; see :attr:`x_offset`).
         return_cov : bool
             If True, return full predictive covariance.
 
@@ -1395,7 +1474,7 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         mu_pred : ndarray, shape (M,)
         var_pred : ndarray, shape (M,) or (M, M)
         """
-        xpred = jnp.asarray(xpred, dtype=float)
+        xpred = jnp.asarray(xpred, dtype=float) - self.x_offset
         M = len(xpred)
 
         lag_cross = jnp.abs(xpred[:, None] - self.x[None, :])
@@ -1457,7 +1536,8 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
             parameterization as ``self.param_keys`` / MCMC samples —
             log-remapped where applicable).
         xpred : array_like, shape (M,)
-            Prediction times.
+            Prediction times, in the same frame as the times given to the
+            solver (not the shifted :attr:`x`; see :attr:`x_offset`).
         return_cov : bool
             If True, return the full predictive covariance.
 
@@ -1478,7 +1558,7 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                                              return_cov=return_cov)
 
     def _predict_at_impl(self, theta, xpred, return_cov=False):
-        xpred = jnp.asarray(xpred, dtype=jnp.float64)
+        xpred = jnp.asarray(xpred, dtype=jnp.float64) - self.x_offset
         theta_k = self._to_physical(jnp.asarray(theta, dtype=jnp.float64))
 
         x = self.x
@@ -1537,8 +1617,8 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
 
 
     def sample_prior(self, xpred, n_samples=1, rng=None):
-        """Draw samples from the GP prior."""
-        xpred = jnp.asarray(xpred, dtype=float)
+        """Draw samples from the GP prior at times ``xpred`` (input frame)."""
+        xpred = jnp.asarray(xpred, dtype=float) - self.x_offset
         if rng is None:
             rng = np.random.default_rng()
 
@@ -1554,7 +1634,7 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
                                        size=n_samples)
 
     def sample_posterior(self, xpred, n_samples=1, rng=None):
-        """Draw samples from the GP posterior."""
+        """Draw samples from the GP posterior at times ``xpred`` (input frame)."""
         if rng is None:
             rng = np.random.default_rng()
 
@@ -1576,8 +1656,9 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
             keys, or a flat array matching ``param_keys``.
             If None, uses the current internal hyperparameters.
         xpred : array_like, optional
-            Times at which to evaluate the samples.  If None, uses
-            ``n_points`` evenly spaced times spanning the data baseline.
+            Times at which to evaluate the samples, in the same frame as
+            the times given to the solver (see :attr:`x_offset`).  If None,
+            uses ``n_points`` evenly spaced times spanning the data baseline.
         n_samples : int
             Number of lightcurve samples to draw (default 5).
         n_points : int
@@ -1592,7 +1673,7 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
         Returns
         -------
         xpred : ndarray, shape (M,)
-            Prediction times.
+            Prediction times, in the input frame.
         samples : ndarray, shape (n_samples, M)
             Sampled lightcurves.
         """
@@ -1608,7 +1689,7 @@ class GPSolver(FittingMixin, GPPlotsMixin, MassMatrixMixin):
 
         if xpred is None:
             xpred = np.linspace(float(self.x[0]), float(self.x[-1]),
-                                n_points)
+                                n_points) + self.x_offset
         else:
             xpred = np.asarray(xpred)
 

@@ -20,7 +20,11 @@ class MassMatrixMixin:
         """
         from .gp_solver import _gp_log_likelihood, _gp_log_likelihood_banded
 
-        x, y, yerr = self.x, self.y, self.yerr
+        # Same likelihood as the log-posterior, including any marginalized
+        # linear nuisance terms (offsets, ramps, CBVs) and their prior.
+        x, y, yerr = self.x, getattr(self, "_y_nuisance", self.y), self.yerr
+        nuis = (self._nuisance_kwargs() if hasattr(self, "_nuisance_kwargs")
+                else {})
         mean_val = self.mean_val
         n_h, n_l, lr = self.harmonics, self.n_lat, self.lat_range
         to_phys = self._to_physical
@@ -41,7 +45,8 @@ class MassMatrixMixin:
                     n_h, n_l, lr, b,
                     uniform_dt=u_dt,
                     band_lag_table=band_tab,
-                    k_of_lag=k_fn)
+                    k_of_lag=k_fn,
+                    **nuis)
         else:
             full_tab = self._full_lag_table()
 
@@ -52,7 +57,8 @@ class MassMatrixMixin:
                     n_h, n_l, lr,
                     uniform_dt=u_dt,
                     lag_table=full_tab,
-                    k_of_lag=k_fn)
+                    k_of_lag=k_fn,
+                    **nuis)
 
         return neg_log_lik
 

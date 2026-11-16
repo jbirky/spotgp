@@ -13,6 +13,7 @@ from spotgp.envelope import (
     ModulatedGammaEnvelope,
     compute_R_Gamma_numerical,
     _R_Gamma_symmetric,
+    _R_Gamma_symmetric_core,
     _R_Gamma_symmetric_numerical,
     _R_Gamma_asymmetric,
     _Gamma_hat,
@@ -157,8 +158,9 @@ class TestTrapezoidSymmetricNumerical:
         assert env2.n_grid == 2048
 
     @pytest.mark.parametrize("ell,tau", [(5.0, 1.0), (100.0, 1.0),
-                                         (50.0, 5.0), (20.0, 20.0)])
-    def test_matches_closed_form_where_valid(self, ell, tau):
+                                         (50.0, 5.0), (20.0, 20.0),
+                                         (5.0, 50.0), (0.5, 1.0), (0.0, 2.0)])
+    def test_matches_closed_form(self, ell, tau):
         env_a = TrapezoidSymmetricEnvelope(lspot=ell, tau_spot=tau)
         env_n = TrapezoidSymmetricEnvelope(lspot=ell, tau_spot=tau, numerical=True)
         lags = jnp.linspace(0, ell + 2 * tau + 1.0, 500)
@@ -175,12 +177,12 @@ class TestTrapezoidSymmetricNumerical:
         assert err[0] < 1e-4
         assert err[1] < err[0]
 
-    @pytest.mark.parametrize("ell,tau", [(5.0, 50.0), (1.0, 100.0), (10.0, 12.0)])
-    def test_valid_where_closed_form_is_not(self, ell, tau):
-        with pytest.raises(ValueError, match="closed form is invalid"):
-            TrapezoidSymmetricEnvelope(lspot=ell, tau_spot=tau).R_Gamma(
-                jnp.array([0.0, 1.0]))
-        env = TrapezoidSymmetricEnvelope(lspot=ell, tau_spot=tau, numerical=True)
+    @pytest.mark.parametrize("numerical", [False, True])
+    @pytest.mark.parametrize("ell,tau", [(5.0, 50.0), (1.0, 100.0),
+                                         (10.0, 12.0), (0.0, 3.0)])
+    def test_ell_lt_tau_matches_brute_force(self, ell, tau, numerical):
+        env = TrapezoidSymmetricEnvelope(lspot=ell, tau_spot=tau,
+                                         numerical=numerical)
         lags = np.linspace(0, ell + 2 * tau + 1.0, 120)
         R = np.array(env.R_Gamma(jnp.asarray(lags)))
         np.testing.assert_allclose(R, _brute_force_R_Gamma(ell, tau, lags),
@@ -189,16 +191,20 @@ class TestTrapezoidSymmetricNumerical:
         assert np.all(R >= -1e-12 * R[0])
         assert R[-1] == 0.0          # beyond the support ell + 2 tau
 
-    def test_toeplitz_positive_semidefinite_ell_lt_tau(self):
-        env = TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=50.0, numerical=True)
+    @pytest.mark.parametrize("numerical", [False, True])
+    def test_toeplitz_positive_semidefinite_ell_lt_tau(self, numerical):
+        env = TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=50.0,
+                                         numerical=numerical)
         x = np.arange(0.0, 120.0, 0.5)
         lag = np.abs(x[:, None] - x[None, :])
         K = np.array(env.R_Gamma(jnp.asarray(lag.ravel()))).reshape(lag.shape)
         eig = np.linalg.eigvalsh(K)
         assert eig.min() > -1e-9 * eig.max()
 
-    def test_r_gamma_jax_traceable_and_differentiable(self):
-        env = TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=50.0, numerical=True)
+    @pytest.mark.parametrize("numerical", [False, True])
+    def test_r_gamma_jax_traceable_and_differentiable(self, numerical):
+        env = TrapezoidSymmetricEnvelope(lspot=5.0, tau_spot=50.0,
+                                         numerical=numerical)
         lags = jnp.linspace(0.3, 104.0, 40)
         theta = jnp.array([5.0, 50.0])
         R_jit = np.array(jax.jit(env.r_gamma_jax)(theta, lags))
@@ -214,21 +220,45 @@ class TestTrapezoidSymmetricNumerical:
                   - np.array(env.r_gamma_jax(theta - d, lags))) / (2 * eps)
             np.testing.assert_allclose(J[:, i], fd, atol=1e-3 * np.max(np.abs(fd)))
 
-    def test_marginalized_distribution_uses_numerical_path(self):
+    @pytest.mark.parametrize("numerical", [False, True])
+    def test_marginalized_distribution_ell_lt_tau(self, numerical):
         from spotgp.distributions import UniformDistribution
-        # Quadrature nodes for lspot ~ U(2, 6) all lie below tau_spot = 8,
-        # so the analytic average is out of domain but the FFT path is not.
-        with pytest.raises(ValueError, match="closed form is invalid"):
-            TrapezoidSymmetricEnvelope(lspot=UniformDistribution(2.0, 6.0),
-                                       tau_spot=8.0).R_Gamma(jnp.array([0.0]))
+        # Quadrature nodes for lspot ~ U(2, 6) all lie below tau_spot = 8.
         env = TrapezoidSymmetricEnvelope(lspot=UniformDistribution(2.0, 6.0),
-                                         tau_spot=8.0, numerical=True)
+                                         tau_spot=8.0, numerical=numerical)
         lags = jnp.linspace(0.0, 25.0, 60)
         R = np.array(env.R_Gamma(lags))
         assert np.all(np.isfinite(R)) and np.all(R >= -1e-12)
         # E[R(0)] = E[lspot] + 2 tau / 5 for a uniform lspot distribution
         np.testing.assert_allclose(R[0], 4.0 + 2 * 8.0 / 5, rtol=1e-5)
         assert R[-1] == 0.0          # beyond max support 6 + 16 = 22
+
+    def test_closed_form_continuous_across_ell_eq_tau(self):
+        # The breakpoints tau and ell swap order at ell == tau; R and its
+        # gradient in (ell, tau) must not jump there.
+        lags = jnp.linspace(0.0, 3.5, 351)
+        R = lambda ell: np.array(_R_Gamma_symmetric(lags, ell, 1.0))
+        np.testing.assert_allclose(R(1.0 - 1e-9), R(1.0 + 1e-9), atol=1e-8)
+        g = jax.jacfwd(lambda th: _R_Gamma_symmetric_core(lags, th[0], th[1]))
+        J_lo = np.array(g(jnp.array([1.0 - 1e-9, 1.0])))
+        J_hi = np.array(g(jnp.array([1.0 + 1e-9, 1.0])))
+        assert np.all(np.isfinite(J_lo)) and np.all(np.isfinite(J_hi))
+        np.testing.assert_allclose(J_lo, J_hi, atol=1e-7)
+
+    def test_closed_form_triangle_limit(self):
+        # ell = 0: the squared triangle (1 - |t|/tau)^2 on |t| < tau.
+        lags = np.linspace(0.0, 2.5, 26)
+        R = np.array(_R_Gamma_symmetric(jnp.asarray(lags), 0.0, 1.0))
+        np.testing.assert_allclose(R, _brute_force_R_Gamma(0.0, 1.0, lags),
+                                   atol=1e-7)
+        np.testing.assert_allclose(R[0], 2.0 / 5, rtol=1e-12)
+
+    def test_negative_lspot_raises(self):
+        for numerical in (False, True):
+            with pytest.raises(ValueError, match="non-negative"):
+                TrapezoidSymmetricEnvelope(lspot=-1.0, tau_spot=2.0,
+                                           numerical=numerical).R_Gamma(
+                    jnp.array([0.0]))
 
     def test_gamma_hat_and_support_unchanged(self):
         # The closed-form Fourier transform holds for any lspot, tau_spot,

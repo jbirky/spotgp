@@ -34,6 +34,31 @@ The defining property of the flat-prior result is that the likelihood is
 *exactly* invariant to adding an arbitrary constant to any segment of
 ``y``.  ``tests/test_offsets.py`` asserts this.
 
+Gaussian priors
+---------------
+Any column can instead carry a Gaussian prior :math:`a_j \\sim
+\\mathcal{N}(\\mu_j, \\sigma_j^2)`, e.g. cotrending basis vectors whose
+weights should be shrunk rather than fitted freely.  With
+:math:`\\Lambda = \\mathrm{diag}(\\sigma_G^2)` over the Gaussian columns
+:math:`G`, flat priors on the remaining :math:`S_F` columns, and
+:math:`r = y - M\\mu` (:math:`\\mu_j = 0` on flat columns):
+
+.. math::
+
+    A = M^{\\top}C^{-1}M + \\mathrm{diag}(1/\\sigma^2), \\qquad
+    b = M^{\\top}C^{-1}r
+
+    \\log L = -\\tfrac{1}{2}\\left(r^{\\top}C^{-1}r - b^{\\top}A^{-1}b
+             + \\log|C| + \\log|A| + \\log|\\Lambda| + (N-S_F)\\log 2\\pi\\right)
+
+(:math:`1/\\sigma^2 = 0` on flat columns).  This is the Woodbury form of
+integrating the Gaussian columns into the covariance,
+:math:`C + M_G\\Lambda M_G^{\\top}`, and then the flat ones as above; it
+still needs only :math:`C^{-1}r` and :math:`C^{-1}M`, so the banded
+structure is preserved.  With every column flat it reduces exactly to the
+flat-prior formula.  Shifting :math:`y` by :math:`M_G c` is equivalent to
+shifting :math:`\\mu_G` by :math:`-c`.
+
 Usage
 -----
 ::
@@ -45,6 +70,11 @@ Usage
     gp = GPSolver(data, model, offsets=labels)
     gp.fit_map()
     a_hat = gp.offset_estimates()                 # posterior mean offsets
+
+    # flat quarter offsets plus CBV columns with a N(0, 0.05^2) prior
+    M = np.hstack([offset_design(x, labels), cbvs])
+    sigma = np.r_[np.full(n_quarters, np.inf), np.full(cbvs.shape[1], 0.05)]
+    gp = GPSolver(data, model, offsets=M, offset_prior=sigma)
 """
 from __future__ import annotations
 
@@ -52,7 +82,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-__all__ = ["segment_labels", "offset_design", "apply_offset_marginalization"]
+__all__ = ["segment_labels", "offset_design", "apply_offset_marginalization",
+           "offset_posterior", "resolve_offset_prior", "offset_prior_constants"]
 
 
 def segment_labels(x, gap):
@@ -145,7 +176,75 @@ def offset_design(x, labels, order=0):
     return np.column_stack(cols)
 
 
-def apply_offset_marginalization(data_fit, log_det, alpha, design, Z):
+def resolve_offset_prior(prior, n_columns):
+    """
+    Normalize a prior specification for the ``n_columns`` design columns.
+
+    Parameters
+    ----------
+    prior : None, float, array_like, tuple or dict
+        - ``None``: flat prior on every column.
+        - a float: Gaussian width ``sigma`` shared by every column, mean 0.
+        - an array of shape (S,): per-column ``sigma``; ``np.inf`` marks a
+          flat column.
+        - ``(mu, sigma)`` or ``dict(mu=..., sigma=...)``: means and widths,
+          each a scalar or shape (S,).  ``mu`` is ignored on flat columns.
+
+    Returns
+    -------
+    mu, sigma : ndarray, shape (S,)
+        ``sigma`` is ``inf`` on flat columns, where ``mu`` is set to 0.
+    """
+    S = int(n_columns)
+    if prior is None:
+        return np.zeros(S), np.full(S, np.inf)
+    if isinstance(prior, dict):
+        spec = dict(prior)
+        mu, sigma = spec.pop("mu", 0.0), spec.pop("sigma", None)
+        if spec:
+            raise ValueError(f"Unknown keys in offset_prior: {sorted(spec)}. "
+                             f"Expected 'mu' and/or 'sigma'.")
+        if sigma is None:
+            raise ValueError("offset_prior dict requires a 'sigma' entry.")
+    elif isinstance(prior, tuple):
+        if len(prior) != 2:
+            raise ValueError("offset_prior tuple must be (mu, sigma).")
+        mu, sigma = prior
+    else:
+        mu, sigma = 0.0, prior
+
+    mu = np.broadcast_to(np.asarray(mu, dtype=float), (S,)).copy()
+    sigma = np.broadcast_to(np.asarray(sigma, dtype=float), (S,)).copy()
+    if np.any(np.isnan(sigma)) or np.any(sigma <= 0):
+        raise ValueError("offset_prior sigma must be positive (np.inf = flat).")
+    if np.any(~np.isfinite(mu)):
+        raise ValueError("offset_prior mu must be finite.")
+    mu[np.isinf(sigma)] = 0.0
+    return mu, sigma
+
+
+def offset_prior_constants(sigma):
+    """
+    Constants the marginal likelihood needs from the prior widths.
+
+    Returns
+    -------
+    precision : ndarray, shape (S,)
+        ``1 / sigma**2`` (0 on flat columns).
+    logdet : float
+        :math:`\\log|\\Lambda|` over the Gaussian columns.
+    n_flat : int
+        Number of flat columns (sets the ``(N - S_F) log 2 pi`` term).
+    """
+    sigma = np.asarray(sigma, dtype=float)
+    finite = np.isfinite(sigma)
+    precision = np.where(finite, 1.0 / np.where(finite, sigma, 1.0) ** 2, 0.0)
+    logdet = float(np.sum(2.0 * np.log(sigma[finite])))
+    return precision, logdet, int((~finite).sum())
+
+
+def apply_offset_marginalization(data_fit, log_det, alpha, design, Z,
+                                 prior_precision=None, prior_logdet=0.0):
     """
     Fold the marginalized offsets into an existing quadratic form and
     log-determinant.
@@ -166,14 +265,20 @@ def apply_offset_marginalization(data_fit, log_det, alpha, design, Z):
         The design matrix :math:`M`.
     Z : jnp.ndarray, shape (N, S)
         :math:`C^{-1}M`.
+    prior_precision : jnp.ndarray, shape (S,), optional
+        :math:`1/\\sigma^2` per column (0 = flat).  None: all flat.
+    prior_logdet : float
+        :math:`\\log|\\Lambda|` over the Gaussian columns (0 if none).
 
     Returns
     -------
     data_fit, log_det : scalars
         Corrected values, ready for the usual
-        ``-0.5 * (data_fit + log_det + (N - S) * log(2*pi))``.
+        ``-0.5 * (data_fit + log_det + (N - S_flat) * log(2*pi))``.
     """
     A = design.T @ Z
+    if prior_precision is not None:
+        A = A + jnp.diag(prior_precision)
     b = design.T @ alpha
 
     # Cholesky rather than an explicit inverse: A is small (S x S) but can
@@ -181,15 +286,18 @@ def apply_offset_marginalization(data_fit, log_det, alpha, design, Z):
     La = jnp.linalg.cholesky(A)
     w = jax.scipy.linalg.solve_triangular(La, b, lower=True)
 
-    return data_fit - w @ w, log_det + 2.0 * jnp.sum(jnp.log(jnp.diag(La)))
+    return (data_fit - w @ w,
+            log_det + 2.0 * jnp.sum(jnp.log(jnp.diag(La))) + prior_logdet)
 
 
-def offset_posterior(alpha, design, Z):
+def offset_posterior(alpha, design, Z, prior_precision=None):
     """
     Posterior mean and covariance of the offsets, given the solves.
 
-    With a flat prior the conditional posterior is Gaussian with mean
-    :math:`A^{-1}b` and covariance :math:`A^{-1}`.
+    The conditional posterior is Gaussian with mean :math:`A^{-1}b` and
+    covariance :math:`A^{-1}`, where ``A`` includes the prior precision.
+    With a Gaussian prior, ``alpha`` must be :math:`C^{-1}(y - M\\mu)` and
+    the returned mean is the offset *relative to* :math:`\\mu`.
 
     Returns
     -------
@@ -197,6 +305,8 @@ def offset_posterior(alpha, design, Z):
     a_cov : jnp.ndarray, shape (S, S)
     """
     A = design.T @ Z
+    if prior_precision is not None:
+        A = A + jnp.diag(prior_precision)
     b = design.T @ alpha
     a_cov = jnp.linalg.inv(A)
     return a_cov @ b, a_cov

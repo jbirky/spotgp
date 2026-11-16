@@ -64,14 +64,17 @@ class GPPlotsMixin:
                     phys[k] = float(v)
             self.update_hparam(phys)
 
-        xpred = np.linspace(float(self.x[0]), float(self.x[-1]), n_points)
+        # Plot in the frame of the times given to the solver; predict()
+        # expects that frame (self.x is shifted by self.x_offset).
+        x_in = np.asarray(self.x) + self.x_offset
+        xpred = np.linspace(float(x_in[0]), float(x_in[-1]), n_points)
         mu, var = self.predict(xpred)
         sigma = np.sqrt(np.maximum(var, 0.0))
 
         if ax is None:
             fig, ax = plt.subplots(figsize=(12, 4))
 
-        ax.errorbar(np.asarray(self.x), np.asarray(self.y),
+        ax.errorbar(x_in, np.asarray(self.y),
                     yerr=np.asarray(self.yerr),
                     fmt=".", color=data_color, capsize=0, alpha=0.5,
                     label=data_label)
@@ -86,7 +89,7 @@ class GPPlotsMixin:
         if xlim is not None:
             ax.set_xlim(xlim)
         else:
-            ax.set_xlim(float(self.x[0]), float(self.x[-1]))
+            ax.set_xlim(float(x_in[0]), float(x_in[-1]))
         if ylim is not None:
             ax.set_ylim(ylim)
 
@@ -110,7 +113,8 @@ class GPPlotsMixin:
         theta : dict or array_like, optional
             Kernel parameters (see ``sample_lightcurves``).
         xpred : array_like, optional
-            Prediction times.  If None, ``n_points`` evenly spaced.
+            Prediction times, in the same frame as the times given to the
+            solver (see ``x_offset``).  If None, ``n_points`` evenly spaced.
         n_samples : int
             Number of samples to draw and plot (default 5).
         n_points : int
@@ -156,8 +160,9 @@ class GPPlotsMixin:
             ax.plot(xpred, sample, color=colormap(i % colormap.N),
                     alpha=sample_alpha, lw=sample_lw, label=label)
 
+        x_in = np.asarray(self.x) + self.x_offset    # input frame, as xpred
         if show_data:
-            ax.errorbar(np.asarray(self.x), np.asarray(self.y),
+            ax.errorbar(x_in, np.asarray(self.y),
                         yerr=np.asarray(self.yerr),
                         fmt=".", color=data_color, capsize=0, alpha=0.4,
                         label="Data", zorder=0)
@@ -165,7 +170,7 @@ class GPPlotsMixin:
         if xlim is not None:
             ax.set_xlim(xlim)
         else:
-            ax.set_xlim(float(self.x[0]), float(self.x[-1]))
+            ax.set_xlim(float(x_in[0]), float(x_in[-1]))
         if ylim is not None:
             ax.set_ylim(ylim)
 

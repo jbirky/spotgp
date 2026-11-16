@@ -278,7 +278,7 @@ class TestNumericalTrapezoidEnvelope:
 
     @staticmethod
     def _model(lspot=3.0, tau_spot=8.0):
-        # lspot < tau_spot: outside the closed form's validity range.
+        # lspot < tau_spot: the regime the closed form originally excluded.
         env = TrapezoidSymmetricEnvelope(lspot=lspot, tau_spot=tau_spot,
                                          numerical=True)
         vis = VisibilityFunction(peq=10.0, kappa=0.2, inc=np.pi / 4)
