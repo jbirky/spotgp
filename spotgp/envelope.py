@@ -71,9 +71,21 @@ def _R_Gamma_symmetric_core(lag, ell, tau_s):
     """
     Closed-form autocorrelation of the symmetric trapezoidal envelope.
 
-    Piecewise degree-5 polynomial on [0, ell + 2*tau_s], zero beyond.
-    Only valid for ell >= tau_s > 0; the public ``_R_Gamma_symmetric``
-    wrapper enforces this for concrete arguments.
+    Piecewise degree-5 polynomial on [0, ell + 2*tau_s], zero beyond,
+    valid for any ell >= 0, tau_s > 0.
+
+    The breakpoints are the lags tau_s, ell, ell + tau_s and ell + 2*tau_s.
+    For ell >= tau_s they come in that order; for ell < tau_s the first
+    two swap.  Both orderings reduce to one expression:
+
+        t <= ell + tau_s:          (R1 if t <= tau_s else R2) + P(s)
+        ell + tau_s < t <= ell + 2*tau_s:  R4
+
+    with ``s = max(t - ell, 0)`` and ``P(s) = s**3 (s**2 - 10 tau_s s
+    + 20 tau_s**2) / (30 tau_s**4)``.  ``P`` vanishes with its first two
+    derivatives at ``s = 0``, so the kernel is C2 in ``t`` and smooth in
+    ``ell`` through ``ell = tau_s``.  For ell >= tau_s, ``R2 + P`` is the
+    former piece R3 on ``ell < t <= ell + tau_s``.
     """
     t = jnp.abs(jnp.asarray(lag, dtype=float).ravel())
 
@@ -82,27 +94,23 @@ def _R_Gamma_symmetric_core(lag, ell, tau_s):
            + 2*t**3 / (3*tau_s**2)
            - t**5 / (15*tau_s**4))
 
-    R2 = ell + 2*tau_s/3 - t
+    R2 = 2*tau_s/3 - (t - ell)
 
-    # ell < t <= ell + tau_s, written in s = t - ell.  The same polynomial
-    # expanded in t has coefficients ~ ell**5 / tau_s**4 that cancel to an
-    # O(tau_s) result: at ell=205, tau_s=0.33 float64 left ~5e-3 of noise
-    # (a jump between samples that broke finite-difference gradients), at
-    # ell=1000, tau_s=0.1 an error of ~1e3.  In s the coefficients are
-    # O(1) and ell drops out; exactly equal, C1-continuous with R2 and R4.
-    s = t - ell
-    R3 = (2*tau_s/3 - s
-           + 2*s**3 / (3*tau_s**2)
-           - s**4 / (3*tau_s**3)
-           + s**5 / (30*tau_s**4))
+    # Correction once the lag passes the plateau, written in s = t - ell.
+    # Expanded in t its coefficients grow like ell**5 / tau_s**4 and cancel
+    # to an O(tau_s) result: at ell=205, tau_s=0.33 float64 left ~5e-3 of
+    # noise (a jump between samples that broke finite-difference
+    # gradients), at ell=1000, tau_s=0.1 an error of ~1e3.  In s the
+    # coefficients are O(1) and ell drops out; wherever P is used,
+    # 0 <= s <= tau_s.
+    s = jnp.maximum(t - ell, 0.0)
+    P = s**3 * (s**2 - 10*tau_s*s + 20*tau_s**2) / (30*tau_s**4)
 
     R4 = (ell + 2*tau_s - t)**5 / (30*tau_s**4)
 
-    return jnp.where(t <= tau_s, R1,
-           jnp.where(t <= ell, R2,
-           jnp.where(t <= ell + tau_s, R3,
+    return jnp.where(t <= ell + tau_s, jnp.where(t <= tau_s, R1, R2) + P,
            jnp.where(t <= ell + 2*tau_s, R4,
-                     0.0))))
+                     0.0))
 
 
 @jax.jit
@@ -167,20 +175,21 @@ def _check_trapezoid_acf_domain(kind, ell, require_plateau=True, **taus):
     """
     Validate the parameter domain of the closed-form trapezoid ACFs.
 
-    The piecewise polynomials in ``_R_Gamma_symmetric_core`` /
-    ``_R_Gamma_asymmetric_core`` are derived assuming the plateau is at
-    least as long as the (longest) ramp, ``lspot >= max(tau)``.  Outside
-    that regime they are wrong — R_Gamma goes negative and the resulting
-    covariance matrix is not positive semi-definite.
+    The piecewise polynomial in ``_R_Gamma_asymmetric_core`` is derived
+    assuming the plateau is at least as long as the longer ramp,
+    ``lspot >= max(tau_em, tau_dec)``.  Outside that regime it is wrong:
+    R_Gamma goes negative and the resulting covariance matrix is not
+    positive semi-definite.  The symmetric closed form
+    (``_R_Gamma_symmetric_core``) has no such restriction.
 
     The check runs only when the arguments are concrete numbers.  Inside
     ``jax.jit`` / ``vmap`` the values are tracers, so the check is skipped
     silently (a Python exception cannot depend on traced values); guard
     the sampler bounds instead when fitting these parameters.
 
-    With ``require_plateau=False`` only finiteness and positivity are
-    checked (used by the FFT path of ``TrapezoidSymmetricEnvelope``,
-    which has no ``lspot >= tau`` restriction).
+    With ``require_plateau=False`` only finiteness, ``lspot >= 0`` and
+    positive timescales are checked (used by both symmetric paths, closed
+    form and FFT, which have no ``lspot >= tau`` restriction).
     """
     try:
         ell_c = float(ell)
@@ -198,21 +207,22 @@ def _check_trapezoid_acf_domain(kind, ell, require_plateau=True, **taus):
             raise ValueError(
                 f"{kind} trapezoid R_Gamma: {name}={t:g} must be positive."
             )
+    if ell_c < 0:
+        raise ValueError(
+            f"{kind} trapezoid R_Gamma: lspot={ell_c:g} must be non-negative."
+        )
     tau_max = max(taus_c.values())
     if require_plateau and ell_c < tau_max:
         which = max(taus_c, key=taus_c.get)
-        hint = ((" Alternatively pass numerical=True to "
-                 "TrapezoidSymmetricEnvelope to evaluate R_Gamma by FFT, "
-                 "which is valid for any lspot, tau_spot.")
-                if kind == "symmetric" else "")
         raise ValueError(
             f"{kind} trapezoid R_Gamma: closed form is invalid for "
             f"lspot={ell_c:g} < {which}={tau_max:g}. The piecewise polynomial "
             f"is derived assuming lspot >= {which}; outside that range it "
             f"returns incorrect (even negative) values, producing a "
             f"non-positive-definite kernel. Increase lspot, or use an "
-            f"envelope without this restriction (e.g. ExponentialEnvelope, "
-            f"or compute_R_Gamma_numerical)." + hint
+            f"envelope without this restriction (e.g. "
+            f"TrapezoidSymmetricEnvelope, ExponentialEnvelope, or "
+            f"compute_R_Gamma_numerical)."
         )
 
 
@@ -220,11 +230,13 @@ def _R_Gamma_symmetric(lag, ell, tau_s):
     """
     Closed-form ACF of the symmetric trapezoidal envelope (validated).
 
-    Raises ValueError when called with concrete parameters outside the
-    validity range ``lspot >= tau_spot > 0``; traced arguments (inside
-    ``jax.jit``) skip the check and evaluate the closed form as before.
+    Valid for any ``lspot >= 0``, ``tau_spot > 0``.  Raises ValueError
+    when called with concrete parameters that are non-finite, a negative
+    ``lspot`` or a non-positive ``tau_spot``; traced arguments (inside
+    ``jax.jit``) skip the check.
     """
-    _check_trapezoid_acf_domain("symmetric", ell, tau_spot=tau_s)
+    _check_trapezoid_acf_domain("symmetric", ell, require_plateau=False,
+                                tau_spot=tau_s)
     return _R_Gamma_symmetric_core(lag, ell, tau_s)
 
 
@@ -272,19 +284,17 @@ def _R_Gamma_symmetric_numerical(lag, ell, tau_s, n_grid=4096):
 
     The rectangle sum is second-order accurate: with the default
     ``n_grid = 4096`` the result agrees with ``_R_Gamma_symmetric_core``
-    to ~1e-6 of ``R(0)`` throughout that closed form's validity range
-    ``ell >= tau_s`` (6e-6 at ``ell / tau_s = 300``), and with a
-    brute-force autocorrelation to ~3e-7 of ``R(0)`` for ``ell < tau_s``,
-    where the closed form does not apply.  ``_Gamma_hat`` needs no such
-    replacement: its closed form holds for all ``ell``, ``tau_s``.
+    to ~1e-6 of ``R(0)`` for ``ell >= tau_s`` (6e-6 at
+    ``ell / tau_s = 300``), and with a brute-force autocorrelation to
+    ~3e-7 of ``R(0)`` for ``ell < tau_s``.  The closed form is exact for
+    all ``ell``, ``tau_s``, so this path is now mainly a cross-check.
 
     Gradients flow through the grid, the FFT and the interpolation, so
     the function can be used inside ``jax.jit`` / ``jax.grad`` with
     traced ``ell`` and ``tau_s`` (it costs roughly twice the closed form
     per kernel evaluation).  Because the interpolation grid moves with
     the parameters the result is only C0 in ``ell`` and ``tau_s`` (kinks
-    of relative size ~ (dt / tau_s)^2), so prefer the closed form when
-    ``ell >= tau_s``.
+    of relative size ~ (dt / tau_s)^2), so prefer the closed form.
     """
     lag = jnp.abs(jnp.asarray(lag, dtype=float).ravel())
     half_support = ell / 2.0 + tau_s            # Gamma == 0 for |t| >= this
@@ -940,12 +950,11 @@ class TrapezoidSymmetricEnvelope(EnvelopeFunction):
         If True, evaluate ``R_Gamma`` numerically (FFT autocorrelation of
         the squared envelope on a parameter-adaptive grid, see
         ``_R_Gamma_symmetric_numerical``) instead of the closed-form
-        piecewise polynomial.  The closed form is only valid for
-        ``lspot >= tau_spot`` and raises outside that range; the numerical
-        path is valid for any ``lspot >= 0``, ``tau_spot > 0``, is
-        JAX-traceable and differentiable, and costs roughly twice as much
-        per kernel evaluation.  ``Gamma_hat`` is unaffected: its closed
-        form holds for all parameter values.  Default False.
+        piecewise polynomial.  Both are valid for any ``lspot >= 0``,
+        ``tau_spot > 0`` and are JAX-traceable and differentiable; the
+        closed form is exact and about half the cost, so the numerical
+        path is mainly a cross-check.  ``Gamma_hat`` is unaffected: its
+        closed form holds for all parameter values.  Default False.
     n_grid : int, optional
         Number of time-grid points for the numerical path (default 4096,
         which reproduces the closed form to ~1e-6 of ``R_Gamma(0)``).
@@ -1017,10 +1026,11 @@ class TrapezoidSymmetricEnvelope(EnvelopeFunction):
     def _R_core(self, lag, lspot, tau_spot):
         """
         R_Gamma for one ``(lspot, tau_spot)`` pair: the FFT evaluation when
-        ``numerical`` is set, otherwise the closed form (which validates
-        ``lspot >= tau_spot`` for concrete arguments).  Both accept traced
-        parameters, so this is the single dispatch point for ``R_Gamma``,
-        the marginalized average and ``r_gamma_jax``.
+        ``numerical`` is set, otherwise the closed form (both validate
+        finite ``lspot >= 0``, ``tau_spot > 0`` for concrete arguments).
+        Both accept traced parameters, so this is the single dispatch
+        point for ``R_Gamma``, the marginalized average and
+        ``r_gamma_jax``.
         """
         if self.numerical:
             _check_trapezoid_acf_domain("symmetric", lspot,

@@ -66,8 +66,8 @@ Built-in envelopes:
 
 | Class | Parameters | Notes |
 |---|---|---|
-| `TrapezoidSymmetricEnvelope` | `lspot`, `tau_spot` | Analytic `Gamma_hat` and `R_Gamma` (closed-form `R_Gamma` requires `lspot >= tau_spot`); `numerical=True` evaluates `R_Gamma` by FFT for any `lspot`, `tau_spot` |
-| `TrapezoidAsymmetricEnvelope` | `lspot`, `tau_em`, `tau_dec` | Analytic `R_Gamma`; rise ≠ decay |
+| `TrapezoidSymmetricEnvelope` | `lspot`, `tau_spot` | Analytic `Gamma_hat` and `R_Gamma`, valid for any `lspot >= 0`, `tau_spot > 0`; `numerical=True` evaluates `R_Gamma` by FFT instead (a cross-check) |
+| `TrapezoidAsymmetricEnvelope` | `lspot`, `tau_em`, `tau_dec` | Analytic `R_Gamma` (requires `lspot >= max(tau_em, tau_dec)`); rise ≠ decay |
 | `SkewedGaussianEnvelope` | `sigma_sn`, `n_sn` | Skew-normal shape |
 | `ExponentialEnvelope` | `tau_spot` | Analytic `Gamma_hat`, `R_Gamma` |
 | `ExponentialPlateauEnvelope` | `tau_em`, `tau_plat`, `tau_dec` | Exponential rise, plateau and exponential decay of the spot radius (Birky et al. three-parameter profile); analytic `Gamma_hat` and `R_Gamma` |
